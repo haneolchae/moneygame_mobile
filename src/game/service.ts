@@ -363,7 +363,9 @@ export class GameService {
       const now = this.meta();
       if (date === seasonKeyDates(meta.season).regularSeasonEnd && !this.postseason.state(now)) {
         const b = this.postseason.begin(now);
-        this.repo.updateMeta({ postseason: b.state, nextFixtureId: b.nextFixtureId });
+        const counts = this.repo.countFixtures(meta.season);
+        const regularSeasons = { ...(now.regularSeasons ?? {}), [String(meta.season)]: { ...counts, endDate: date } };
+        this.repo.updateMeta({ postseason: b.state, nextFixtureId: b.nextFixtureId, regularSeasons });
         this.repo.addInbox(b.inbox);
       } else if (results.length) {
         const u = this.postseason.onResults(now, date, results);
@@ -568,6 +570,13 @@ export class GameService {
     return { fixture: this.fixtureView(fx), homeRecord: record(fx.home), awayRecord: record(fx.away), homeStarter: starterOf(fx.home), awayStarter: starterOf(fx.away) };
   }
 
+  /** 정규시즌 마지막 날 기록한 시즌별 경기 수 중 가장 최근 것(포스트시즌·다음 시즌 일정과 무관) */
+  private lastRegularSeason(meta: GameMeta): { season: number; played: number; total: number; endDate: GameDate } | null {
+    const seasons = Object.keys(meta.regularSeasons ?? {}).map(Number).sort((a, b) => a - b);
+    const last = seasons.at(-1);
+    return last === undefined ? null : { season: last, ...meta.regularSeasons![String(last)]! };
+  }
+
   private tasks(meta: GameMeta, unread: number): TaskView[] {
     const out: TaskView[] = [];
     if (unread > 0) out.push({ title: `받은 편지함 ${unread}건 확인`, detail: '보고와 리그 소식을 확인하세요.', due: null, level: '권장', target: 'inbox' });
@@ -656,6 +665,7 @@ export class GameService {
       openingDay: key.opening,
       gamesPlayedLeague: counts.played,
       gamesTotalLeague: counts.total,
+      lastRegularSeason: this.lastRegularSeason(meta),
       owner: { level: meta.ownerLevel, xp: meta.ownerXp, xpToNext: xpToNext(meta.ownerLevel), apGranted: ap?.granted ?? 0, apRemaining: ap ? ap.granted - ap.used : 0, weekLabel: `${weekStart.slice(5).replace('-', '/')}~${weekEnd.slice(5).replace('-', '/')}` },
       cashWon: this.repo.cashBalance(meta.userClubId),
       rosterCount: this.repo.getPlayers().filter((p) => p.clubId === meta.userClubId).length,

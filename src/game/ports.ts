@@ -54,6 +54,8 @@ export interface GameMeta {
   retirementPending?: Array<{ playerId: PlayerId; reason: string; deadline: GameDate }>;
   /** 우리 구단 드래프트 지명 우선순위 */
   draftBoard?: number[];
+  /** 시즌별 정규시즌 경기 수: 정규시즌 마지막 날 기록하고 이후 바꾸지 않는다(포스트시즌·다음 시즌 일정과 무관) */
+  regularSeasons?: Record<string, { played: number; total: number; endDate: GameDate }>;
 }
 
 export interface StoredGame extends GameScore {

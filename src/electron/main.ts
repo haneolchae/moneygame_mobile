@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { Worker } from 'node:worker_threads';
 import { createSteamAdapter, MockSteamAdapter, type SteamAdapter } from '../platform/steam';
-import { REQUEST_NAMES, type ApiResponse, type PlatformStatus, type ProgressEvent, type RequestName } from '../shared/protocol';
+import { REQUEST_NAMES, type ApiResponse, type DashboardView, type PlatformStatus, type ProgressEvent, type RequestName } from '../shared/protocol';
 
 const SELFTEST = process.argv.includes('--selftest');
 const dataDir = process.env.FO_DATA_DIR ?? join(app.getPath('userData'), 'game-data');
@@ -136,7 +136,10 @@ async function runSelfTest() {
   report.rendererMaxTimerLagMs = Math.round(await win!.webContents.executeJavaScript('window.__lag.max'));
   const dash = await call('game.dashboard');
   report.dateAfterSeason = dash.date;
-  report.gamesPlayed = `${dash.gamesPlayedLeague}/${dash.gamesTotalLeague}`;
+  // 정규시즌 경기 수는 정규시즌 마지막 날 시즌 ID별로 기록한 값을 본다(포스트시즌 뒤 다음 시즌 일정이 생겨도 같은 값).
+  const regular = dash.lastRegularSeason as DashboardView['lastRegularSeason'];
+  report.regularSeason = regular?.season ?? null;
+  report.gamesPlayed = regular ? `${regular.played}/${regular.total}` : '0/1';
   const t2 = Date.now();
   await call('save.save', { slot: 'selftest' });
   report.saveMs = Date.now() - t2;

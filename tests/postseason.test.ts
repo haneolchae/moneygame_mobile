@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { weekday } from '../src/engine/calendar';
 import { computeStandings } from '../src/engine/standings';
+import { checkRegularSeasons } from '../src/host/invariants';
 import type { Dispatcher } from '../src/host/dispatcher';
 import { call, cleanup, fingerprint, makeDispatcher, tempDir } from './helpers';
 
@@ -72,6 +73,23 @@ describe('포스트시즌 (01 문서, D-081)', () => {
     expect(meta.mode).toBe('stove');
     expect(meta.kDate).toBe(ps.finishedDate);
     expect(repo.countFixtures(meta.season + 1).total).toBe(720);
+    d.close();
+  });
+
+  it('정규시즌 경기 수는 시즌 ID별로 정규시즌 마지막 날 기록되고, 포스트시즌·다음 시즌 일정 뒤에도 같다', async () => {
+    const d = await toPostseason('ps-count');
+    const repo = d.saves.repository();
+    const season = repo.getMeta().season;
+    const atEnd = (await call(d, 'game.dashboard')).lastRegularSeason;
+    expect(atEnd).toMatchObject({ season, played: 720, total: 720 });
+    await call(d, 'game.advance', { mode: 'untilSeasonEnd' }); // 한국시리즈 → 시즌 마감 → 다음 시즌 일정 생성
+    const dash = await call(d, 'game.dashboard');
+    expect(dash.gamesPlayedLeague).toBe(0); // 화면의 현재 시즌 진행은 다음 시즌 기준
+    expect(dash.lastRegularSeason).toEqual(atEnd);
+    expect(checkRegularSeasons(repo)).toEqual([]);
+    // 기록이 실제 경기와 어긋나면 규칙 위반으로 잡힌다.
+    repo.updateMeta({ regularSeasons: { [String(season)]: { ...atEnd!, played: 719 } } });
+    expect(checkRegularSeasons(repo).join()).toContain('미완료');
     d.close();
   });
 

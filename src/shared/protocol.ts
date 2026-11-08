@@ -139,6 +139,8 @@ export interface DashboardView {
   openingDay: string;
   gamesPlayedLeague: number;
   gamesTotalLeague: number;
+  /** 정규시즌 마지막 날 기록한 가장 최근 시즌의 경기 수. 포스트시즌·다음 시즌 일정이 생겨도 바뀌지 않는다 */
+  lastRegularSeason: { season: number; played: number; total: number; endDate: string } | null;
   unsavedDays: number;
   lastSavedAt: string | null;
   owner: OwnerView;
