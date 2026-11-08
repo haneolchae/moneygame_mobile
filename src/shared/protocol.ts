@@ -1,0 +1,712 @@
+// 화면 ↔ 게임 통신 형식. 화면은 이 파일의 타입만 안다.
+// 표시용 데이터(View)에는 실제 능력·히든 값을 넣지 않는다(04 문서 데이터 경계). 평가는 관찰값(20~80)만 담는다.
+
+export interface ClubOption {
+  id: number;
+  name: string;
+  city: string;
+  stadium: string;
+  stadiumCapacity: number;
+  parentIndustry: string;
+  colors: string;
+  difficulty: string;
+  startCashWon: number;
+  parentSupportWon: number;
+  namingRightsWon: number;
+  marketSize: number;
+  loyalty: string;
+  strength: string;
+  lastSeason: string;
+  /** 창단 이후 한국시리즈 우승(2026 포함, 실제 기록) */
+  ksTitles: number;
+  founded: number | null;
+  primaryColor: string;
+  secondaryColor: string;
+  shortName: string;
+}
+
+export interface ClubRef {
+  id: number;
+  name: string;
+  shortName: string;
+  primaryColor: string;
+  secondaryColor: string;
+}
+
+export interface StandingView {
+  rank: number;
+  club: ClubRef;
+  games: number;
+  wins: number;
+  losses: number;
+  ties: number;
+  pct: number | null;
+  gamesBehind: number;
+  /** 직전 시즌 요약 순위에는 득실점이 없어 null */
+  runsFor: number | null;
+  runsAgainst: number | null;
+  last10: string;
+  streak: string;
+  postseason?: string;
+}
+
+export interface OwnerView {
+  level: number;
+  xp: number;
+  xpToNext: number;
+  apGranted: number;
+  apRemaining: number;
+  weekLabel: string;
+}
+
+export interface CalendarEventView {
+  date: string;
+  kind: string;
+  title: string;
+  body: string;
+}
+
+export interface TaskView {
+  title: string;
+  detail: string;
+  due: string | null;
+  level: '필수' | '권장' | '선택' | '정보';
+  target: 'inbox' | 'players' | 'finance' | 'schedule' | 'standings' | 'market' | 'org' | 'draft' | null;
+}
+
+export interface NextGameView {
+  fixture: FixtureView;
+  homeRecord: string;
+  awayRecord: string;
+  homeStarter: { id: number; name: string; throws: string; line: string } | null;
+  awayStarter: { id: number; name: string; throws: string; line: string } | null;
+}
+
+export interface InboxItemView {
+  id: number;
+  date: string;
+  kind: string;
+  sender: string;
+  title: string;
+  body: string;
+  read: boolean;
+}
+
+export interface FinanceView {
+  clubName: string;
+  cashWon: number;
+  seasonYear: number;
+  byCategory: Array<{ category: string; label: string; amountWon: number }>;
+  seasonRevenueWon: number;
+  seasonExpenseWon: number;
+  recent: Array<{ date: string; label: string; memo: string; amountWon: number }>;
+  notImplemented: string[];
+  inflationNote: string;
+}
+
+export interface FixtureView {
+  fixtureId: number;
+  date: string;
+  home: ClubRef;
+  away: ClubRef;
+  played: boolean;
+  homeRuns?: number;
+  awayRuns?: number;
+  innings?: number;
+  /** 포스트시즌 경기면 '준플레이오프 2차전' 같은 표시 */
+  stageLabel?: string;
+}
+
+/** stove: 스토브리그, preseason: 시즌 모드 개막 전(캠프), regular: 정규시즌, regularComplete: 정규시즌 종료 */
+export type SeasonPhase = 'stove' | 'preseason' | 'regular' | 'postseason' | 'seasonComplete';
+
+export interface DashboardView {
+  saveName: string;
+  season: number;
+  date: string;
+  phase: SeasonPhase;
+  phaseLabel: string;
+  userClub: ClubRef;
+  userRecord: StandingView | null;
+  /** 스토브리그·개막 전에는 직전 시즌 최종 순위, 정규시즌에는 현재 순위 */
+  standings: StandingView[];
+  standingsTitle: string;
+  todayFixtures: FixtureView[];
+  upcoming: FixtureView[];
+  recent: FixtureView[];
+  nextGame: NextGameView | null;
+  regularSeasonEnd: string;
+  openingDay: string;
+  gamesPlayedLeague: number;
+  gamesTotalLeague: number;
+  unsavedDays: number;
+  lastSavedAt: string | null;
+  owner: OwnerView;
+  cashWon: number;
+  rosterCount: number;
+  unreadInbox: number;
+  tasks: TaskView[];
+  /** 해임·파산(게임 종료) */
+  gameOver: { kind: string; date: string; reason: string } | null;
+  /** 시즌 성적 기본 목표와 연속 미달 */
+  goal: { expectedRank: number | null; misses: number; rebuild: string | null };
+  /** 포스트시즌 대진과 진행 상황(정규시즌 종료 후) */
+  postseason: PostseasonView | null;
+  /** 결재 대기 건수(위임 제안 후 승인) */
+  pendingApprovals: number;
+  /** 결재 대기 안건(주 시작 팝업용) */
+  approvals: ApprovalView[];
+  upcomingEvents: CalendarEventView[];
+  keyPlayers: PlayerListItem[];
+  canAdvanceDay: boolean;
+}
+
+export type StatValue = number | null;
+
+export interface PlayerListItem {
+  id: number;
+  name: string;
+  club: ClubRef | null;
+  level: string;
+  position: string;
+  isPitcher: boolean;
+  age: number;
+  bats: string;
+  throws: string;
+  salaryWon: number;
+  /** 우리 구단 스카우트의 관찰 평가 (20~80) */
+  ratings: Record<string, number>;
+  stats: Record<string, StatValue>;
+  /** 이번 스토브리그 FA 자격 선수 */
+  faEligible: boolean;
+  /** 우리 구단 간판 선수 (첫 안건) */
+  franchise: boolean;
+  /** 현재 시즌 이후 남은 계약 연수 */
+  contractYears: number;
+}
+
+export interface PlayerDetailView extends PlayerListItem {
+  birthDate: string;
+  proSeasons: number;
+  faServiceYears: number;
+  battingStats: Record<string, StatValue> | null;
+  pitchingStats: Record<string, StatValue> | null;
+  observationNote: string;
+  /** 아마추어 개인 업적·드래프트 정보 */
+  honors: string[];
+  draftInfo: string | null;
+  retired: string | null;
+  /** 우리 구단 선수: 현재 능력치를 오차 없이 표시(D-078) */
+  exactRatings: boolean;
+  /** 통산·직전 3개 시즌·현재 시즌 기록(D-079) */
+  record: PlayerRecordView;
+}
+
+export interface PostseasonSeriesView {
+  key: string;
+  label: string;
+  high: ClubRef | null;
+  low: ClubRef | null;
+  highWins: number;
+  lowWins: number;
+  ties: number;
+  winsNeeded: number;
+  winner: ClubRef | null;
+  dates: string[];
+  note: string;
+}
+
+export interface PostseasonView {
+  season: number;
+  series: PostseasonSeriesView[];
+  champion: ClubRef | null;
+  userResult: string;
+}
+
+export interface DraftCandidateView {
+  id: number;
+  name: string;
+  level: string;
+  school: string;
+  grade: number;
+  position: string;
+  isPitcher: boolean;
+  age: number;
+  /** 스카우트 평가(현재 능력, 20~80) */
+  grade20to80: number;
+  /** 스카우트가 추정한 잠재력 등급 A~D (실제 잠재력 값이 아니라 우리 스카우트 관측에 오차를 더한 평가) */
+  scoutPotentialGrade: string;
+  honors: string[];
+  lastSeason: string;
+  /** 우리 지명 순위(없으면 null) */
+  priority: number | null;
+}
+
+export interface DraftView {
+  year: number;
+  date: string;
+  done: boolean;
+  candidates: DraftCandidateView[];
+  board: number[];
+  picks: Array<{ round: number; pick: number; club: ClubRef; name: string; school: string; position: string; mine: boolean }>;
+  myOrder: number | null;
+}
+
+/** 한 줄 기록. values의 키는 kind에 따라 타격(G PA AB H 2B 3B HR RBI R BB SO AVG OBP SLG OPS) 또는 투구(G GS W L SV IP ERA WHIP K BB HR K/9 BB/9) */
+export interface StatLineView {
+  label: string;
+  season: number | null;
+  club: string | null;
+  /** 게임 시작 이전 생성 기록 */
+  preGame: boolean;
+  values: Record<string, number | string | null>;
+}
+
+export interface PlayerRecordView {
+  kind: 'bat' | 'pit';
+  columns: string[];
+  current: StatLineView | null;
+  recent: StatLineView[];
+  career: StatLineView | null;
+}
+
+export interface TeamStatItem {
+  key: string;
+  label: string;
+  value: string;
+  /** 리그 10개 구단 중 순위(1 = 가장 좋음) */
+  rank: number | null;
+}
+
+export interface TeamHistoryRow {
+  season: number;
+  rank: number | null;
+  wins: number;
+  losses: number;
+  ties: number;
+  postseason: string;
+  preGame: boolean;
+  /** real: 실제 KBO 기록(~2025), start: 2026 실제 순위 + 시작 이전 생성 기록, game: 게임 안 기록 */
+  source: 'real' | 'start' | 'game';
+  /** 구단주 취임 이후 우리 구단이 이룬 시즌 */
+  mine: boolean;
+  AVG: string;
+  OPS: string;
+  HR: number | null;
+  runs: number | null;
+  ERA: string;
+  runsAllowed: number | null;
+}
+
+export interface AchievementView {
+  key: string;
+  title: string;
+  category: string;
+  description: string;
+  xp: number;
+  repeat: boolean;
+  achieved: Array<{ season: number; date: string; detail: string; xp: number }>;
+}
+
+export interface TeamRecordsView {
+  club: ClubRef;
+  statsSeason: number;
+  statsLabel: string;
+  batting: TeamStatItem[];
+  pitching: TeamStatItem[];
+  history: TeamHistoryRow[];
+  records: Array<{ label: string; holder: string; value: string; season: number; preGame: boolean; source: 'real' | 'start' | 'game'; mine: boolean }>;
+  /** 연표: 창단·우승·준우승·정규시즌 1위 */
+  timeline: Array<{ year: number; label: string; mine: boolean }>;
+  isUserClub: boolean;
+  /** 첫 시즌(전신 구단 포함) */
+  founded: number | null;
+  titles: { ks: number[]; regularFirst: number[] };
+  /** 구단 레전드(실제 통산 기록, 가상 이름) */
+  legends: Array<{ name: string; position: string; isPitcher: boolean; years: string; retiredNumber: number | null; career: Record<string, string> }>;
+  achievements: AchievementView[];
+  owner: { level: number; xp: number; xpToNext: number };
+}
+
+export interface BoxBatterLine {
+  playerId: number;
+  name: string;
+  position: string;
+  PA: number;
+  AB: number;
+  R: number;
+  H: number;
+  RBI: number;
+  HR: number;
+  BB: number;
+  SO: number;
+}
+
+export interface BoxPitcherLine {
+  playerId: number;
+  name: string;
+  IP: string;
+  H: number;
+  R: number;
+  ER: number;
+  BB: number;
+  K: number;
+  HR: number;
+  pitches: number;
+  decision: 'W' | 'L' | 'S' | '';
+}
+
+export interface BoxScoreView {
+  fixture: FixtureView;
+  lineScore: { home: number[]; away: number[] };
+  hits: { home: number; away: number };
+  batting: { home: BoxBatterLine[]; away: BoxBatterLine[] };
+  pitching: { home: BoxPitcherLine[]; away: BoxPitcherLine[] };
+  playByPlay: Array<{ inning: number; half: 'T' | 'B'; text: string }>;
+}
+
+export interface AdvanceResult {
+  daysProcessed: number;
+  gamesPlayed: number;
+  date: string;
+  phase: SeasonPhase;
+  stoppedReason: string | null;
+  autosaved: boolean;
+  elapsedMs: number;
+}
+
+export interface SaveSlotInfo {
+  slot: string;
+  name: string;
+  season: number;
+  date: string;
+  clubName: string;
+  savedAt: string;
+  schemaVersion: number;
+  sizeBytes: number;
+  backups: Array<{ index: number; savedAt: string; date: string }>;
+  status: 'ok' | 'corrupt' | 'newerVersion';
+  message?: string;
+}
+
+export interface AppStatus {
+  hasActiveGame: boolean;
+  recoverableSession: { saveName: string; date: string; clubName: string } | null;
+  platform: PlatformStatus;
+}
+
+export interface PlatformStatus {
+  steam: { mode: 'real' | 'mock'; initialized: boolean; detail: string };
+  appVersion: string;
+}
+
+export interface ContractOfferView {
+  years: number;
+  salaryWon: number;
+  bonusWon: number;
+  totalWon: number;
+}
+
+export interface FaRowView {
+  playerId: number;
+  name: string;
+  position: string;
+  isPitcher: boolean;
+  age: number;
+  /** 우리 스카우트 평가 평균(20~80) */
+  grade20to80: number;
+  originClub: ClubRef;
+  status: string;
+  statusKey: string;
+  faGrade: string | null;
+  priorSalaryWon: number;
+  demand: ContractOfferView;
+  /** 우리가 영입하면 원소속 구단에 낼 보상금 (우리 선수면 0) */
+  compensationWon: number;
+  /** 알려진 다른 구단의 관심 수(이번 주 진행 중인 제안) */
+  interest: number;
+  myOffer: { status: string; response: string; offer: ContractOfferView } | null;
+  signedClub: ClubRef | null;
+  signedContract: ContractOfferView | null;
+  franchise: boolean;
+  /** 운영팀 위임 진행 상황 */
+  delegation: { status: string; note: string } | null;
+}
+
+export interface SalaryTalkView {
+  playerId: number;
+  name: string;
+  position: string;
+  age: number;
+  priorWon: number;
+  demandWon: number;
+  offerWon: number;
+  status: string;
+  finalWon: number | null;
+  delegation: { status: string; note: string } | null;
+}
+
+export interface ForeignPlayerView {
+  playerId: number;
+  name: string;
+  origin: 'foreign' | 'asia';
+  position: string;
+  isPitcher: boolean;
+  age: number;
+  grade20to80: number;
+  salaryUsd: number;
+  /** 재계약·영입에 필요한 금액(달러) */
+  demandUsd: number;
+  contractYears: number;
+  renewals: number;
+  status: 'contracted' | 'expiring' | 'pool';
+}
+
+export interface MarketView {
+  /** 우리 구단 은퇴 고민 선수(설득 기한) */
+  retirementPending: Array<{ playerId: number; name: string; age: number; reason: string; deadline: string }>;
+  /** 운영팀 위임 모드와 기본 한도 */
+  ops: { mode: DelegationModeView; faMaxTotal: number; faMaxYears: number };
+  stage: string;
+  stageLabel: string;
+  marketOpen: boolean;
+  weeksSinceOpen: number;
+  cashWon: number;
+  payrollWon: number;
+  capWon: number;
+  rosterCount: number;
+  rosterMax: number;
+  apRemaining: number;
+  obligationsWon: number;
+  fa: FaRowView[];
+  salaryTalks: SalaryTalkView[];
+  foreign: { mine: ForeignPlayerView[]; pool: ForeignPlayerView[]; totalUsd: number; capUsd: number; rules: string[] };
+  releasable: Array<{ playerId: number; name: string; position: string; age: number; level: string; grade20to80: number; salaryWon: number; contractYears: number; origin: string }>;
+}
+
+export interface OfferResultView {
+  result: 'accept' | 'counter' | 'reject';
+  message: string;
+  counter?: ContractOfferView;
+}
+
+export type PlayerScope = 'mine' | 'all' | number;
+
+export interface PlayerQuery {
+  scope: PlayerScope;
+  group: 'all' | 'hitters' | 'pitchers';
+  level?: '1군' | '2군' | 'all';
+  search?: string;
+  sortKey?: string;
+  sortDesc?: boolean;
+}
+
+
+// ───────── 조직·위임 (2c) ─────────
+
+export type DelegationModeView = 'direct' | 'approve' | 'auto';
+
+export interface StaffView {
+  id: number;
+  name: string;
+  age: number;
+  title: string;
+  teamKey: string | null;
+  teamName: string | null;
+  part: string | null;
+  salaryWon: number;
+  contractYears: number;
+  /** 구단이 아는 평판(20~80). 실제 능력은 숨김 */
+  abilities: Array<{ key: string; label: string; value: number }>;
+  overall: number;
+}
+
+export interface TeamView {
+  key: string;
+  name: string;
+  division: '야구' | '사업';
+  leader: StaffView | null;
+  /** 팀장 공석일 때 겸임 중인 본부장 이름 */
+  actingName: string | null;
+  members: StaffView[];
+  memberLabel: string;
+  defaultMembers: number;
+  maxMembers: number;
+  weeklyWp: number;
+  upkeep: number;
+  usedWp: number;
+  remainingWp: number;
+  upkeepShort: boolean;
+  delegable: boolean;
+  mode: DelegationModeView;
+}
+
+export interface DelegationPolicyView {
+  team: string;
+  mode: DelegationModeView;
+  faMaxTotal: number;
+  faMaxYears: number;
+  salaryMaxRatioBp: number;
+  cashFloor: number;
+  hireMaxSalary: number;
+}
+
+export interface WorkTaskView {
+  id: number;
+  team: string;
+  teamName: string;
+  kind: 'fa' | 'salary' | 'hire';
+  kindLabel: string;
+  target: string;
+  status: string;
+  statusKey: string;
+  created: string;
+  updated: string;
+  note: string;
+}
+
+export interface ApprovalView {
+  id: number;
+  kind: 'fa' | 'salary' | 'hire';
+  teamName: string;
+  kindLabel: string;
+  date: string;
+  summary: string;
+}
+
+export interface OrganizationView {
+  weekLabel: string;
+  apRemaining: number;
+  cashWon: number;
+  staffPayrollWon: number;
+  headcount: number;
+  secretary: StaffView | null;
+  executives: StaffView[];
+  coaches: StaffView[];
+  coachSlots: Array<{ part: string; squad: string; coach: StaffView | null }>;
+  teams: TeamView[];
+  lookaheadDays: number;
+  scoutingNote: string;
+  candidates: StaffView[];
+  candidatesRefresh: string;
+  policies: DelegationPolicyView[];
+  tasks: WorkTaskView[];
+  approvals: ApprovalView[];
+  vacancies: Array<{ team: string; title: '팀장' | '팀원'; label: string }>;
+  apCosts: { hire: number; fire: number };
+  /** 구단주 결정: 모기업 긴급 지원, 리빌딩 선언 */
+  owner: { crisisSince: string | null; emergencyAvailable: boolean; rebuild: string | null; canRebuild: boolean; rebuildAp: number };
+}
+
+/** 요청 이름 → 입력·출력 형식. 화면이 보낼 수 있는 요청은 이것뿐이다. */
+export interface RequestMap {
+  'app.status': { payload: void; result: AppStatus };
+  'game.clubOptions': { payload: void; result: ClubOption[] };
+  'game.new': { payload: { clubId: number; saveName: string; seed?: string }; result: DashboardView };
+  'game.dashboard': { payload: void; result: DashboardView };
+  'game.advance': { payload: { mode: 'day' | 'week' | 'untilSeasonEnd' }; result: AdvanceResult };
+  'game.players': { payload: PlayerQuery; result: PlayerListItem[] };
+  'game.player': { payload: { playerId: number }; result: PlayerDetailView };
+  'game.standings': { payload: void; result: StandingView[] };
+  'game.schedule': { payload: { clubId?: number; month?: string }; result: FixtureView[] };
+  'game.boxScore': { payload: { fixtureId: number }; result: BoxScoreView };
+  'game.startNextSeason': { payload: void; result: DashboardView };
+  'game.inbox': { payload: void; result: InboxItemView[] };
+  'game.inboxRead': { payload: { id: number }; result: { ok: true } };
+  'game.finance': { payload: void; result: FinanceView };
+  'game.calendar': { payload: { from: string; to: string }; result: CalendarEventView[] };
+  'market.view': { payload: void; result: MarketView };
+  'market.faOffer': { payload: { playerId: number; years: number; salaryWon: number; bonusWon: number }; result: OfferResultView };
+  'market.salaryOffer': { payload: { playerId: number; offerWon: number }; result: OfferResultView };
+  'market.salaryAuto': { payload: void; result: OfferResultView };
+  'market.foreignOffer': { payload: { playerId: number; salaryUsd: number }; result: OfferResultView };
+  'market.release': { payload: { playerId: number }; result: OfferResultView };
+  'org.view': { payload: void; result: OrganizationView };
+  'org.hire': { payload: { staffId: number }; result: OfferResultView };
+  'org.fire': { payload: { staffId: number }; result: OfferResultView };
+  'org.setPolicy': { payload: DelegationPolicyView; result: OfferResultView };
+  'org.delegateFa': { payload: { playerId: number; maxTotalWon?: number; maxYears?: number }; result: OfferResultView };
+  'org.delegateSalary': { payload: { playerId?: number }; result: OfferResultView };
+  'org.delegateHire': { payload: { team: string; title: '팀장' | '팀원'; maxSalaryWon?: number }; result: OfferResultView };
+  'org.cancelTask': { payload: { taskId: number }; result: OfferResultView };
+  'org.approve': { payload: { approvalId: number }; result: OfferResultView };
+  'org.reject': { payload: { approvalId: number }; result: OfferResultView };
+  'org.decideMany': { payload: { approvalIds: number[]; approve: boolean }; result: OfferResultView };
+  'game.team': { payload: void; result: TeamRecordsView };
+  'game.hallOfFame': { payload: { clubId: number }; result: TeamRecordsView };
+  'draft.view': { payload: void; result: DraftView };
+  'draft.setBoard': { payload: { ids: number[] }; result: DraftView };
+  'roster.persuade': { payload: { playerId: number }; result: OfferResultView };
+  'owner.emergency': { payload: void; result: OfferResultView };
+  'owner.rebuild': { payload: void; result: OfferResultView };
+  'save.list': { payload: void; result: SaveSlotInfo[] };
+  'save.save': { payload: { slot: string }; result: SaveSlotInfo };
+  'save.load': { payload: { slot: string; backupIndex?: number }; result: DashboardView };
+  'save.resumeSession': { payload: void; result: DashboardView };
+}
+
+export type RequestName = keyof RequestMap;
+export const REQUEST_NAMES: readonly RequestName[] = [
+  'app.status',
+  'game.clubOptions',
+  'game.new',
+  'game.dashboard',
+  'game.advance',
+  'game.players',
+  'game.player',
+  'game.standings',
+  'game.schedule',
+  'game.boxScore',
+  'game.startNextSeason',
+  'game.inbox',
+  'game.inboxRead',
+  'game.finance',
+  'game.calendar',
+  'market.view',
+  'market.faOffer',
+  'market.salaryOffer',
+  'market.salaryAuto',
+  'market.foreignOffer',
+  'market.release',
+  'org.view',
+  'org.hire',
+  'org.fire',
+  'org.setPolicy',
+  'org.delegateFa',
+  'org.delegateSalary',
+  'org.delegateHire',
+  'org.cancelTask',
+  'org.approve',
+  'org.reject',
+  'org.decideMany',
+  'game.team',
+  'game.hallOfFame',
+  'draft.view',
+  'draft.setBoard',
+  'roster.persuade',
+  'owner.emergency',
+  'owner.rebuild',
+  'save.list',
+  'save.save',
+  'save.load',
+  'save.resumeSession',
+];
+
+export interface ProgressEvent {
+  type: 'advanceProgress';
+  date: string;
+  daysProcessed: number;
+  gamesPlayed: number;
+}
+
+export type ApiResponse<T> = { ok: true; result: T } | { ok: false; error: { code: string; message: string } };
+
+/** 사용자에게 보여줄 오류. code로 화면이 복구 경로를 고른다. */
+export class GameError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}

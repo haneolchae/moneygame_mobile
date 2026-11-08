@@ -1,0 +1,22 @@
+# 의존성·빌드 산출물
+node_modules/
+dist/
+out/
+*.tsbuildinfo
+.vite/
+
+# 세이브·DB 파일 (개발 중 생성)
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+saves/
+
+# 검증·장기 실행 임시 파일 (리포트 .md는 기록으로 남긴다)
+verify-reports/logs/
+.sim-output/
+*.log
+
+# Steam SDK·로컬 설정
+steamworks_sdk/
+steam_appid.txt
