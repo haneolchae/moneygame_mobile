@@ -164,3 +164,8 @@ export const FOREIGN = {
 
 export const usdToWon = (usd: number) => usd * FOREIGN.usdKrw;
 export const wonToUsd = (won: number) => Math.round(won / FOREIGN.usdKrw);
+
+/** ASSUMPTION(D-095): 마감일 있는 의무 안건(40인 초과 정리). 운영팀은 마감 actWindowDays일 전부터 정리안을 실행·상정한다. */
+export const ROSTER_OBLIGATION = {
+  actWindowDays: 7,
+} as const;

@@ -252,6 +252,8 @@ export const TASK_WP = {
   salaryTalk: 4,
   foreignContract: 10,
   hire: 6,
+  // ASSUMPTION(D-095): 40인 초과 명단 정리안 준비
+  rosterTrim: 2,
 } as const;
 
 /** 스카우트팀 평가 정확도: 팀장·스카우트의 전문성 평균으로 관찰 오차 배율을 정한다(06 문서 연결, D-076). */

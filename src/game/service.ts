@@ -282,8 +282,6 @@ export class GameService {
     }
     const date = meta.currentDate;
     if (this.repo.isDayProcessed(date)) throw new GameError('DAY_ALREADY_PROCESSED', `${date}는 이미 처리된 날짜입니다.`);
-    const blocking = this.market.blockingIssue(meta, date);
-    if (blocking) throw new GameError('ROSTER_OVER_LIMIT', blocking);
     // 선수 시장 처리와 하루 결과는 하나의 트랜잭션으로 반영한다.
     return this.repo.transaction(() => this.processDay(meta, date));
   }
@@ -410,11 +408,6 @@ export class GameService {
     const startPhase = this.phase();
     while (this.phase() !== 'seasonComplete') {
       const before = this.meta();
-      const blocking = this.market.blockingIssue(before, before.currentDate);
-      if (blocking) {
-        stoppedReason = blocking;
-        break;
-      }
       const { gamesPlayed: g } = this.advanceOneDay();
       daysProcessed++;
       gamesPlayed += g;
@@ -585,7 +578,9 @@ export class GameService {
     const soon = this.repo.getCalendarEvents(meta.currentDate, addDays(meta.currentDate, lookahead));
     for (const e of soon) {
       const level: TaskView['level'] = e.kind === 'reserveList' || e.kind === 'campRoster' ? '필수' : '정보';
-      out.push({ title: e.title, detail: e.kind === 'reserveList' ? '보유 선수를 40명 이하로 맞춰야 합니다. 현재 40명이라 추가 조치는 필요 없습니다.' : e.body, due: e.date, level, target: 'schedule' });
+      const over = this.repo.getPlayers().filter((p) => p.clubId === meta.userClubId).length - LEAGUE.rosterMax;
+      const rosterNote = over > 0 ? `현재 ${over}명 초과입니다.` : '현재 40명 이하라 추가 조치는 필요 없습니다.';
+      out.push({ title: e.title, detail: e.kind === 'reserveList' || e.kind === 'campRoster' ? `보유 선수를 40명 이하로 맞춰야 합니다. ${rosterNote}` : e.body, due: e.date, level, target: 'schedule' });
     }
     if (meta.mode === 'stove') {
       const off = Number(meta.kDate.slice(0, 4));
@@ -594,7 +589,18 @@ export class GameService {
       const fa = this.repo.getFa(off);
       const star = fa.find((e) => e.originClub === meta.userClubId && players.find((p) => p.id === e.playerId)?.career.franchise);
       const starP = star ? players.find((p) => p.id === star.playerId) : players.find((p) => p.career.franchise && p.clubId === meta.userClubId);
-      if (roster.length > LEAGUE.rosterMax) out.unshift({ title: `선수단 ${roster.length}명 → 40명 이하로 정리`, detail: '보류 명단(11/30)·캠프 명단(1/31) 전에 방출할 선수를 정해야 진행할 수 있습니다.', due: null, level: '필수', target: 'market' });
+      // 마감일 있는 의무 안건(D-095): 어떤 위임 모드든 마감일까지 미처리면 운영팀 제안안을 자동 적용한다.
+      const duty = this.repo.getTasks({ status: ['queued', 'waiting'], kind: 'roster' })[0];
+      if (roster.length > LEAGUE.rosterMax && duty) {
+        const plan = this.org.rosterProposal(meta);
+        out.unshift({
+          title: `선수단 ${roster.length}명 → 40명 이하로 정리 (의무)`,
+          detail: `${String(duty.params.deadline)}까지 직접 방출하지 않으면 운영팀 제안안(${plan.names.join(', ')})을 자동 적용합니다. 운영팀: ${duty.note}`,
+          due: String(duty.params.deadline),
+          level: '필수',
+          target: 'market',
+        });
+      }
       if (starP && (!star || star.status === 'eligible' || star.status === 'applied' || star.status === 'approved')) {
         const open = this.market.marketOpen(meta);
         const interest = star ? this.repo.getOffers({ playerId: star.playerId, status: 'pending', kind: 'fa' }).filter((o) => o.clubId !== meta.userClubId).length : 0;
@@ -937,7 +943,7 @@ export class GameService {
     });
     const coaches = staff.filter((s) => ['감독', '수석코치', '코치'].includes(s.title));
     const players = new Map(this.repo.getPlayers().map((p) => [p.id, p]));
-    const kindLabel: Record<string, string> = { fa: 'FA 협상', salary: '연봉 협상', hire: '채용' };
+    const kindLabel: Record<string, string> = { fa: 'FA 협상', salary: '연봉 협상', hire: '채용', roster: '40인 명단 정리(의무)' };
     const tasks: WorkTaskView[] = this.repo
       .getTasks({})
       .reverse()
@@ -948,7 +954,7 @@ export class GameService {
         teamName: teamDef(t.team).name,
         kind: t.kind,
         kindLabel: kindLabel[t.kind] ?? t.kind,
-        target: t.kind === 'hire' ? `${teamDef(t.params.team as TeamKey).name} ${String(t.params.title)}` : (players.get(t.targetId)?.name ?? `#${t.targetId}`),
+        target: t.kind === 'hire' ? `${teamDef(t.params.team as TeamKey).name} ${String(t.params.title)}` : t.kind === 'roster' ? `우리 선수단 (마감 ${String(t.params.deadline)})` : (players.get(t.targetId)?.name ?? `#${t.targetId}`),
         status: TASK_STATUS_LABEL[t.status] ?? t.status,
         statusKey: t.status,
         created: t.created,
@@ -997,7 +1003,7 @@ export class GameService {
   }
 
   private approvalViews(): ApprovalView[] {
-    const kindLabel: Record<string, string> = { fa: 'FA 협상', salary: '연봉 협상', hire: '채용' };
+    const kindLabel: Record<string, string> = { fa: 'FA 협상', salary: '연봉 협상', hire: '채용', roster: '40인 명단 정리(의무)' };
     return this.org.approvals().map((a) => ({ id: a.id, kind: a.kind, teamName: teamDef(a.team).name, kindLabel: kindLabel[a.kind] ?? a.kind, date: a.date, summary: a.summary }));
   }
 

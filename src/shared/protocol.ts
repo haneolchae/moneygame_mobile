@@ -557,7 +557,7 @@ export interface WorkTaskView {
   id: number;
   team: string;
   teamName: string;
-  kind: 'fa' | 'salary' | 'hire';
+  kind: 'fa' | 'salary' | 'hire' | 'roster';
   kindLabel: string;
   target: string;
   status: string;
@@ -569,7 +569,7 @@ export interface WorkTaskView {
 
 export interface ApprovalView {
   id: number;
-  kind: 'fa' | 'salary' | 'hire';
+  kind: 'fa' | 'salary' | 'hire' | 'roster';
   teamName: string;
   kindLabel: string;
   date: string;

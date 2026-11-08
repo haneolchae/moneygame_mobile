@@ -212,14 +212,15 @@ export interface DelegationPolicy {
   hireMaxSalary: number;
 }
 
-export type WorkKind = 'fa' | 'salary' | 'hire';
+/** roster: 40인 초과 정리 같은 마감일 있는 의무 안건(D-095) */
+export type WorkKind = 'fa' | 'salary' | 'hire' | 'roster';
 export type WorkStatus = 'queued' | 'waiting' | 'done' | 'failed' | 'cancelled';
 
 export interface WorkTask {
   id: number;
   team: TeamKey;
   kind: WorkKind;
-  /** fa·salary: 선수 ID, hire: 0 */
+  /** fa·salary: 선수 ID, hire·roster: 0 */
   targetId: number;
   params: Record<string, unknown>;
   status: WorkStatus;

@@ -1,6 +1,7 @@
-// 조직·위임 (03 문서, D-020~D-028, D-076): 직원 채용·해고, 팀 처리량, 위임 정책, 업무 큐, 결재.
+// 조직·위임 (03 문서, D-020~D-028, D-076, D-095): 직원 채용·해고, 팀 처리량, 위임 정책, 업무 큐, 결재, 마감일 있는 의무 안건.
 // 위임 실행은 Market의 같은 도메인 로직을 호출하고, 비용 출처(행동력 대신 처리량)만 다르다.
-import { weekday, type GameDate } from '../engine/calendar';
+import { diffDays, weekday, type GameDate } from '../engine/calendar';
+import { LEAGUE, ROSTER_OBLIGATION } from '../engine/config';
 import { compensationFor, offerTotal, type ContractOffer } from '../engine/contracts';
 import type { LedgerEntry } from '../engine/finance';
 import { EOK } from '../engine/money';
@@ -214,9 +215,13 @@ export class Organization {
     // 위임 모드로 바꾸면 결재 대기 안건을 새 정책으로 다시 준비한다.
     if (p.mode !== 'direct') for (const t of this.repo.getTasks({ status: ['waiting'] }).filter((x) => x.team === p.team)) this.requeue(t, meta.currentDate);
     // 직접 운영으로 바꾸면 대기 중인 위임 업무를 멈춘다. 이미 맺은 계약은 되돌리지 않는다.
+    // 마감일 있는 의무 안건(D-095)은 취소하지 않고 비서 할 일로 남긴다(마감일 자동 적용은 그대로).
     if (p.mode === 'direct') {
-      for (const t of this.repo.getTasks({ status: ['queued', 'waiting'] }).filter((x) => x.team === p.team)) this.repo.updateTask(t.id, { status: 'cancelled', note: '직접 운영으로 전환', updated: meta.currentDate });
       for (const a of this.repo.getApprovals('pending').filter((x) => x.team === p.team)) this.repo.updateApproval(a.id, 'expired');
+      for (const t of this.repo.getTasks({ status: ['queued', 'waiting'] }).filter((x) => x.team === p.team)) {
+        if (t.kind === 'roster') this.repo.updateTask(t.id, { status: 'queued', note: '직접 운영 — 비서 할 일로 등록', updated: meta.currentDate });
+        else this.repo.updateTask(t.id, { status: 'cancelled', note: '직접 운영으로 전환', updated: meta.currentDate });
+      }
     }
     return { result: 'accept' as const, message: `${teamDef(p.team).name} 위임 정책을 저장했습니다.` };
   }
@@ -288,6 +293,7 @@ export class Organization {
   cancelTask(meta: GameMeta, taskId: number) {
     const t = this.repo.getTasks({ status: ['queued', 'waiting'] }).find((x) => x.id === taskId);
     if (!t) throw new GameError('NOT_AVAILABLE', '진행 중인 업무가 아닙니다.');
+    if (t.kind === 'roster') throw new GameError('OBLIGATION', '마감일이 있는 의무 안건은 취소할 수 없습니다. 직접 방출해 40명 이하로 맞추면 안건이 끝납니다.');
     this.repo.transaction(() => {
       this.repo.updateTask(t.id, { status: 'cancelled', note: '구단주 취소', updated: meta.currentDate });
       for (const a of this.repo.getApprovals('pending').filter((x) => x.taskId === t.id)) this.repo.updateApproval(a.id, 'rejected');
@@ -305,10 +311,11 @@ export class Organization {
     this.ensureWeek(meta, weekId);
     if (weekday(date) === 1) this.expireApprovals(date);
     this.proposeOwnAgenda(meta, date);
+    this.enforceRosterDeadline(meta, date, inbox);
     const staff = this.staff(meta.userClubId);
-    // 큐 우선순위(03 문서): FA → 연봉 협상 → 채용. FA는 간판 선수, 큰 계약 순.
+    // 큐 우선순위(03 문서): 마감 의무 안건 → FA → 연봉 협상 → 채용. FA는 간판 선수, 큰 계약 순.
     const players = new Map(this.repo.getPlayers().map((p) => [p.id, p]));
-    const kindOrder: Record<string, number> = { fa: 0, salary: 1, hire: 2 };
+    const kindOrder: Record<string, number> = { roster: -1, fa: 0, salary: 1, hire: 2 };
     const weight = (t: WorkTask) => (t.kind === 'fa' ? (players.get(t.targetId)?.career.franchise ? 1e15 : 0) + Number(t.params.maxTotal ?? 0) : 0);
     const queue = this.repo.getTasks({ status: ['queued'] }).sort((a, b) => kindOrder[a.kind]! - kindOrder[b.kind]! || weight(b) - weight(a) || a.id - b.id);
     for (const t of queue) {
@@ -323,6 +330,7 @@ export class Organization {
         if (t.kind === 'fa') this.runFa(meta, date, weekId, t, pol, d, inbox);
         else if (t.kind === 'salary') this.runSalary(meta, date, weekId, t, pol, d, inbox);
         else if (t.kind === 'hire') this.runHire(meta, date, weekId, t, pol);
+        else if (t.kind === 'roster') this.runRoster(meta, date, weekId, t, pol, inbox);
       } catch (e) {
         // 실행 시점 검증 실패(규정·현금·자리)는 업무 실패로 기록하고 다른 업무는 계속한다.
         this.repo.updateTask(t.id, { status: 'failed', note: e instanceof GameError ? e.message : String(e), updated: date });
@@ -336,6 +344,7 @@ export class Organization {
    * 우리 FA 잔류(시장 개장일), 보류 선수 연봉 협상(12/1), 팀장 공석 채용(게임 첫날·매달 1일).
    */
   private proposeOwnAgenda(meta: GameMeta, date: GameDate) {
+    this.proposeRosterObligation(meta, date);
     const ops = this.policy('ops');
     const off = Number(meta.kDate.slice(0, 4));
     const sd = stoveDates(meta.kDate);
@@ -371,7 +380,8 @@ export class Organization {
     for (const a of this.repo.getApprovals('pending')) {
       if (weekIdFor(a.date) === weekId) continue;
       this.repo.updateApproval(a.id, 'expired');
-      this.repo.updateTask(a.taskId, { status: 'cancelled', note: '결재 기한(주) 경과', updated: date });
+      if (a.kind === 'roster') this.repo.updateTask(a.taskId, { status: 'queued', note: '결재 기한(주) 경과 — 정리안을 다시 상정', updated: date });
+      else this.repo.updateTask(a.taskId, { status: 'cancelled', note: '결재 기한(주) 경과', updated: date });
     }
   }
 
@@ -517,6 +527,96 @@ export class Organization {
     this.repo.updateTask(t.id, { status: 'queued', params, note: r.message, updated: date });
   }
 
+  // ───────── 마감일 있는 의무 안건: 40인 초과 정리 (D-095) ─────────
+
+  /** 다음 명단 마감일(보류선수 명단 → 캠프 명단). 둘 다 지났으면 오늘 */
+  private rosterDeadline(meta: GameMeta, date: GameDate): GameDate {
+    const sd = stoveDates(meta.kDate);
+    return [sd.reserveList, sd.campRoster].find((d) => d >= date) ?? date;
+  }
+
+  private activeRosterTask(): WorkTask | undefined {
+    return this.repo.getTasks({ status: ['queued', 'waiting'], kind: 'roster' })[0];
+  }
+
+  /** 스토브리그에 우리 선수단이 40명을 넘으면 운영팀이 의무 안건을 만든다(위임 모드와 무관). 40명 이하가 되면 안건을 닫는다. */
+  private proposeRosterObligation(meta: GameMeta, date: GameDate) {
+    const active = this.activeRosterTask();
+    // 시즌 중에는 영입 단계에서 40명을 막으므로 매일 선수 목록을 읽지 않는다.
+    if (meta.mode !== 'stove' && !active) return;
+    const count = this.repo.getPlayers().filter((p) => p.clubId === meta.userClubId).length;
+    if (count <= LEAGUE.rosterMax) {
+      if (active) {
+        for (const a of this.repo.getApprovals('pending').filter((x) => x.taskId === active.id)) this.repo.updateApproval(a.id, 'expired');
+        this.repo.updateTask(active.id, { status: 'done', note: `선수단 ${count}명 — 40명 이하가 되어 안건 종료`, updated: date });
+      }
+      return;
+    }
+    if (active || meta.mode !== 'stove') return;
+    const deadline = this.rosterDeadline(meta, date);
+    this.repo.insertTask({ team: 'ops', kind: 'roster', targetId: 0, params: { deadline, hold: false }, status: 'queued', created: date, updated: date, note: `선수단 ${count}명 → 40명 이하로 정리 (마감 ${deadline})` });
+  }
+
+  /** 운영팀 정리안: AI 구단 명단 정리와 같은 규칙(Market.trimPlan) */
+  rosterProposal(meta: GameMeta): { ids: number[]; names: string[] } {
+    const plan = this.market.trimPlan(meta, meta.userClubId);
+    return { ids: plan.map((p) => p.id), names: plan.map((p) => p.name) };
+  }
+
+  /** 위임 실행: 마감 전 일정 기간 안에 들어오면 정리안을 실행(완전 위임)하거나 상정(승인)한다. 직접 운영은 큐에서 건너뛴다. */
+  private runRoster(meta: GameMeta, date: GameDate, weekId: string, t: WorkTask, pol: DelegationPolicy, inbox: InboxMessage[]) {
+    const params = t.params as { deadline: GameDate; hold?: boolean };
+    if (params.hold) return;
+    if (diffDays(params.deadline, date) > ROSTER_OBLIGATION.actWindowDays) {
+      const note = `마감 ${params.deadline} — ${ROSTER_OBLIGATION.actWindowDays}일 전부터 정리안 준비`;
+      if (t.note !== note) this.repo.updateTask(t.id, { note, updated: date });
+      return;
+    }
+    const plan = this.rosterProposal({ ...meta, currentDate: date });
+    if (plan.ids.length === 0) {
+      this.repo.updateTask(t.id, { status: 'done', note: '이미 40명 이하', updated: date });
+      return;
+    }
+    if (!this.spendTaskWp(weekId, 'ops', TASK_WP.rosterTrim, t, date)) return;
+    if (pol.mode === 'approve') {
+      const summary = `40인 명단 정리: ${plan.ids.length}명 방출안 (${plan.names.join(', ')}) — 마감 ${params.deadline}`;
+      this.repo.insertApproval({ taskId: t.id, team: 'ops', kind: 'roster', date, summary, payload: { playerIds: plan.ids, names: plan.names }, status: 'pending' });
+      this.repo.updateTask(t.id, { status: 'waiting', note: '명단 정리안 결재 대기', updated: date });
+      return;
+    }
+    const notes = this.market.releaseForRoster({ ...meta, currentDate: date }, date, meta.userClubId, plan.ids);
+    inbox.push({ date, kind: 'report', sender: '운영팀', title: `위임 처리: 40인 명단 정리 (${notes.length}명 방출)`, body: `완전 위임 정책에 따라 계약이 끝난 선수, 평가가 낮은 선수 순으로 정리했습니다.\n${notes.join('\n')}` });
+    this.repo.updateTask(t.id, { status: 'done', note: `위임 정리 ${notes.length}명 방출`, updated: date });
+  }
+
+  /** 승인된 정리안 실행. 실행 시점의 초과 인원만큼만 방출한다. */
+  private executeRosterApproval(meta: GameMeta, t: WorkTask, playerIds: number[], inbox: InboxMessage[]) {
+    const count = this.repo.getPlayers().filter((p) => p.clubId === meta.userClubId).length;
+    const ids = playerIds.slice(0, Math.max(0, count - LEAGUE.rosterMax));
+    const notes = this.market.releaseForRoster(meta, meta.currentDate, meta.userClubId, ids);
+    inbox.push({ date: meta.currentDate, kind: 'report', sender: '운영팀', title: `결재 처리: 40인 명단 정리 (${notes.length}명 방출)`, body: notes.join('\n') || '이미 40명 이하라 방출하지 않았습니다.' });
+    const after = this.repo.getPlayers().filter((p) => p.clubId === meta.userClubId).length;
+    if (after <= LEAGUE.rosterMax) this.repo.updateTask(t.id, { status: 'done', note: `승인 정리 ${notes.length}명 방출`, updated: meta.currentDate });
+    else this.repo.updateTask(t.id, { status: 'queued', note: `아직 ${after}명 — 정리안을 다시 준비`, updated: meta.currentDate });
+  }
+
+  /** 마감일까지 처리되지 않으면 어떤 모드든 운영팀 제안안을 자동 적용하고 구단주에게 알린다(D-095). */
+  private enforceRosterDeadline(meta: GameMeta, date: GameDate, inbox: InboxMessage[]) {
+    const t = this.activeRosterTask();
+    if (!t || String(t.params.deadline) > date) return;
+    for (const a of this.repo.getApprovals('pending').filter((x) => x.taskId === t.id)) this.repo.updateApproval(a.id, 'expired');
+    const plan = this.rosterProposal({ ...meta, currentDate: date });
+    const notes = this.market.releaseForRoster({ ...meta, currentDate: date }, date, meta.userClubId, plan.ids);
+    inbox.push({
+      date,
+      kind: 'report',
+      sender: '운영팀',
+      title: `마감 자동 적용: 40인 명단 정리 (${notes.length}명 방출)`,
+      body: `명단 마감일(${date})까지 정리되지 않아 운영팀 제안안을 자동 적용했습니다.\n${notes.join('\n')}`,
+    });
+    this.repo.updateTask(t.id, { status: 'done', note: `마감 자동 적용 ${notes.length}명 방출`, updated: date });
+  }
+
   private runHire(meta: GameMeta, date: GameDate, weekId: string, t: WorkTask, pol: DelegationPolicy) {
     const params = t.params as { team: TeamKey; title: '팀장' | '팀원'; maxSalary: number };
     const mine = this.staff(meta.userClubId);
@@ -572,6 +672,8 @@ export class Organization {
         const offer = Number(a.payload.offer);
         const talk = this.repo.getSalaryTalks(Number(meta.kDate.slice(0, 4))).find((x) => x.playerId === t.targetId);
         this.executeSalary(meta, meta.currentDate, t, t.params, offer, talk ? offer >= round1m(talk.demand * (pol.salaryMaxRatioBp / 10_000)) : true, inbox);
+      } else if (a.kind === 'roster') {
+        this.executeRosterApproval(meta, t, a.payload.playerIds as number[], inbox);
       } else {
         const c = this.repo.getStaff(null).find((s) => s.id === Number(a.payload.candidateId));
         if (!c || c.name !== a.payload.name) throw new GameError('NOT_AVAILABLE', '후보가 더 이상 채용 시장에 없습니다.');
@@ -603,6 +705,16 @@ export class Organization {
   reject(meta: GameMeta, approvalId: number) {
     const a = this.repo.getApprovals('pending').find((x) => x.id === approvalId);
     if (!a) throw new GameError('NOT_AVAILABLE', '결재 대기 중인 안건이 아닙니다.');
+    if (a.kind === 'roster') {
+      // 의무 안건은 반려해도 사라지지 않는다. 더 상정하지 않고, 마감일까지 직접 정리하지 않으면 제안안을 자동 적용한다(D-095).
+      const t = this.repo.getTasks({ status: ['waiting', 'queued'] }).find((x) => x.id === a.taskId);
+      const deadline = String(t?.params.deadline ?? '');
+      this.repo.transaction(() => {
+        this.repo.updateApproval(a.id, 'rejected');
+        if (t) this.repo.updateTask(t.id, { status: 'queued', params: { ...t.params, hold: true }, note: `반려 — ${deadline}까지 직접 정리하지 않으면 운영팀 제안안을 자동 적용`, updated: meta.currentDate });
+      });
+      return { result: 'accept' as const, message: `반려했습니다. ${deadline}까지 40명 이하로 직접 정리하지 않으면 운영팀 제안안이 자동 적용됩니다.` };
+    }
     this.repo.transaction(() => {
       this.repo.updateApproval(a.id, 'rejected');
       this.repo.updateTask(a.taskId, { status: 'cancelled', note: '구단주 반려', updated: meta.currentDate });

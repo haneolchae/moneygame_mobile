@@ -285,17 +285,43 @@ export class Market {
     return `${p.name} ${reason}.${text}`;
   }
 
+  /**
+   * 40인 초과 정리안(D-095): 계약이 끝난 선수 먼저, 그다음 구단 자체 평가가 낮은 국내 선수 순으로 초과 인원만큼 고른다.
+   * AI 구단 명단 정리와 우리 운영팀 제안안이 같은 규칙을 쓴다. FA 시장에 나간 선수는 방출할 수 없어 뺀다.
+   */
+  trimPlan(meta: GameMeta, clubId: ClubId): PlayerTruth[] {
+    const roster = this.players().filter((p) => p.clubId === clubId);
+    const excess = roster.length - LEAGUE.rosterMax;
+    if (excess <= 0) return [];
+    const onMarket = new Set(this.repo.getFa(this.offseason(meta)).filter((e) => e.status === 'applied' || e.status === 'approved').map((e) => e.playerId));
+    return roster
+      .filter((p) => p.origin === 'domestic' && !onMarket.has(p.id))
+      .sort((a, b) => (a.contractYears === 0 ? 0 : 1) - (b.contractYears === 0 ? 0 : 1) || clubEstimate(meta.seed, clubId, a) - clubEstimate(meta.seed, clubId, b) || a.id - b.id)
+      .slice(0, excess);
+  }
+
+  /** 명단 정리 방출(D-095): 정리안의 선수를 방출하고 진행 중인 연봉 협상을 닫는다. 결과 문장 목록을 돌려준다. */
+  releaseForRoster(meta: GameMeta, date: GameDate, clubId: ClubId, playerIds: number[]): string[] {
+    const byId = new Map(this.players().map((p) => [p.id, p]));
+    const notes: string[] = [];
+    for (const id of playerIds) {
+      const p = byId.get(id);
+      if (!p || p.clubId !== clubId) continue;
+      notes.push(this.release(meta, date, p, '방출'));
+      const talks = this.repo.getSalaryTalks(this.offseason(meta)).filter((t) => t.playerId === id && t.status === 'open');
+      for (const t of talks) t.status = 'agreed';
+      if (talks.length) this.repo.saveSalaryTalks(talks);
+    }
+    return notes;
+  }
+
+  /** AI 구단 명단 정리. 우리 구단은 운영팀 의무 안건으로 따로 처리한다(D-095, Organization). */
   private aiPruneRosters(meta: GameMeta, date: GameDate, out: MarketDayOutput, title = '보류선수 명단 확정'): void {
     const notes: string[] = [];
     for (const club of this.clubs.values()) {
       if (club.id === meta.userClubId) continue;
-      const roster = this.players().filter((p) => p.clubId === club.id);
-      const excess = roster.length - LEAGUE.rosterMax;
-      if (excess <= 0) continue;
-      const order = roster
-        .filter((p) => p.origin === 'domestic')
-        .sort((a, b) => (a.contractYears === 0 ? 0 : 1) - (b.contractYears === 0 ? 0 : 1) || clubEstimate(meta.seed, club.id, a) - clubEstimate(meta.seed, club.id, b) || a.id - b.id);
-      for (const p of order.slice(0, excess)) notes.push(`${club.shortName}: ${this.release(meta, date, p, '방출')}`);
+      const plan = this.trimPlan(meta, club.id);
+      for (const line of this.releaseForRoster(meta, date, club.id, plan.map((p) => p.id))) notes.push(`${club.shortName}: ${line}`);
     }
     out.inbox.push({ date, kind: 'news', sender: 'KBO 소식', title, body: notes.length ? `명단 정리로 방출된 선수:\n${notes.join('\n')}` : '모든 구단이 40명 이하로 보류 명단을 확정했습니다.' });
   }
@@ -603,14 +629,6 @@ export class Market {
   }
 
   /** 스토브리그에서 넘어가면 안 되는 상태: 보류 명단(11/30)·캠프 명단(1/31) 전 40명 초과 */
-  blockingIssue(meta: GameMeta, date: GameDate): string | null {
-    if (meta.mode !== 'stove') return null;
-    const d = stoveDates(meta.kDate);
-    if (date !== d.reserveList && date !== d.campRoster) return null;
-    const n = this.players().filter((p) => p.clubId === meta.userClubId).length;
-    return n > LEAGUE.rosterMax ? `${date === d.reserveList ? '보류선수 명단' : '캠프 명단'} 확정 전에 선수단을 40명 이하로 줄여야 합니다(현재 ${n}명). [계약·이적]에서 방출할 선수를 정하세요.` : null;
-  }
-
   nextDay(date: GameDate) {
     return addDays(date, 1);
   }

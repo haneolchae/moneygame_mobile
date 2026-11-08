@@ -156,29 +156,39 @@ describe('스토브리그 선수 시장', () => {
     d.close();
   });
 
-  it('40명을 넘기면 보류 명단 전에 진행이 멈추고, 방출하면 계속된다. 남은 계약 연봉은 계속 지급된다', async () => {
+  it('40명 초과(직접 운영): 진행은 멈추지 않고 비서 할 일로 올라오며, 직접 방출하면 안건이 끝난다. 남은 계약 연봉은 계속 지급된다 (D-095)', async () => {
     const d = makeDispatcher(newDir());
     await call(d, 'game.new', { clubId: 6, saveName: 't', seed: 'roster' });
+    const ops = (await call(d, 'org.view')).policies.find((p) => p.team === 'ops')!;
+    await call(d, 'org.setPolicy', { ...ops, mode: 'direct' });
     await weeks(d, 2);
     const repo = d.saves.repository();
-    await call(d, 'game.advance', { mode: 'week' }); // 11/23 → 11/30(월)
-    expect((await call(d, 'game.dashboard')).date).toBe('2026-11-30');
     // 해외 풀 선수를 강제로 넣어 41명을 만든다 (규정 검사를 우회하는 테스트용 조작)
     const pool = repo.getPlayers().filter((p) => p.clubId === null && p.origin === 'foreign');
-    const need = 41 - repo.getPlayers().filter((p) => p.clubId === 6).length;
-    const extras = pool.slice(0, need).map((p) => ({ ...p, clubId: 6, origin: 'domestic' as const }));
-    repo.savePlayers(extras);
-    const r = await call(d, 'game.advance', { mode: 'week' }); // 보류 명단 확정일을 처리하기 전에 멈춘다
-    expect(r.daysProcessed).toBe(0);
-    expect(r.stoppedReason).toContain('40명 이하');
-    expect((await call(d, 'game.dashboard')).tasks[0]?.level).toBe('필수');
+    // 우리 FA가 다른 구단으로 떠나면 자연히 줄어들 수 있어 넉넉히 넘긴다.
+    const need = 44 - repo.getPlayers().filter((p) => p.clubId === 6).length;
+    repo.savePlayers(pool.slice(0, need).map((p) => ({ ...p, clubId: 6, origin: 'domestic' as const })));
+    const r = await call(d, 'game.advance', { mode: 'week' }); // 11/23 → 11/30(월), 차단 없이 진행
+    expect(r.daysProcessed).toBe(7);
+    expect((await call(d, 'game.dashboard')).date).toBe('2026-11-30');
+    const todo = (await call(d, 'game.dashboard')).tasks.find((x) => x.title.includes('40명 이하로 정리'))!;
+    expect(todo.level).toBe('필수');
+    expect(todo.due).toBe('2026-11-30');
+    expect(todo.detail).toContain('자동 적용');
+    expect(repo.getTasks({ kind: 'roster' })[0]!.status).toBe('queued'); // 직접 운영: 운영팀이 먼저 방출하지 않는다
+    // 구단주가 직접 방출해 40명으로 맞춘다. 남은 계약 연봉은 계속 지급된다.
     const v = await call(d, 'market.view');
     const withYears = v.releasable.find((p) => p.contractYears > 0 && p.origin === 'domestic')!;
     const rel = await call(d, 'market.release', { playerId: withYears.playerId });
     expect(rel.result).toBe('accept');
     expect(repo.getObligations().some((o) => o.playerId === withYears.playerId && o.seasons[0] === 2027)).toBe(true);
+    const extra = repo.getPlayers().filter((p) => p.clubId === 6).length - 40;
+    for (const p of (await call(d, 'market.view')).releasable.filter((x) => x.origin === 'domestic' && x.playerId !== withYears.playerId).slice(0, extra)) await call(d, 'market.release', { playerId: p.playerId });
+    expect(repo.getPlayers().filter((p) => p.clubId === 6)).toHaveLength(40);
     const r2 = await call(d, 'game.advance', { mode: 'week' });
-    expect(r2.stoppedReason).toBeNull();
+    expect(r2.daysProcessed).toBe(7);
+    expect(repo.getTasks({ kind: 'roster' })[0]!.status).toBe('done');
+    expect(repo.getInbox(500).some((m) => m.title.startsWith('마감 자동 적용'))).toBe(false);
     d.close();
   });
 
