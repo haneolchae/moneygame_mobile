@@ -39,6 +39,7 @@ const BUDGET = {
   runsPerGame: { min: 6, max: 12 }, // 양 팀 합계 경기당 득점 (가상 리그 밸런스 범위)
   hrPerPa: { min: 0.015, max: 0.035 },
   stoveWeeksFirst: 12, // 첫 스토브리그 12주 (22 문서)
+  stallAdvances: { fail: 10 }, // 0일 진행이 연속 이 횟수면 장기 실행을 즉시 실패로 끝낸다 (D-096 초기안)
   // Electron 자체 점검
   rendererLagMs: { warn: 50, fail: 250 }, // 화면 타이머 최대 지연
   mainLoopMs: { warn: 100, fail: 500 }, // 메인 프로세스 이벤트 루프 최대 지연
@@ -172,12 +173,17 @@ if (QUICK) {
 
     // 장기 실행 (빌드 산출물을 그대로 Electron의 Node 모드로 실행)
     const simOut = join(LOG_DIR, 'sim.json');
-    const m = run('sim', `node scripts/run-electron-node.mjs dist/cli/simulate.js --seasons ${SEASONS} --seed ${SEED} --out "${simOut}"`, { timeoutMs: 1_800_000, env: process.env });
+    const m = run('sim', `node scripts/run-electron-node.mjs dist/cli/simulate.js --seasons ${SEASONS} --seed ${SEED} --max-stall ${BUDGET.stallAdvances.fail} --out "${simOut}"`, { timeoutMs: 1_800_000, env: process.env });
     let sim = null;
     try {
       sim = JSON.parse(readFileSync(simOut, 'utf8'));
     } catch {}
-    if (!sim) {
+    // 진행 정체: simulate가 '{"stalled":true,...}' 한 줄을 남기고 종료 코드 2로 끝난다.
+    const stallLine = m.out.split(/\r?\n/).find((l) => l.startsWith('{"stalled":true'));
+    if (!sim && stallLine) {
+      const st = JSON.parse(stallLine);
+      record('sim', `장기 실행 ${SEASONS}시즌`, 'FAIL', m.sec, `진행 정체: 0일 진행 ${st.consecutiveZeroDayAdvances}회 연속 (${st.date}, ${st.phase})`, [`멈춘 이유: ${st.reason ?? '알 수 없음'}`, ...tailLines(m.out, 8)], m.log);
+    } else if (!sim) {
       record('sim', `장기 실행 ${SEASONS}시즌`, 'FAIL', m.sec, m.timedOut ? '시간 초과' : '결과 없음', tailLines(m.out), m.log);
     } else {
       const st = [];
