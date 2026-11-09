@@ -30,20 +30,19 @@ export const HISTORY = {
 const logistic = (x: number) => 1 / (1 + Math.exp(-x));
 const clampR = (v: number) => Math.max(15, Math.min(95, v));
 
-const AVG_PLAYER = {
-  batting: { contact: 50, eye: 50, power: 50, speed: 50 },
-  pitching: { stuff: 50, control: 50, groundball: 50, stamina: 50 },
-  defense: { fielding: 50, arm: 50, range: 50 },
-} as unknown as PlayerTruth;
-
-/** 모든 능력이 v인 가상의 상대 */
+/** 모든 능력이 v인 가상의 선수(상대·리그 평균) */
 function flatPlayer(v: number): PlayerTruth {
   return {
-    batting: { contact: v, eye: v, power: v, speed: v },
-    pitching: { stuff: v, control: v, groundball: 50, stamina: 50 },
-    defense: { fielding: v, arm: v, range: v },
+    isPitcher: false,
+    position: 'SS',
+    batting: { contact: v, power: v, eye: v, baserunning: v, speed: v, bunt: v, mental: 50, stamina: 50 },
+    pitching: { velocityAvg: 143, velocityMax: 147, stuff: v, control: v, groundball: 50, mental: 50, holdRunners: v, stamina: 50, recovery: 50, fielding: v },
+    defense: { range: v, fielding: v, armStrength: v, armAccuracy: v },
+    positions: {},
   } as unknown as PlayerTruth;
 }
+
+const AVG_PLAYER = flatPlayer(50);
 
 /** 그 시즌의 능력: 현재 능력 − (현재 나이 보정 − 당시 나이 보정) */
 export function pastSelf(p: PlayerTruth, season: number, currentSeason: number): PlayerTruth {
@@ -66,7 +65,7 @@ function draw(rng: Rng, probs: Record<string, number>): string {
 
 /** opponent: 상대 평균 능력(프로 50). 아마추어 기록은 같은 학교급 평균을 상대로 만든다. */
 export function battingLine(rng: Rng, p: PlayerTruth, pa: number, opponent = 50): BattingTotals {
-  const probs = paProbabilities(p, opponent === 50 ? AVG_PLAYER : flatPlayer(opponent), 50);
+  const probs = paProbabilities(p, opponent === 50 ? AVG_PLAYER : flatPlayer(opponent));
   const c: Record<string, number> = {};
   for (let i = 0; i < pa; i++) {
     let o = draw(rng, probs);
@@ -94,7 +93,7 @@ export function battingLine(rng: Rng, p: PlayerTruth, pa: number, opponent = 50)
 }
 
 export function pitchingLine(rng: Rng, p: PlayerTruth, targetOuts: number, starter: boolean, closer: boolean, opponent = 50): PitchingTotals {
-  const probs = paProbabilities(opponent === 50 ? AVG_PLAYER : flatPlayer(opponent), p, 50);
+  const probs = paProbabilities(opponent === 50 ? AVG_PLAYER : flatPlayer(opponent), p);
   const c: Record<string, number> = {};
   let outs = 0;
   let bf = 0;

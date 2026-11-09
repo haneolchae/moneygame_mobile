@@ -47,37 +47,103 @@ export type Hand = 'R' | 'L' | 'S';
 export type Position = 'SP' | 'RP' | 'C' | '1B' | '2B' | '3B' | 'SS' | 'LF' | 'CF' | 'RF';
 export const FIELD_POSITIONS: readonly Position[] = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF'];
 
-/** 내부 능력 0~100 (04 문서) */
+/**
+ * 능력치 1~100 정수(계산은 소수 허용), 50 = 초기 리그 평균 (D-086).
+ * 타자·야수 12개 = batting 8 + defense 4 (D-087). 투수는 pitching(구속은 km/h로 따로) + 구종 배열.
+ */
 export interface BattingRatings {
   contact: number;
-  eye: number;
   power: number;
+  eye: number;
+  /** 주루 판단(추가 진루·도루 판단). 순수 속도와 별개 */
+  baserunning: number;
   speed: number;
+  bunt: number;
+  /** 압박 상황의 수행 저하 완화(평상시 상시 보너스 아님, 3b 압박 경로에서 사용) */
+  mental: number;
+  /** 경기·시즌 피로 누적 저항 */
+  stamina: number;
 }
 export interface PitchingRatings {
+  /** 평균 구속(km/h). 1~100 능력치가 아님 */
+  velocityAvg: number;
+  /** 최고 구속(km/h) */
+  velocityMax: number;
   stuff: number;
   control: number;
   groundball: number;
+  mental: number;
+  /** 견제(주자 리드 억제) */
+  holdRunners: number;
   stamina: number;
+  /** 등판 뒤 피로 회복 */
+  recovery: number;
+  /** 투수 수비(번트·땅볼 처리, 베이스 커버) */
+  fielding: number;
 }
 export interface DefenseRatings {
-  fielding: number; // 주 포지션 숙련도
-  arm: number;
+  /** 수비 반응·범위 */
   range: number;
+  /** 포구 */
+  fielding: number;
+  armStrength: number;
+  armAccuracy: number;
+}
+/** 포수 전용 (D-087) */
+export interface CatcherRatings {
+  blocking: number;
+  framing: number;
+  /** 송구 전환 */
+  transfer: number;
+}
+/** 포지션 숙련도 0~100 (주 포지션은 높고, 낯선 포지션은 낮다) */
+export type PositionSkills = Partial<Record<Position, number>>;
+
+export type PitchType = '포심' | '투심' | '커터' | '슬라이더' | '커브' | '체인지업' | '스플리터' | '포크';
+export const FASTBALL_TYPES: readonly PitchType[] = ['포심', '투심', '커터'];
+export interface Pitch {
+  type: PitchType;
+  /** 평균 구속(km/h) */
+  velocity: number;
+  movement: number;
+  /** 구종 제구: 선수 전체 제구에 대한 구종별 편차로 해석 */
+  command: number;
+  /** 구종 품질: 공통 구위 대비 잔차로 해석 */
+  quality: number;
+  mastery: number;
+  /** 사용 비중(구종 합 1) */
+  usage: number;
 }
 
-/** 히든 요소. 이번 단계에서는 생성·저장만 하고 성장 모델(5단계)에서 사용한다. */
+export type ContractPreference = '금액' | '기간' | '우승 전력' | '출전 기회' | '연고';
+
+/**
+ * 히든 요소 12종 (D-088). 화면·통신 계층에 숫자로 보내지 않는다.
+ * 잠재력·성실성·코칭 수용도는 성장 시스템에만 쓰고 매 타석에 더하지 않는다.
+ */
 export interface HiddenAttributes {
-  potential: Partial<Record<keyof BattingRatings | keyof PitchingRatings, number>>;
+  /** 능력별 잠재 상한 */
+  potential: Partial<Record<keyof BattingRatings | keyof PitchingRatings | keyof DefenseRatings, number>>;
+  /** 성장 속도 */
   growthRate: number;
+  /** 정점 나이(노화 곡선) */
   peakAge: number;
-  coachability: number;
+  /** 노화 속도 */
+  declineRate: number;
   workEthic: number;
-  durability: number;
-  recovery: number;
+  coachability: number;
   adaptability: number;
+  /** 일관성: 경기별 수행 편차·최근 성적 민감도(10a) */
+  consistency: number;
+  /** 내구성(높을수록 부상 덜 함) */
+  durability: number;
+  /** 회복 성향(휴식·정신적 피로 회복). 투수 능력치 '회복력'과 다르다 */
+  recoveryTendency: number;
+  /** 압박 민감도(낮을수록 덜 민감) */
+  pressureSensitivity: number;
   leadership: number;
   competitiveness: number;
+  contractPreference: ContractPreference;
 }
 
 export type RosterLevel = '1군' | '2군';
@@ -121,6 +187,11 @@ export interface PlayerTruth {
   batting: BattingRatings;
   pitching: PitchingRatings | null;
   defense: DefenseRatings;
+  /** 포수만 */
+  catcher?: CatcherRatings;
+  positions: PositionSkills;
+  /** 투수만 */
+  pitches?: Pitch[];
   hidden: HiddenAttributes;
   /** 아마추어 시절 개인 업적(D-084) */
   honors?: string[];

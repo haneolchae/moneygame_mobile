@@ -1,12 +1,13 @@
 // 타석 단위 경기 시뮬레이션 (10 문서).
 // 승패와 개인 성적은 같은 사건 기록(타석·득점)에서 나온다. 결과를 먼저 정하지 않는다.
 //
-// 첫 개발 단계의 단순화 (ASSUMPTION, 설정·후속 단계에서 확장):
+// 첫 개발 단계의 단순화 (ASSUMPTION(D-091), 설정·후속 단계에서 확장). 타석 결과 확률은 probability.ts(10a):
 //  - 도루·폭투·견제·대타·대수비·좌우 상대 보정·고의사구·희생번트는 아직 없다.
 //  - 실책으로 출루한 주자와 실책 플레이로 들어온 득점만 비자책으로 처리한다.
 //  - 승리투수: 결승점 시점의 투수. 선발이 5이닝(15아웃) 미만이면 가장 많은 아웃을 잡은 구원투수.
 //  - 홀드는 아직 판정하지 않는다.
 import { SIM } from './config';
+import { NEUTRAL_ENVIRONMENT, paProbabilities, type DefenseContext, type LeagueEnvironment } from './probability';
 import type { Rng } from './rng';
 import type { ClubId, FixtureId, PlayerId, PlayerTruth, Position } from './types';
 
@@ -24,7 +25,8 @@ export interface TeamSetup {
   starter: PlayerTruth;
   bullpen: PlayerTruth[]; // 출전 가능한 불펜 (마무리 제외)
   closer: PlayerTruth | null;
-  defense: number; // 팀 수비 지수 (0~100)
+  /** 팀 수비 지수(내야·외야·포수 프레이밍) */
+  defense: DefenseContext;
 }
 
 export interface PaEvent {
@@ -96,37 +98,7 @@ interface TeamState {
 const fx = (k: number, x: number) => Math.exp((k * (x - 50)) / 50);
 const clampP = (p: number) => Math.max(0.01, Math.min(0.97, p));
 
-/** 타석 결과 확률. 합계는 항상 1이다. */
-export function paProbabilities(batter: PlayerTruth, pitcher: PlayerTruth, defense: number) {
-  const b = batter.batting;
-  const p = pitcher.pitching ?? { stuff: 20, control: 20, groundball: 50, stamina: 20 };
-  const { base, effect: e } = SIM;
-  const bb = base.bb * fx(e.eyeOnBb, b.eye) * fx(-e.controlOnBb, p.control);
-  const k = base.k * fx(e.stuffOnK, p.stuff) * fx(-e.contactOnK, b.contact);
-  const hr = base.hr * fx(e.powerOnHr, b.power) * fx(-e.stuffOnHr, p.stuff) * fx(-e.groundballOnHr, p.groundball);
-  const hbp = base.hbp;
-  const bip = Math.max(0.35, 1 - (bb + k + hr + hbp));
-  const scale = (1 - bip) / (bb + k + hr + hbp);
-  const hitRate = clampP(base.babip * fx(e.contactOnBabip, b.contact) * fx(-e.defenseOnBabip, defense) * fx(-e.stuffOnBabip, p.stuff));
-  const tripleShare = base.tripleShareOfHits * fx(e.speedOnTriples, b.speed);
-  const doubleShare = base.doubleShareOfHits * fx(e.powerOnDoubles, b.power);
-  const errorRate = base.errorOnBallInPlay * fx(-e.defenseOnErrors, defense);
-  const gbShare = clampP(base.groundballShareOfOuts * fx(e.groundballOnGb, p.groundball));
-  const hits = bip * hitRate;
-  const outsBip = bip - hits;
-  return {
-    BB: bb * scale,
-    K: k * scale,
-    HR: hr * scale,
-    HBP: hbp * scale,
-    '3B': hits * tripleShare,
-    '2B': hits * doubleShare,
-    '1B': hits * (1 - tripleShare - doubleShare),
-    ROE: outsBip * errorRate,
-    GO: outsBip * (1 - errorRate) * gbShare,
-    FO: outsBip * (1 - errorRate) * (1 - gbShare),
-  };
-}
+export { paProbabilities };
 
 function drawOutcome(rng: Rng, probs: Record<string, number>): PaOutcome {
   let r = rng.next();
@@ -141,7 +113,8 @@ function drawOutcome(rng: Rng, probs: Record<string, number>): PaOutcome {
 
 const speedAdj = (p: number, speed: number) => clampP(p * fx(0.5, speed));
 
-export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSetup, rng: Rng, maxInnings: number): GameResult {
+/** env: 시즌 리그 환경(D-100) */
+export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSetup, rng: Rng, maxInnings: number, env: LeagueEnvironment = NEUTRAL_ENVIRONMENT): GameResult {
   const makeTeam = (setup: TeamSetup): TeamState => {
     const stint: PitcherStint = { pitcher: setup.starter, isStarter: true, pitches: 0, outs: 0, runs: 0, leadAtEntry: 0, outsAtEntryOfInning: true };
     return { setup, orderIndex: 0, stint, stints: [stint], usedRelievers: new Set() };
@@ -226,11 +199,11 @@ export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSe
         bat.orderIndex++;
         const batter = spot.player;
         const pitcher = def.stint.pitcher;
-        const outcome0 = drawOutcome(rng, paProbabilities(batter, pitcher, def.setup.defense));
+        const outcome0 = drawOutcome(rng, paProbabilities(batter, pitcher, def.setup.defense, env));
         let outcome: PaOutcome = outcome0;
         let rbi = 0;
         const outsBefore = outs;
-        const runnerOf = (earned = true): Runner => ({ id: batter.id, speed: batter.batting.speed, pitcherId: pitcher.id, earned });
+        const runnerOf = (earned = true): Runner => ({ id: batter.id, speed: SIM.runnerSpeedWeight * batter.batting.speed + (1 - SIM.runnerSpeedWeight) * batter.batting.baserunning, pitcherId: pitcher.id, earned });
         const scoreR = (r: Runner, credit: boolean, unearned = false) => {
           scoreRun(batSide, r, unearned);
           halfRuns++;

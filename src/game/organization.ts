@@ -310,6 +310,7 @@ export class Organization {
     const weekId = weekIdFor(date);
     this.ensureWeek(meta, weekId);
     if (weekday(date) === 1) this.expireApprovals(date);
+    this.expireStaleFaApprovals(meta, date);
     this.fillRosterNeedsIfDelegated(meta, date, inbox);
     this.proposeOwnAgenda(meta, date);
     this.enforceRosterDeadline(meta, date, inbox);
@@ -383,6 +384,19 @@ export class Organization {
       this.repo.updateApproval(a.id, 'expired');
       if (a.kind === 'roster') this.repo.updateTask(a.taskId, { status: 'queued', note: '결재 기한(주) 경과 — 정리안을 다시 상정', updated: date });
       else this.repo.updateTask(a.taskId, { status: 'cancelled', note: '결재 기한(주) 경과', updated: date });
+    }
+  }
+
+  /** FA 결재 대상 선수가 이미 다른 구단과 계약했거나 시장에서 빠졌으면 결재를 만료하고 업무를 끝낸다(승인해도 실행할 수 없는 안건을 남기지 않음). */
+  private expireStaleFaApprovals(meta: GameMeta, date: GameDate) {
+    const pending = this.repo.getApprovals('pending').filter((a) => a.kind === 'fa');
+    if (!pending.length) return;
+    const fa = new Map(this.repo.getFa(Number(meta.kDate.slice(0, 4))).map((e) => [e.playerId, e]));
+    for (const a of pending) {
+      const e = fa.get(Number(a.payload.playerId));
+      if (e && (e.status === 'applied' || e.status === 'approved')) continue;
+      this.repo.updateApproval(a.id, 'expired');
+      this.repo.updateTask(a.taskId, { status: 'cancelled', note: e?.signedClub ? '선수가 다른 구단과 계약해 결재 만료' : '선수가 FA 시장에서 빠져 결재 만료', updated: date });
     }
   }
 

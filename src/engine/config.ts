@@ -67,7 +67,7 @@ export const OWNER = {
 /** CONFIRMED (D-037): 물가 상승률 범위(bp). 시즌 연도가 바뀔 때 사업 난수로 정한다. */
 export const INFLATION = { minBp: 150, maxBp: 350, baseYear: 2026 } as const;
 
-/** ASSUMPTION: 선수 생성 분포 (선수·성장 모델이 구현되면 교체) */
+/** ASSUMPTION(D-087): 선수 생성 분포. 능력치 목록은 D-087, 분포는 초기안(성장 모델이 구현되면 교체) */
 export const WORLDGEN = {
   pitchersPerClub: 20,
   hittersPerClub: 20,
@@ -81,36 +81,15 @@ export const WORLDGEN = {
   minSalary: 30_000_000, // CONFIRMED: 2026 최저 연봉 3,000만 원 (D-038)
 } as const;
 
-/** ASSUMPTION: 타석 결과 기준 확률 (가상 리그 목표 밸런스, 10 문서: 실제 리그 재현이 아님) */
+/**
+ * ASSUMPTION(D-093): 경기 운영 설정(주자 진루·투구 수·투수 교체). 타석 결과 확률은 probabilityConfig(10a)에 있다.
+ */
 export const SIM = {
-  base: {
-    bb: 0.088,
-    hbp: 0.011,
-    k: 0.19,
-    hr: 0.024,
-    babip: 0.305,
-    doubleShareOfHits: 0.2,
-    tripleShareOfHits: 0.018,
-    groundballShareOfOuts: 0.46,
-    errorOnBallInPlay: 0.014,
-  },
-  /** 능력 1표준편차(약 11점)당 영향의 크기. exp(k × (값-50)/50) 형태로 쓴다. */
-  effect: {
-    eyeOnBb: 0.55,
-    controlOnBb: 0.55,
-    stuffOnK: 0.5,
-    contactOnK: 0.5,
-    powerOnHr: 0.9,
-    stuffOnHr: 0.35,
-    groundballOnHr: 0.3,
-    contactOnBabip: 0.16,
-    defenseOnBabip: 0.1,
-    stuffOnBabip: 0.06,
-    powerOnDoubles: 0.4,
-    speedOnTriples: 0.8,
-    groundballOnGb: 0.35,
-    defenseOnErrors: 0.5,
-  },
+  /** 주자 진루 판단에 쓰는 속도: 주력 비중(나머지는 주루 판단) */
+  runnerSpeedWeight: 0.6,
+  /** 포지션 숙련도 반영: 주 포지션 평균 수준(pivot)과 차이 1점당 수비 지수 변화(weight) */
+  positionSkillPivot: 70,
+  positionSkillWeight: 0.5,
   advance: {
     singleScoresFromSecond: 0.6,
     singleFirstToThird: 0.25,
@@ -132,16 +111,11 @@ export const SIM = {
   saveMinOuts: 3,
 } as const;
 
-/** ASSUMPTION: 관찰(스카우트 평가) 오차. 06 문서의 스카우트 모델 구현 전 임시값 */
+/** ASSUMPTION(D-089): 관찰(스카우트 평가) 오차. 3c 스카우트 추정 범위 구현 전 임시값 */
 export const OBSERVATION = {
   otherClubSd: 7,
-  displayStep: 5, // 20~80 평가는 5점 단위
+  displayStep: 5, // 다른 구단 선수 평가는 1~100 척도 5점 단위(3c 추정 범위 전까지)
 } as const;
-
-/** CONFIRMED: 표시 평가 20~80 (04 문서). 내부 0~100을 하나의 함수로 변환한다. */
-export function toScoutScale(internal: number): number {
-  return 20 + Math.max(0, Math.min(100, internal)) * 0.6;
-}
 
 /** 저장 관련 설정 (03_development, 20 문서) */
 export const SAVE = {

@@ -187,12 +187,13 @@ describe('위임 (03 문서 위임 모드)', () => {
   });
 
   it('제안 후 승인: 결재 대기 → 승인하면 행동력 없이 실행, 반려하면 다시 올라오지 않는다', async () => {
-    const d = await toMarket('deleg-approve');
+    // 시드: 우리 FA가 여러 명이라 한 주 뒤에도 결재가 남는 세계(대상 선수가 다른 구단과 계약하면 결재는 자동 만료된다)
+    const d = await toMarket('deleg-approve-2');
     const pol = (await call(d, 'org.view')).policies.find((p) => p.team === 'ops')!;
     await call(d, 'org.setPolicy', { ...pol, mode: 'approve', cashFloor: 0, faMaxTotal: 300e8 });
     const fas = (await call(d, 'market.view')).fa.filter((f) => f.originClub.id === 5 && f.statusKey === 'approved');
     expect(fas.length).toBeGreaterThan(0);
-    for (const f of fas.slice(0, 2)) await call(d, 'org.delegateFa', { playerId: f.playerId });
+    for (const f of fas) await call(d, 'org.delegateFa', { playerId: f.playerId });
     await call(d, 'game.advance', { mode: 'week' }); // 운영팀이 제시안을 준비해 결재를 올린다(그 주 안에 결재)
     let v = await call(d, 'org.view');
     expect(v.approvals.length).toBeGreaterThan(0);

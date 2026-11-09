@@ -90,7 +90,7 @@ export function Draft({ nav }: { nav: Nav }) {
                       <strong>{c.name}</strong> <span className="muted small">{c.school} {c.level} {c.grade}학년</span>
                     </td>
                     <td>{POSITION_LABELS[c.position] ?? c.position}</td>
-                    <td className="num">{c.grade20to80}</td>
+                    <td className="num">{c.scoutGrade}</td>
                     <td>잠재 {c.scoutPotentialGrade}</td>
                     <td>
                       <button className="small" onClick={() => move(id, -1)}>
@@ -162,7 +162,7 @@ export function Draft({ nav }: { nav: Nav }) {
                   </td>
                   <td>{POSITION_LABELS[c.position] ?? c.position}</td>
                   <td className="num">{c.age}</td>
-                  <td className="num">{c.grade20to80}</td>
+                  <td className="num">{c.scoutGrade}</td>
                   <td>{c.scoutPotentialGrade}</td>
                   <td className="small">{c.lastSeason}</td>
                   <td className="small" style={{ whiteSpace: 'normal', maxWidth: 360 }}>

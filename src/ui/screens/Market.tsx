@@ -224,7 +224,7 @@ export function Market({ nav }: { nav: Nav }) {
                       </td>
                       <td>{POSITION_LABELS[f.position] ?? f.position}</td>
                       <td className="num">{f.age}</td>
-                      <td className="num">{f.grade20to80}</td>
+                      <td className="num">{f.scoutGrade}</td>
                       <td>{f.originClub.shortName}</td>
                       <td>{f.faGrade ?? '—'}</td>
                       <td className="num">{won(f.priorSalaryWon)}</td>
@@ -365,7 +365,7 @@ export function Market({ nav }: { nav: Nav }) {
                     <td>{p.origin === 'asia' ? '아시아쿼터' : '외국인'}</td>
                     <td>{POSITION_LABELS[p.position] ?? p.position}</td>
                     <td className="num">{p.age}</td>
-                    <td className="num">{p.grade20to80}</td>
+                    <td className="num">{p.scoutGrade}</td>
                     <td className="num">{usd(p.salaryUsd)}</td>
                     <td className="num">{p.status === 'expiring' ? usd(p.demandUsd) : '—'}</td>
                     <td>{p.status === 'expiring' ? '계약 만료' : `계약 중`}</td>
@@ -418,7 +418,7 @@ export function Market({ nav }: { nav: Nav }) {
                       <td>{p.origin === 'asia' ? '아시아쿼터' : '외국인'}</td>
                       <td>{POSITION_LABELS[p.position] ?? p.position}</td>
                       <td className="num">{p.age}</td>
-                      <td className="num">{p.grade20to80}</td>
+                      <td className="num">{p.scoutGrade}</td>
                       <td className="num">{usd(p.demandUsd)}</td>
                       <td>
                         <button className="small" onClick={() => void run(() => api('market.foreignOffer', { playerId: p.playerId, salaryUsd: p.demandUsd }))}>
@@ -491,7 +491,7 @@ export function Market({ nav }: { nav: Nav }) {
                     <td>{POSITION_LABELS[p.position] ?? p.position}</td>
                     <td className="num">{p.age}</td>
                     <td>{p.level}</td>
-                    <td className="num">{p.grade20to80}</td>
+                    <td className="num">{p.scoutGrade}</td>
                     <td className="num">{won(p.salaryWon)}</td>
                     <td className="num">{p.contractYears === 0 ? '만료' : `${p.contractYears}년`}</td>
                     <td>

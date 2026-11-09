@@ -1,9 +1,10 @@
 // 감독 자동 운영: 경기 준비 (09·10 문서). 1군 선수로 라인업·선발·불펜을 정한다.
 import { SIM } from './config';
 import type { LineupSpot, TeamSetup } from './gamesim';
+import type { DefenseContext } from './probability';
 import type { ClubId, PlayerId, PlayerTruth, Position } from './types';
 import { FIELD_POSITIONS } from './types';
-import { pitcherOverall } from './worldgen';
+import { defenseValue, pitcherOverall } from './worldgen';
 
 /** 최근 투구 기록: 날짜 차이(1=어제)별 투구 수 */
 export interface PitcherUsage {
@@ -19,8 +20,15 @@ const offense = (p: PlayerTruth) => {
 };
 
 const POSITION_WEIGHT: Record<string, number> = { C: 1.3, SS: 1.3, '2B': 1.15, CF: 1.15, '3B': 1, LF: 0.85, RF: 0.9, '1B': 0.7 };
+const INFIELD: readonly Position[] = ['C', '1B', '2B', '3B', 'SS'];
 
-function buildLineup(hitters: PlayerTruth[]): { lineup: LineupSpot[]; defense: number } {
+/** 그 포지션에서의 수비 지수: 수비 종합 + 포지션 숙련도 보정(낯선 포지션은 같은 효율을 내지 못함, D-087) */
+export function fieldingAt(p: PlayerTruth, pos: Position): number {
+  const skill = p.positions[pos] ?? 0;
+  return defenseValue(p.defense) + (skill - SIM.positionSkillPivot) * SIM.positionSkillWeight;
+}
+
+function buildLineup(hitters: PlayerTruth[]): { lineup: LineupSpot[]; defense: DefenseContext } {
   const used = new Set<PlayerId>();
   const field: Array<{ player: PlayerTruth; position: Position }> = [];
   for (const pos of FIELD_POSITIONS) {
@@ -28,7 +36,7 @@ function buildLineup(hitters: PlayerTruth[]): { lineup: LineupSpot[]; defense: n
     // 주 포지션 선수 중 공격+수비가 가장 좋은 선수, 없으면 남은 야수 중 수비가 가장 좋은 선수
     const natural = candidates.filter((h) => h.position === pos);
     const pool = natural.length > 0 ? natural : candidates;
-    const value = (h: PlayerTruth) => offense(h) * 0.6 + h.defense.fielding * 0.4 * (POSITION_WEIGHT[pos] ?? 1) - (h.position === pos ? 0 : 15);
+    const value = (h: PlayerTruth) => offense(h) * 0.6 + fieldingAt(h, pos) * 0.4 * (POSITION_WEIGHT[pos] ?? 1);
     const best = [...pool].sort((a, b) => value(b) - value(a) || a.id - b.id)[0];
     if (!best) throw new Error(`라인업 구성 불가: ${pos}`);
     used.add(best.id);
@@ -40,15 +48,19 @@ function buildLineup(hitters: PlayerTruth[]): { lineup: LineupSpot[]; defense: n
   // 타순: 공격력 순으로 정렬한 뒤 2번째로 좋은 타자를 1번, 가장 좋은 타자를 3번에 둔다.
   const sorted = [...spots].sort((a, b) => offense(b.player) - offense(a.player) || a.player.id - b.player.id);
   const order = [1, 3, 0, 2, 4, 5, 6, 7, 8].map((i) => sorted[i]!);
-  let wsum = 0;
-  let dsum = 0;
-  for (const f of field) {
-    const w = POSITION_WEIGHT[f.position] ?? 1;
-    const penalty = f.player.position === f.position ? 0 : 15;
-    wsum += w;
-    dsum += w * (f.player.defense.fielding * 0.7 + f.player.defense.range * 0.3 - penalty);
-  }
-  return { lineup: order, defense: dsum / wsum };
+  const zone = (positions: readonly Position[]) => {
+    let wsum = 0;
+    let dsum = 0;
+    for (const f of field.filter((x) => positions.includes(x.position))) {
+      const w = POSITION_WEIGHT[f.position] ?? 1;
+      wsum += w;
+      dsum += w * fieldingAt(f.player, f.position);
+    }
+    return wsum ? dsum / wsum : 50;
+  };
+  const catcher = field.find((f) => f.position === 'C')?.player;
+  const defense: DefenseContext = { infield: zone(INFIELD), outfield: zone(['LF', 'CF', 'RF']), framing: catcher?.catcher?.framing ?? 30 };
+  return { lineup: order, defense };
 }
 
 /** 선발 로테이션: 직전 선발 다음 순번. 충분히 쉬지 않았으면 가장 오래 쉰 선발. */

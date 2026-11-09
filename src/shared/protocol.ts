@@ -1,5 +1,5 @@
 // 화면 ↔ 게임 통신 형식. 화면은 이 파일의 타입만 안다.
-// 표시용 데이터(View)에는 실제 능력·히든 값을 넣지 않는다(04 문서 데이터 경계). 평가는 관찰값(20~80)만 담는다.
+// 표시용 데이터(View)에는 실제 능력·히든 값을 넣지 않는다(04 문서 데이터 경계). 평가는 관찰값(능력치 1~100 척도, D-086)만 담는다.
 
 export interface ClubOption {
   id: number;
@@ -176,7 +176,7 @@ export interface PlayerListItem {
   bats: string;
   throws: string;
   salaryWon: number;
-  /** 우리 구단 스카우트의 관찰 평가 (20~80) */
+  /** 우리 구단 스카우트의 관찰 평가 (1~100) */
   ratings: Record<string, number>;
   stats: Record<string, StatValue>;
   /** 이번 스토브리그 FA 자격 선수 */
@@ -234,8 +234,8 @@ export interface DraftCandidateView {
   position: string;
   isPitcher: boolean;
   age: number;
-  /** 스카우트 평가(현재 능력, 20~80) */
-  grade20to80: number;
+  /** 스카우트 평가(현재 능력, 1~100) */
+  scoutGrade: number;
   /** 스카우트가 추정한 잠재력 등급 A~D (실제 잠재력 값이 아니라 우리 스카우트 관측에 오차를 더한 평가) */
   scoutPotentialGrade: string;
   honors: string[];
@@ -415,8 +415,8 @@ export interface FaRowView {
   position: string;
   isPitcher: boolean;
   age: number;
-  /** 우리 스카우트 평가 평균(20~80) */
-  grade20to80: number;
+  /** 우리 스카우트 평가 평균(1~100) */
+  scoutGrade: number;
   originClub: ClubRef;
   status: string;
   statusKey: string;
@@ -455,7 +455,7 @@ export interface ForeignPlayerView {
   position: string;
   isPitcher: boolean;
   age: number;
-  grade20to80: number;
+  scoutGrade: number;
   salaryUsd: number;
   /** 재계약·영입에 필요한 금액(달러) */
   demandUsd: number;
@@ -483,7 +483,7 @@ export interface MarketView {
   fa: FaRowView[];
   salaryTalks: SalaryTalkView[];
   foreign: { mine: ForeignPlayerView[]; pool: ForeignPlayerView[]; totalUsd: number; capUsd: number; rules: string[] };
-  releasable: Array<{ playerId: number; name: string; position: string; age: number; level: string; grade20to80: number; salaryWon: number; contractYears: number; origin: string }>;
+  releasable: Array<{ playerId: number; name: string; position: string; age: number; level: string; scoutGrade: number; salaryWon: number; contractYears: number; origin: string }>;
 }
 
 export interface OfferResultView {

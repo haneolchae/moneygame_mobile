@@ -8,6 +8,7 @@ import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { PROBABILITY_CONFIG } from '../engine/probabilityConfig';
 import { Dispatcher } from '../host/dispatcher';
 import { checkInvariants, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
 import type { AdvanceResult, DashboardView, DelegationPolicyView, OrganizationView, PlayerListItem, StandingView } from '../shared/protocol';
@@ -85,6 +86,8 @@ async function main() {
     const inv = [...stoveErrors, ...checkInvariants(d.saves.repository(), dash.season)];
     // 정규시즌 경기 수는 시즌 ID별 기록에서 읽는다.
     const regular = dash.lastRegularSeason;
+    // 그 시즌 리그 목표(D-100): 기준값 × (1 + 시즌 편차)
+    const env = d.saves.repository().getMeta().leagueEnvironment?.[String(dash.season)] ?? { runs: 0, hr: 0 };
     const lg = hitters.reduce(
       (acc, h) => {
         acc.pa += Number(h.stats.PA ?? 0);
@@ -107,6 +110,10 @@ async function main() {
       sessionMB: +(statSync(d.saves.sessionPath).size / 1e6).toFixed(1),
       saveFileMB: +(statSync(join(d.saves.savesDir, 'longrun.db')).size / 1e6).toFixed(1),
       leagueHRperPA: lg.pa ? +(lg.hr / lg.pa).toFixed(4) : null,
+      envRuns: env.runs,
+      envHr: env.hr,
+      targetRunsPerGame: +(PROBABILITY_CONFIG.leagueTarget.runsPerGame * (1 + env.runs)).toFixed(2),
+      targetHrPerPa: +(PROBABILITY_CONFIG.leagueTarget.hrPerPa * (1 + env.hr)).toFixed(4),
       runsPerGame: +(standings.reduce((a, r) => a + (r.runsFor ?? 0), 0) / Math.max(1, dash.gamesPlayedLeague)).toFixed(2),
       cashWon: dash.cashWon,
       invariantErrors: inv.length,

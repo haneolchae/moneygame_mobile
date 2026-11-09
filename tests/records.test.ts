@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { toScoutScale } from '../src/engine/config';
 import { SEASON_2026_STANDINGS } from '../src/engine/clubs';
 import type { Dispatcher } from '../src/host/dispatcher';
 import { call, cleanup, makeDispatcher, tempDir } from './helpers';
@@ -34,14 +33,14 @@ describe('우리 선수 능력치·기간별 기록 (D-078·D-079)', () => {
     const mine = repo.getPlayers().find((p) => p.clubId === 3 && !p.isPitcher)!;
     const v = await call(d, 'game.player', { playerId: mine.id });
     expect(v.exactRatings).toBe(true);
-    expect(v.ratings.contact).toBe(Math.round(toScoutScale(mine.batting.contact)));
-    expect(v.ratings.def_fielding).toBe(Math.round(toScoutScale(mine.defense.fielding)));
+    expect(v.ratings.contact).toBe(mine.batting.contact);
+    expect(v.ratings.def_fielding).toBe(mine.defense.fielding);
     const others = repo.getPlayers().filter((p) => p.clubId !== 3 && p.clubId !== null && !p.isPitcher).slice(0, 30);
     let differs = 0;
     for (const o of others) {
       const ov = await call(d, 'game.player', { playerId: o.id });
       expect(ov.exactRatings).toBe(false);
-      if (ov.ratings.contact !== Math.round(toScoutScale(o.batting.contact))) differs++;
+      if (ov.ratings.contact !== o.batting.contact) differs++;
     }
     expect(differs).toBeGreaterThan(5);
     d.close();

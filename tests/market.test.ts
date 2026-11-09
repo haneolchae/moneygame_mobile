@@ -132,14 +132,17 @@ describe('스토브리그 선수 시장', () => {
     const d = makeDispatcher(newDir());
     await call(d, 'game.new', { clubId: 3, saveName: 't', seed: 'cash-short' });
     await weeks(d, 2);
+    const v0 = await call(d, 'market.view');
+    // 계약금 + 보상금을 낼 수 없도록 현금을 줄인다(테스트용 장부 조작)
+    const target = v0.fa.find((f) => f.statusKey === 'approved' && f.demand.bonusWon + f.compensationWon > 0)!;
+    const need = target.demand.bonusWon + target.compensationWon;
+    d.saves.repository().addLedger([{ clubId: 3, date: '2026-11-22', category: 'generalAdmin', amount: -(v0.cashWon - need + 1), memo: '테스트: 현금 부족 만들기' }]);
     const v = await call(d, 'market.view');
-    const target = v.fa.find((f) => f.statusKey === 'approved' && f.demand.bonusWon + f.compensationWon > v.cashWon);
-    if (!target) return;
+    expect(v.cashWon).toBeLessThan(need);
     const r = await d.respond('market.faOffer', { playerId: target.playerId, years: target.demand.years, salaryWon: target.demand.salaryWon, bonusWon: target.demand.bonusWon });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('CASH_SHORT');
     expect((await call(d, 'market.view')).apRemaining).toBe(v.apRemaining);
-    d.close();
     d.close();
   });
 

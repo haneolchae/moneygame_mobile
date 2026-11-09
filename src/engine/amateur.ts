@@ -5,7 +5,7 @@ import { battingLine, pitchingLine } from './history';
 import { Rng } from './rng';
 import type { BattingTotals, PitchingTotals } from './stats';
 import type { HiddenAttributes, Position, PlayerTruth } from './types';
-import { hiddenFor, makeName, overall } from './worldgen';
+import { hiddenFor, hitterAbilities, makeName, overall, pitcherAbilities } from './worldgen';
 
 export type SchoolLevel = '고교' | '대학';
 
@@ -41,6 +41,9 @@ export interface Amateur {
   batting: PlayerTruth['batting'];
   pitching: PlayerTruth['pitching'];
   defense: PlayerTruth['defense'];
+  catcher?: PlayerTruth['catcher'];
+  positions: PlayerTruth['positions'];
+  pitches?: PlayerTruth['pitches'];
   hidden: HiddenAttributes;
   seasons: AmateurSeason[];
   honors: AmateurHonor[];
@@ -93,11 +96,12 @@ export function makeAmateur(rng: Rng, id: number, level: SchoolLevel, grade: num
   const remaining = Math.max(0, 24 - age) * AMATEUR.growthPerYear;
   const cur = (bias = 0) => clamp(48 + 9 * talent + bias + rng.normal(0, 6) - remaining);
   const position = isPitcher ? (rng.chance(0.5) ? 'SP' : 'RP') : rng.pick(POSITIONS);
-  const pitching = isPitcher ? { stuff: cur(), control: cur(-2), groundball: clamp(rng.normal(50, 12)), stamina: clamp(rng.normal(position === 'SP' ? 62 : 40, 10)) } : null;
-  const batting = isPitcher
-    ? { contact: clamp(rng.normal(15, 5)), eye: clamp(rng.normal(15, 5)), power: clamp(rng.normal(12, 5)), speed: clamp(rng.normal(35, 10)) }
-    : { contact: cur(), eye: cur(-2), power: cur(position === '1B' || position === 'LF' || position === 'RF' ? 3 : -2), speed: clamp(rng.normal(position === 'CF' || position === 'SS' ? 58 : 46, 12)) };
-  const current: Record<string, number> = isPitcher ? { stuff: pitching!.stuff, control: pitching!.control, groundball: pitching!.groundball, stamina: pitching!.stamina } : { ...batting };
+  // 프로 선수와 같은 능력치 묶음(D-087)을 같은 함수로 만든다. 현재 능력은 cur(나이·재능 반영)에서 나온다.
+  const ab = isPitcher ? pitcherAbilities(rng, position === 'SP', cur) : { ...hitterAbilities(rng, position as Position, cur), pitching: null, pitches: undefined };
+  const { batting, pitching } = ab;
+  const current: Record<string, number> = pitching
+    ? { stuff: pitching.stuff, control: pitching.control, groundball: pitching.groundball, stamina: pitching.stamina }
+    : { contact: batting.contact, eye: batting.eye, power: batting.power, speed: batting.speed };
   const hidden = hiddenFor(rng, age, current);
   // 잠재력은 재능에 묶는다(hiddenFor의 기본 여유보다 크다).
   for (const k of Object.keys(current)) (hidden.potential as Record<string, number>)[k] = clamp(Math.max(current[k]!, 48 + 9 * talent + rng.normal(0, 5) + (k === 'stamina' || k === 'speed' || k === 'groundball' ? current[k]! - 48 : 0)), 10, 99);
@@ -114,7 +118,10 @@ export function makeAmateur(rng: Rng, id: number, level: SchoolLevel, grade: num
     throws: rng.chance(0.25) && !['C', 'SS', '2B', '3B'].includes(position) ? 'L' : 'R',
     batting,
     pitching,
-    defense: { fielding: cur(), arm: clamp(rng.normal(52, 12)), range: clamp(rng.normal(50, 12)) },
+    defense: ab.defense,
+    ...('catcher' in ab && ab.catcher ? { catcher: ab.catcher } : {}),
+    positions: ab.positions,
+    ...(ab.pitches ? { pitches: ab.pitches } : {}),
     hidden,
     seasons: [],
     honors: [],
@@ -142,6 +149,9 @@ export function asTruth(a: Amateur): PlayerTruth {
     batting: a.batting,
     pitching: a.pitching,
     defense: a.defense,
+    ...(a.catcher ? { catcher: a.catcher } : {}),
+    positions: a.positions,
+    ...(a.pitches ? { pitches: a.pitches } : {}),
     hidden: a.hidden,
   };
 }
@@ -302,7 +312,7 @@ export function generateAmateurs(seed: string, firstId: number, schoolYear: numb
 }
 
 function shiftR<T extends object>(r: T, d: number): T {
-  return Object.fromEntries(Object.entries(r).map(([k, v]) => [k, k === 'stamina' || k === 'groundball' || k === 'speed' ? v : clamp((v as number) + d)])) as T;
+  return Object.fromEntries(Object.entries(r).map(([k, v]) => [k, k === 'stamina' || k === 'groundball' || k === 'speed' || k === 'velocityAvg' || k === 'velocityMax' ? v : clamp((v as number) + d)])) as T;
 }
 
 /** 시즌 마감 뒤 학년도 넘김: 졸업·진학·입학 */

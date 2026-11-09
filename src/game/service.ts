@@ -10,6 +10,8 @@ import { EOK } from '../engine/money';
 import { observePlayer } from '../engine/observation';
 import { weeklyAp, xpToNext } from '../engine/owner';
 import { Rng, stableNormal, type RngState } from '../engine/rng';
+import { NEUTRAL_ENVIRONMENT, nextEnvironmentDeviation } from '../engine/probability';
+import { PROBABILITY_CONFIG } from '../engine/probabilityConfig';
 import { generateSchedule, seasonKeyDates, validateSchedule } from '../engine/schedule';
 import { battingRates, fipConstant, formatInnings, pitchingRates, type BattingTotals, type PitchingTotals } from '../engine/stats';
 import { computeStandings } from '../engine/standings';
@@ -304,11 +306,12 @@ export class GameService {
       const active = this.repo.getActivePlayers(clubIds);
       const usage = this.repo.getRecentPitcherUsage(addDays(date, -6), date).map((u) => ({ ...u, daysAgo: diffDays(date, u.date) }));
       const lastStarters = this.repo.getLastStarters(meta.season);
+      const env = meta.leagueEnvironment?.[String(meta.season)] ?? NEUTRAL_ENVIRONMENT;
       for (const f of fixtures) {
         const teamOf = (clubId: ClubId) => prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null);
         // 경기 난수는 (시드, 경기 ID)에서 파생한다. 처리 순서와 무관하게 같은 경기는 같은 결과를 낸다.
         const maxInnings = f.stage && f.stage !== 'regular' ? POSTSEASON_MAX_INNINGS : LEAGUE.regularSeasonMaxInnings;
-        results.push(simulateGame(f.id, teamOf(f.home), teamOf(f.away), Rng.derive(meta.seed, 'game', f.id), maxInnings));
+        results.push(simulateGame(f.id, teamOf(f.home), teamOf(f.away), Rng.derive(meta.seed, 'game', f.id), maxInnings, env));
       }
     }
 
@@ -349,6 +352,14 @@ export class GameService {
       // 성적 기본 목표: 시즌 모드 시작 때 예상 순위로 고정한다(02 문서).
       const expectedRank = this.seasonClose.expectedRank(meta, meta.userClubId, season);
       metaUpdate.seasonGoal = { season, expectedRank };
+      // 시즌 리그 환경(D-100): 첫 시즌은 기준값, 이후 직전 시즌 편차에서 −5%p·0·+5%p(±10% 안, 비누적)
+      const prevEnv = meta.leagueEnvironment?.[String(season - 1)];
+      const envRng = Rng.derive(meta.seed, 'league-env', season);
+      const env = prevEnv ? { runs: nextEnvironmentDeviation(prevEnv.runs, envRng.int(0, 2)), hr: nextEnvironmentDeviation(prevEnv.hr, envRng.int(0, 2)) } : { ...NEUTRAL_ENVIRONMENT };
+      metaUpdate.leagueEnvironment = { ...(meta.leagueEnvironment ?? {}), [String(season)]: env };
+      const pct = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`;
+      const target = PROBABILITY_CONFIG.leagueTarget;
+      inbox.push({ date: next, kind: 'news', sender: 'KBO 소식', title: `${season} 시즌 리그 환경: 득점 ${pct(env.runs)}, 홈런 ${pct(env.hr)}`, body: `올해 리그는 기준(경기당 득점 ${target.runsPerGame}, 타석당 홈런 ${target.hrPerPa}) 대비 득점 ${pct(env.runs)}, 홈런 ${pct(env.hr)} 수준의 환경으로 예상됩니다. 공인구·스트라이크 존 같은 리그 조건 변화를 요약한 값이며, 기준 대비 ±10%를 넘지 않습니다.` });
       inbox.push({ date: next, kind: 'task', sender: '모기업', title: `${season} 시즌 목표: 정규시즌 ${expectedRank}위 이내`, body: `직전 시즌 순위와 전력 평가로 정한 예상 순위입니다. 달성하면 구단주 경험치를 받고, ${CLOSE_RULES.warnAfterMisses}시즌 연속 미달이면 지원 삭감 경고, ${CLOSE_RULES.dismissAfterMisses}시즌 연속이면 해임입니다.` });
       inbox.push({ date: next, kind: 'report', sender: '사업본부장', title: `${season} 시즌 물가 상승률 ${(rate / 100).toFixed(2)}%`, body: `올해 비용·가격·시세 기준값이 ${(rate / 100).toFixed(2)}% 올랐습니다. 이미 맺은 계약 금액은 바뀌지 않습니다.` });
     }
@@ -724,7 +735,7 @@ export class GameService {
 
   // ───────── 선수 시장 (계약·이적) ─────────
 
-  private grade20to80(meta: GameMeta, p: PlayerTruth, scale = 1): number {
+  private scoutGrade(meta: GameMeta, p: PlayerTruth, scale = 1): number {
     const r = observePlayer(meta.seed, meta.userClubId, p, scale);
     const keys = p.isPitcher ? ['stuff', 'control', 'groundball'] : ['contact', 'eye', 'power'];
     const vals = keys.map((k) => r[k] ?? 50);
@@ -753,7 +764,7 @@ export class GameService {
         position: p.position,
         isPitcher: p.isPitcher,
         age: contractYear - Number(p.birthDate.slice(0, 4)),
-        grade20to80: this.grade20to80(meta, p, scale),
+        scoutGrade: this.scoutGrade(meta, p, scale),
         originClub: this.ref(e.originClub),
         status: statusLabel[e.status] ?? e.status,
         statusKey: e.status,
@@ -787,7 +798,7 @@ export class GameService {
       position: p.position,
       isPitcher: p.isPitcher,
       age: contractYear - Number(p.birthDate.slice(0, 4)),
-      grade20to80: this.grade20to80(meta, p, scale),
+      scoutGrade: this.scoutGrade(meta, p, scale),
       salaryUsd: wonToUsd(p.salary),
       demandUsd: status === 'expiring' ? foreignRenewalDemandUsd(p) : wonToUsd(p.salary),
       contractYears: p.contractYears,
@@ -795,7 +806,7 @@ export class GameService {
       status,
     });
     const mineForeign = players.filter((p) => p.clubId === meta.userClubId && p.origin !== 'domestic').map((p) => fv(p, p.contractYears === 0 && meta.mode === 'stove' ? 'expiring' : 'contracted'));
-    const pool = players.filter((p) => p.clubId === null && p.origin !== 'domestic').map((p) => fv(p, 'pool')).sort((a, b) => b.grade20to80 - a.grade20to80);
+    const pool = players.filter((p) => p.clubId === null && p.origin !== 'domestic').map((p) => fv(p, 'pool')).sort((a, b) => b.scoutGrade - a.scoutGrade);
     const foreignMine = mineForeign.filter((p) => p.origin === 'foreign');
     const capUsd = FOREIGN.totalCapUsd + foreignMine.reduce((a, p) => a + p.renewals * FOREIGN.totalCapPerRenewalUsd, 0);
     const roster = players.filter((p) => p.clubId === meta.userClubId);
@@ -836,8 +847,8 @@ export class GameService {
       },
       releasable: roster
         .filter((p) => !fa.some((f) => f.playerId === p.id && (f.statusKey === 'applied' || f.statusKey === 'approved')))
-        .map((p) => ({ playerId: p.id, name: p.name, position: p.position, age: contractYear - Number(p.birthDate.slice(0, 4)), level: p.level, grade20to80: this.grade20to80(meta, p, scale), salaryWon: p.salary, contractYears: p.contractYears, origin: p.origin }))
-        .sort((a, b) => a.grade20to80 - b.grade20to80),
+        .map((p) => ({ playerId: p.id, name: p.name, position: p.position, age: contractYear - Number(p.birthDate.slice(0, 4)), level: p.level, scoutGrade: this.scoutGrade(meta, p, scale), salaryWon: p.salary, contractYears: p.contractYears, origin: p.origin }))
+        .sort((a, b) => a.scoutGrade - b.scoutGrade),
     };
   }
 
@@ -1050,7 +1061,7 @@ export class GameService {
         position: a.position,
         isPitcher: a.isPitcher,
         age: year - Number(a.birthDate.slice(0, 4)),
-        grade20to80: Math.round(keys.reduce((s, k) => s + (obs[k] ?? 50), 0) / keys.length),
+        scoutGrade: Math.round(keys.reduce((s, k) => s + (obs[k] ?? 50), 0) / keys.length),
         scoutPotentialGrade: potEst >= 68 ? 'A' : potEst >= 60 ? 'B' : potEst >= 52 ? 'C' : 'D',
         honors: a.honors.map((h) => h.title),
         lastSeason: !t || !last ? '' : last.kind === 'bat' ? `${last.year} 타율 ${n('AB') ? (n('H') / n('AB')).toFixed(3).replace(/^0/, '') : '—'} ${n('HR')}홈런 ${n('H')}안타${last.SB ? ` ${last.SB}도루` : ''}` : `${last.year} ${n('W')}승 평균자책 ${n('OUTS') ? ((27 * n('ER')) / n('OUTS')).toFixed(2) : '—'} ${n('K')}탈삼진`,

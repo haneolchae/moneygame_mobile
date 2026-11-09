@@ -91,7 +91,7 @@ export function Players({ nav }: { nav: Nav }) {
         </div>
         <input placeholder="이름 검색" value={query.search ?? ''} onChange={(e) => setQuery((q) => ({ ...q, search: e.target.value }))} />
         <span className="muted small">
-          {rows.length}명 · {loading ? '불러오는 중' : `${elapsed.toFixed(0)}ms`} · 능력(20~80): 우리 선수는 실제 능력치, 타 구단 선수는 스카우트 평가
+          {rows.length}명 · {loading ? '불러오는 중' : `${elapsed.toFixed(0)}ms`} · 능력(1~100): 우리 선수는 실제 능력치, 타 구단 선수는 스카우트 평가
         </span>
       </div>
       <div className="table-wrap">

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { PlayerDetailView, PlayerRecordView, StatValue } from '../../shared/protocol';
 import type { Nav } from '../App';
 import { api } from '../api';
-import { dateKo, fixed2, gradeLabel, innings, int, pct, POSITION_LABELS, RATING_LABELS, rate3, won } from '../format';
+import { dateKo, fixed2, gradeLabel, innings, int, NON_SCALE_RATINGS, pct, POSITION_LABELS, RATING_LABELS, rate3, won } from '../format';
 
 function StatTable({ stats, spec }: { stats: Record<string, StatValue>; spec: Array<[string, (v: StatValue | undefined) => string]> }) {
   return (
@@ -93,16 +93,16 @@ export function PlayerDetail({ nav, playerId }: { nav: Nav; playerId: number }) 
       )}
       <section className="panel">
         <h2>
-          {p.exactRatings ? '능력치 (20~80)' : '스카우트 평가 (20~80)'} {p.exactRatings && <span className="badge star">정확</span>}
+          {p.exactRatings ? '능력치 (1~100)' : '스카우트 평가 (1~100)'} {p.exactRatings && <span className="badge star">정확</span>}
         </h2>
         <p className="muted small">{p.observationNote}</p>
         <div className="ratings">
           {Object.entries(p.ratings).map(([k, v]) => (
             <div key={k} className="rating">
               <span className="name">{RATING_LABELS[k] ?? k}</span>
-              <span className="bar"><span style={{ width: `${((v - 20) / 60) * 100}%` }} /></span>
+              <span className="bar">{!NON_SCALE_RATINGS.includes(k) && <span style={{ width: `${Math.max(0, Math.min(100, v))}%` }} />}</span>
               <span className="num">{v}</span>
-              <span className="muted small">{gradeLabel(v)}</span>
+              <span className="muted small">{NON_SCALE_RATINGS.includes(k) ? '' : gradeLabel(v)}</span>
             </div>
           ))}
         </div>

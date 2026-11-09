@@ -40,6 +40,7 @@ const BUDGET = {
   hrPerPa: { min: 0.015, max: 0.035 },
   stoveWeeksFirst: 12, // 첫 스토브리그 12주 (22 문서)
   stallAdvances: { fail: 10 }, // 0일 진행이 연속 이 횟수면 장기 실행을 즉시 실패로 끝낸다 (D-096 초기안)
+  leagueTargetPct: { warn: 0.08 }, // 시즌 리그 목표(득점·홈런, 기준값 × (1 + 시즌 편차)) 대비 차이가 이 비율을 넘으면 경고 (D-100)
   // Electron 자체 점검
   rendererLagMs: { warn: 50, fail: 250 }, // 화면 타이머 최대 지연
   mainLoopMs: { warn: 100, fail: 500 }, // 메인 프로세스 이벤트 루프 최대 지연
@@ -207,6 +208,8 @@ if (QUICK) {
         }
         if (r.runsPerGame < BUDGET.runsPerGame.min || r.runsPerGame > BUDGET.runsPerGame.max) st.push('WARN'), checks.push(`${tag} 경기당 득점 ${r.runsPerGame} (범위 ${BUDGET.runsPerGame.min}~${BUDGET.runsPerGame.max})`);
         if (r.leagueHRperPA !== null && (r.leagueHRperPA < BUDGET.hrPerPa.min || r.leagueHRperPA > BUDGET.hrPerPa.max)) st.push('WARN'), checks.push(`${tag} 타석당 홈런 ${r.leagueHRperPA}`);
+        if (r.targetRunsPerGame && Math.abs(r.runsPerGame / r.targetRunsPerGame - 1) > BUDGET.leagueTargetPct.warn) st.push('WARN'), checks.push(`${tag} 경기당 득점 ${r.runsPerGame}: 시즌 목표 ${r.targetRunsPerGame} 대비 ${(100 * (r.runsPerGame / r.targetRunsPerGame - 1)).toFixed(1)}%`);
+        if (r.targetHrPerPa && r.leagueHRperPA !== null && Math.abs(r.leagueHRperPA / r.targetHrPerPa - 1) > BUDGET.leagueTargetPct.warn) st.push('WARN'), checks.push(`${tag} 타석당 홈런 ${r.leagueHRperPA}: 시즌 목표 ${r.targetHrPerPa} 대비 ${(100 * (r.leagueHRperPA / r.targetHrPerPa - 1)).toFixed(1)}%`);
       }
       const lj = judge(sim.loadMs ?? 0, BUDGET.loadMs);
       if (lj !== 'PASS') st.push(lj), checks.push(`불러오기 ${sim.loadMs}ms`);

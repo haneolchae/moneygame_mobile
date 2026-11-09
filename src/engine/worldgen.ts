@@ -1,10 +1,10 @@
 // 가상 세계 생성: 구단별 선수 40명(국내 36 + 외국인 3 + 아시아쿼터 1)과 해외 선수 풀.
-// 분포·연봉 시세는 config의 ASSUMPTION 값과 아래 상수를 따른다.
+// 분포·연봉 시세는 config 설정값(WORLDGEN, D-075·D-087)과 아래 상수를 따른다.
 import { addDays, makeDate } from './calendar';
 import { CLUB_PROFILES } from './clubs';
 import { FOREIGN, FREE_POOL, LEAGUE, usdToWon, WORLDGEN } from './config';
 import type { Rng } from './rng';
-import type { ClubProfile, HiddenAttributes, PlayerOrigin, PlayerTruth, Position } from './types';
+import { FASTBALL_TYPES, type BattingRatings, type CatcherRatings, type ClubProfile, type ContractPreference, type DefenseRatings, type HiddenAttributes, type Pitch, type PitchingRatings, type PitchType, type PlayerOrigin, type PlayerTruth, type Position, type PositionSkills } from './types';
 
 const SURNAMES = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오', '서', '신', '권', '황', '안', '송', '전', '홍', '유', '고', '문', '양', '손', '배', '백', '허', '남', '노', '하', '곽', '성', '차', '주', '우', '구', '민', '류', '나'];
 const SURNAME_WEIGHTS = [21, 14, 8, 5, 4, 2.3, 2.1, 2, 2, 2, 1.5, 1.5, 1.5, 1.5, 1.3, 1.3, 1.3, 1.2, 1.1, 1.1, 1, 0.9, 0.9, 0.9, 0.9, 0.8, 0.7, 0.6, 0.5, 0.5, 0.5, 0.4, 0.4, 0.4, 0.4, 0.4, 0.4, 0.3, 0.3, 0.3];
@@ -41,29 +41,142 @@ export function ageCurve(age: number): number {
   return -(age - 31) * 1.8;
 }
 
+const CONTRACT_PREFERENCES: readonly ContractPreference[] = ['금액', '기간', '우승 전력', '출전 기회', '연고'];
+
+/** 히든 요소 12종(D-088). current: 잠재 상한을 둘 능력치(현재 값) */
 export function hiddenFor(rng: Rng, age: number, current: Record<string, number>): HiddenAttributes {
   const potential: HiddenAttributes['potential'] = {};
   const room = Math.max(0, 27 - age) * 1.6;
   for (const [key, value] of Object.entries(current)) {
     (potential as Record<string, number>)[key] = clamp(value + Math.max(0, rng.normal(room, 5)), 10, 99);
   }
+  const trait = () => clamp(rng.normal(50, 15), 1, 100);
   return {
     potential,
-    growthRate: clamp(rng.normal(50, 15)),
+    growthRate: trait(),
     peakAge: clamp(rng.normal(28, 1.5), 25, 32),
-    coachability: clamp(rng.normal(50, 15)),
-    workEthic: clamp(rng.normal(50, 15)),
-    durability: clamp(rng.normal(50, 15)),
-    recovery: clamp(rng.normal(50, 15)),
-    adaptability: clamp(rng.normal(50, 15)),
-    leadership: clamp(rng.normal(50, 15)),
-    competitiveness: clamp(rng.normal(50, 15)),
+    declineRate: trait(),
+    workEthic: trait(),
+    coachability: trait(),
+    adaptability: trait(),
+    consistency: trait(),
+    durability: trait(),
+    recoveryTendency: trait(),
+    pressureSensitivity: trait(),
+    leadership: trait(),
+    competitiveness: trait(),
+    contractPreference: rng.pick(CONTRACT_PREFERENCES),
   };
+}
+
+/** 야수 수비 종합(범위·포구·송구). 능력 종합·라인업·팀 수비가 함께 쓴다. */
+export function defenseValue(d: DefenseRatings): number {
+  return 0.4 * d.range + 0.35 * d.fielding + 0.1 * d.armStrength + 0.15 * d.armAccuracy;
+}
+
+/** 투수 변화구 종합(화면 표시용): 속구가 아닌 구종 품질의 사용 비중 가중 평균. 확률 계산에 따로 더하지 않는다(10a 3장). */
+export function breakingBall(pitches: readonly Pitch[] | undefined): number | null {
+  const br = (pitches ?? []).filter((x) => !FASTBALL_TYPES.includes(x.type));
+  const w = br.reduce((a, x) => a + x.usage, 0);
+  return w > 0 ? Math.round(br.reduce((a, x) => a + x.quality * x.usage, 0) / w) : null;
+}
+
+const RELATED_POSITIONS: Partial<Record<Position, Position[]>> = {
+  C: ['1B'],
+  '1B': ['3B', 'LF', 'RF'],
+  '2B': ['SS', '3B'],
+  '3B': ['1B', 'SS'],
+  SS: ['2B', '3B'],
+  LF: ['RF', 'CF', '1B'],
+  CF: ['LF', 'RF'],
+  RF: ['LF', 'CF'],
+};
+
+/** 포지션 숙련도: 주 포지션 높음, 관련 포지션 1~2개 중간, 나머지는 기록하지 않음(=0) */
+export function positionSkillsFor(rng: Rng, position: Position, fielding: number): PositionSkills {
+  if (position === 'SP' || position === 'RP') return { [position]: 100 };
+  const out: PositionSkills = { [position]: clamp(rng.normal(70 + (fielding - 50) * 0.4, 7), 50, 98) };
+  const related = RELATED_POSITIONS[position] ?? [];
+  const n = Math.min(related.length, rng.int(1, 2));
+  for (const pos of related.slice(0, n)) out[pos] = clamp(rng.normal(52, 9), 25, 80);
+  return out;
+}
+
+/** 야수 능력치 묶음. r(bias): 능력 생성기(구단 전력·나이·출신 보정이 들어간 정규분포) */
+export function hitterAbilities(rng: Rng, position: Position, r: (bias?: number) => number, origin: PlayerOrigin = 'domestic'): { batting: BattingRatings; defense: DefenseRatings; catcher?: CatcherRatings; positions: PositionSkills } {
+  const premium = position === 'C' || position === 'SS' || position === '2B' || position === 'CF';
+  const speed = clamp(rng.normal(position === 'CF' || position === 'SS' ? 60 : 48, 12));
+  const batting: BattingRatings = {
+    contact: r(),
+    power: r(origin === 'foreign' ? 8 : premium ? -5 : 4),
+    eye: r(),
+    baserunning: clamp(rng.normal(48 + (speed - 50) * 0.4, 10)),
+    speed,
+    bunt: clamp(rng.normal(premium ? 50 : 40, 12)),
+    mental: clamp(rng.normal(50, 12)),
+    stamina: clamp(rng.normal(position === 'C' ? 58 : 52, 10)),
+  };
+  const defense: DefenseRatings = {
+    range: clamp(rng.normal(premium ? 58 : 48, 12)),
+    fielding: r(premium ? 3 : 0),
+    armStrength: clamp(rng.normal(position === 'C' || position === 'SS' || position === '3B' || position === 'RF' ? 60 : 52, 11)),
+    armAccuracy: clamp(rng.normal(52, 11)),
+  };
+  const catcher = position === 'C' ? { blocking: r(), framing: r(), transfer: r() } : undefined;
+  return { batting, defense, ...(catcher ? { catcher } : {}), positions: positionSkillsFor(rng, position, defense.fielding) };
+}
+
+/** 투수의 타격·수비 값(DH 리그라 거의 쓰지 않는다) */
+function pitcherBatting(rng: Rng): BattingRatings {
+  return { contact: clamp(rng.normal(15, 5)), power: clamp(rng.normal(12, 5)), eye: clamp(rng.normal(15, 5)), baserunning: clamp(rng.normal(35, 8)), speed: clamp(rng.normal(35, 10)), bunt: clamp(rng.normal(30, 10)), mental: 50, stamina: 50 };
+}
+
+const SECONDARY_PITCHES: readonly PitchType[] = ['슬라이더', '커브', '체인지업', '스플리터', '포크', '커터'];
+const PITCH_SPEED_GAP: Record<PitchType, number> = { 포심: 0, 투심: -3, 커터: -5, 슬라이더: -10, 커브: -20, 체인지업: -12, 스플리터: -8, 포크: -10 };
+
+/** 투수 능력치 묶음과 구종 배열. 사용 비중은 합 1로 정규화한다(구종 수 보너스 없음). */
+export function pitcherAbilities(rng: Rng, starter: boolean, r: (bias?: number) => number, origin: PlayerOrigin = 'domestic'): { pitching: PitchingRatings; pitches: Pitch[]; batting: BattingRatings; defense: DefenseRatings; positions: PositionSkills } {
+  const stuff = r();
+  const control = r();
+  const groundball = clamp(rng.normal(50, 13));
+  const velocityAvg = Math.round((143 + (stuff - 50) * 0.22 + (starter ? -1 : 1) + (origin === 'foreign' ? 2 : 0) + rng.normal(0, 2.5)) * 10) / 10;
+  const pitching: PitchingRatings = {
+    velocityAvg,
+    velocityMax: Math.round((velocityAvg + 3 + rng.next() * 3) * 10) / 10,
+    stuff,
+    control,
+    groundball,
+    mental: clamp(rng.normal(50, 12)),
+    holdRunners: clamp(rng.normal(50, 12)),
+    stamina: starter ? clamp(rng.normal(72, 8), 55, 95) : clamp(rng.normal(35, 8), 15, 55),
+    recovery: clamp(rng.normal(starter ? 50 : 58, 10)),
+    fielding: clamp(rng.normal(48, 10)),
+  };
+  const fastball: PitchType = groundball >= 60 && rng.chance(0.6) ? '투심' : '포심';
+  const extra = starter ? rng.int(2, 4) : rng.int(1, 2);
+  const pool = [...SECONDARY_PITCHES];
+  const types: PitchType[] = [fastball];
+  for (let i = 0; i < extra && pool.length; i++) types.push(pool.splice(rng.int(0, pool.length - 1), 1)[0]!);
+  const raw = types.map((t, i) => (i === 0 ? 0.45 + rng.next() * 0.15 : 0.1 + rng.next() * 0.25));
+  const total = raw.reduce((a, x) => a + x, 0);
+  const pitches: Pitch[] = types.map((type, i) => ({
+    type,
+    velocity: Math.round((velocityAvg + PITCH_SPEED_GAP[type] + rng.normal(0, 1.5)) * 10) / 10,
+    movement: clamp(rng.normal(50, 12)),
+    command: clamp(control + rng.normal(0, 7)),
+    quality: clamp(stuff + rng.normal(0, 8)),
+    mastery: clamp(rng.normal(55, 12)),
+    usage: Math.round((raw[i]! / total) * 1000) / 1000,
+  }));
+  // 반올림 오차는 주 구종에 몰아 합을 정확히 1로 맞춘다.
+  pitches[0]!.usage = Math.round((1 - pitches.slice(1).reduce((a, x) => a + x.usage, 0)) * 1000) / 1000;
+  const defense: DefenseRatings = { range: clamp(rng.normal(40, 10)), fielding: pitching.fielding, armStrength: clamp(rng.normal(60, 10)), armAccuracy: clamp(rng.normal(50, 10)) };
+  return { pitching, pitches, batting: pitcherBatting(rng), defense, positions: { [starter ? 'SP' : 'RP']: 100 } };
 }
 
 export function hitterOverall(p: PlayerTruth): number {
   const b = p.batting;
-  return 0.3 * b.contact + 0.2 * b.eye + 0.3 * b.power + 0.08 * b.speed + 0.12 * p.defense.fielding;
+  return 0.3 * b.contact + 0.2 * b.eye + 0.3 * b.power + 0.08 * b.speed + 0.12 * defenseValue(p.defense);
 }
 
 export function pitcherOverall(p: PlayerTruth): number {
@@ -128,14 +241,8 @@ function genPitcher(ctx: GenContext, club: ClubProfile | null, starter: boolean,
   const { rng } = ctx;
   const age = genAge(rng, club, origin);
   const shift = (club ? (WORLDGEN.strengthShift[club.strength] ?? 0) : 0) + ageCurve(age) + ORIGIN_SHIFT[origin] + (ctx.shift ?? 0);
-  const r = (sd = WORLDGEN.ratingSd) => clamp(rng.normal(WORLDGEN.ratingMean + shift, sd));
-  const pitching = {
-    stuff: r(),
-    control: r(),
-    groundball: clamp(rng.normal(50, 13)),
-    stamina: starter ? clamp(rng.normal(72, 8), 55, 95) : clamp(rng.normal(35, 8), 15, 55),
-  };
-  const batting = { contact: clamp(rng.normal(15, 5)), eye: clamp(rng.normal(15, 5)), power: clamp(rng.normal(12, 5)), speed: clamp(rng.normal(35, 10)) };
+  const r = (bias = 0) => clamp(rng.normal(WORLDGEN.ratingMean + shift + bias, WORLDGEN.ratingSd));
+  const ab = pitcherAbilities(rng, starter, r, origin);
   const career = careerFor(rng, age, origin);
   const p: PlayerTruth = {
     id: ctx.nextId(),
@@ -151,10 +258,8 @@ function genPitcher(ctx: GenContext, club: ClubProfile | null, starter: boolean,
     salary: 0,
     contractYears: contractYearsFor(rng, origin),
     career,
-    batting,
-    pitching,
-    defense: { fielding: clamp(rng.normal(45, 10)), arm: clamp(rng.normal(60, 10)), range: clamp(rng.normal(40, 10)) },
-    hidden: hiddenFor(rng, age, { stuff: pitching.stuff, control: pitching.control, groundball: pitching.groundball, stamina: pitching.stamina }),
+    ...ab,
+    hidden: hiddenFor(rng, age, { stuff: ab.pitching.stuff, control: ab.pitching.control, groundball: ab.pitching.groundball, stamina: ab.pitching.stamina }),
   };
   p.salary = salaryForOrigin(rng, p, age);
   return p;
@@ -166,8 +271,7 @@ function genHitter(ctx: GenContext, club: ClubProfile | null, position: Position
   const shift = (club ? (WORLDGEN.strengthShift[club.strength] ?? 0) : 0) + ageCurve(age) + ORIGIN_SHIFT[origin] + (ctx.shift ?? 0);
   const r = (offset = 0) => clamp(rng.normal(WORLDGEN.ratingMean + shift + offset, WORLDGEN.ratingSd));
   // 포지션 성향: 중앙 내야·포수는 수비 쪽, 코너는 장타 쪽으로 기운다. 외국인 타자는 장타 쪽.
-  const premium = position === 'C' || position === 'SS' || position === '2B' || position === 'CF';
-  const batting = { contact: r(), eye: r(), power: r(origin === 'foreign' ? 8 : premium ? -5 : 4), speed: clamp(rng.normal(position === 'CF' || position === 'SS' ? 60 : 48, 12)) };
+  const ab = hitterAbilities(rng, position, r, origin);
   const career = careerFor(rng, age, origin);
   const p: PlayerTruth = {
     id: ctx.nextId(),
@@ -183,10 +287,9 @@ function genHitter(ctx: GenContext, club: ClubProfile | null, position: Position
     salary: 0,
     contractYears: contractYearsFor(rng, origin),
     career,
-    batting,
+    ...ab,
     pitching: null,
-    defense: { fielding: r(premium ? 3 : 0), arm: clamp(rng.normal(55, 12)), range: clamp(rng.normal(premium ? 58 : 48, 12)) },
-    hidden: hiddenFor(rng, age, { contact: batting.contact, eye: batting.eye, power: batting.power, speed: batting.speed }),
+    hidden: hiddenFor(rng, age, { contact: ab.batting.contact, eye: ab.batting.eye, power: ab.batting.power, speed: ab.batting.speed, range: ab.defense.range, fielding: ab.defense.fielding }),
   };
   p.salary = salaryForOrigin(rng, p, age);
   return p;
