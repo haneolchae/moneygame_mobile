@@ -25,7 +25,7 @@ import { asTruth, generateAmateurs } from '../engine/amateur';
 import { assignFaCandidates, generateDomesticFreePool, generateOverseasPool, generateWorld } from '../engine/worldgen';
 import { Achievements } from './achievements';
 import { Market } from './market';
-import { Records } from './records';
+import { fieldingLine, Records } from './records';
 import { Draft, draftDate, isSenior } from './draft';
 import { CLOSE_RULES, SeasonClose } from './seasonClose';
 import { Postseason, POSTSEASON_MAX_INNINGS, SERIES_LABEL } from './postseason';
@@ -1249,6 +1249,29 @@ export class GameService {
     const own = p.clubId === meta.userClubId;
     const scoutText = `스카우트팀 평가 오차 배율 ×${scale.toFixed(2)} (낮을수록 정확).`;
     const record = this.records.playerRecord(meta, p);
+    // 스프레이 차트: 이번 시즌 기록이 없으면 직전 시즌(압축된 시즌은 합계 표에서 읽는다, D-106)
+    let spray: PlayerDetailView['spray'] = null;
+    for (const season of [meta.season, meta.season - 1]) {
+      if (season <= NEW_GAME.previousSeason) continue;
+      const rows = this.repo.sprayTotals(season, p.id);
+      if (rows.length === 0) continue;
+      const types = (['GB', 'LD', 'FB'] as const).map((type) => ({ type, n: rows.filter((r) => r.type === type).reduce((a, r) => a + r.n, 0), h: rows.filter((r) => r.type === type).reduce((a, r) => a + r.h, 0) }));
+      const zones = new Map<string, { zone: string; n: number; h: number; xbh: number }>();
+      for (const r of rows) {
+        const z = zones.get(r.zone) ?? { zone: r.zone, n: 0, h: 0, xbh: 0 };
+        z.n += r.n;
+        z.h += r.h;
+        z.xbh += r.xbh;
+        zones.set(r.zone, z);
+      }
+      spray = { season, balls: rows.reduce((a, r) => a + r.n, 0), zones: [...zones.values()], types };
+      break;
+    }
+    const fielding: PlayerDetailView['fielding'] = [];
+    for (let season = meta.season; season >= Math.max(NEW_GAME.firstSeason, meta.season - 3); season--) {
+      const line = fieldingLine(season, this.repo.fieldingTotals(season, p.id));
+      if (line.TC > 0) fielding.push(line);
+    }
     return {
       ...base,
       birthDate: p.birthDate,
@@ -1261,6 +1284,8 @@ export class GameService {
         : `타 구단 선수라 평가 오차가 큽니다. 실제 능력과 다를 수 있습니다. ${scoutText}`,
       exactRatings: own,
       record,
+      spray,
+      fielding,
       honors: p.honors ?? [],
       draftInfo: p.draft ? `${p.draft.year} 신인 드래프트 ${p.draft.round}라운드 ${p.draft.pick}순위 (${p.draft.school})` : null,
       retired: p.retired ? `${p.retired.season} 시즌 뒤 은퇴 (${p.retired.reason})` : null,

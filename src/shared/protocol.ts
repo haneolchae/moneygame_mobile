@@ -187,6 +187,24 @@ export interface PlayerListItem {
   contractYears: number;
 }
 
+/** 스프레이 차트(정규시즌, 홈런 제외 인플레이 타구). 구역 ID는 10b의 S{1~7}-{IN|SH|DP|WL}·FO-{L|C|R}, 필드 기준(좌타자 거울상 반영 뒤) */
+export interface SprayView {
+  season: number;
+  balls: number;
+  zones: Array<{ zone: string; n: number; h: number; xbh: number }>;
+  types: Array<{ type: 'GB' | 'LD' | 'FB'; n: number; h: number }>;
+}
+
+/** 수비 기록 한 줄: 기회(TC) = 자살 + 보살 + 실책, 수비율 = (자살 + 보살) / 기회 */
+export interface FieldingLineView {
+  season: number;
+  PO: number;
+  A: number;
+  E: number;
+  TC: number;
+  FPCT: number | null;
+}
+
 export interface PlayerDetailView extends PlayerListItem {
   birthDate: string;
   proSeasons: number;
@@ -202,6 +220,10 @@ export interface PlayerDetailView extends PlayerListItem {
   exactRatings: boolean;
   /** 통산·직전 3개 시즌·현재 시즌 기록(D-079) */
   record: PlayerRecordView;
+  /** 최근 기록이 있는 시즌의 스프레이 차트(없으면 null) */
+  spray: SprayView | null;
+  /** 현재 시즌과 직전 3개 시즌 수비 기록(기록 있는 시즌만) */
+  fielding: FieldingLineView[];
 }
 
 export interface PostseasonSeriesView {
@@ -316,6 +338,8 @@ export interface TeamRecordsView {
   statsLabel: string;
   batting: TeamStatItem[];
   pitching: TeamStatItem[];
+  /** statsSeason 정규시즌 선수별 수비 기록(이 구단 소속으로 쌓은 것) */
+  fielding: Array<FieldingLineView & { playerId: number; name: string; position: string }>;
   history: TeamHistoryRow[];
   records: Array<{ label: string; holder: string; value: string; season: number; preGame: boolean; source: 'real' | 'start' | 'game'; mine: boolean }>;
   /** 연표: 창단·우승·준우승·정규시즌 1위 */

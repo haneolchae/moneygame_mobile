@@ -348,6 +348,10 @@ export interface GameRepository {
   sprayTotals(season: number, playerId: PlayerId): Array<{ zone: string; type: string; n: number; h: number; xbh: number }>;
   /** 수비 합계(자살·보살·실책) */
   fieldingTotals(season: number, playerId: PlayerId): { PO: number; A: number; E: number };
+  /** 구단 소속으로 쌓은 선수별 수비 합계(정규시즌) */
+  fieldingByClub(season: number, clubId: ClubId): Map<PlayerId, { PO: number; A: number; E: number }>;
+  /** 성적 혼합(3b)용 정규시즌 타석 결과: after < date < before, 날짜·경기·순번 순 */
+  formRows(season: number, after: GameDate | null, before: GameDate): Array<{ batterId: PlayerId; pitcherId: PlayerId; date: GameDate; outcome: string }>;
   getSeasonStandings(season: number): SeasonStanding[];
   /** 시즌 최종 순위 기록(같은 시즌·구단은 덮어쓴다) */
   saveSeasonStandings(rows: SeasonStanding[]): void;

@@ -4,7 +4,7 @@ import { addBatting, addPitching, EMPTY_BATTING, EMPTY_PITCHING } from '../engin
 import { computeStandings } from '../engine/standings';
 import { battingRates, formatInnings, pitchingRates, type BattingTotals, type PitchingTotals } from '../engine/stats';
 import type { ClubId, PlayerTruth } from '../engine/types';
-import type { ClubRef, PlayerRecordView, StatLineView, TeamHistoryRow, TeamRecordsView, TeamStatItem } from '../shared/protocol';
+import type { ClubRef, FieldingLineView, PlayerRecordView, StatLineView, TeamHistoryRow, TeamRecordsView, TeamStatItem } from '../shared/protocol';
 import { clubHistory } from '../engine/data/history';
 import { ACHIEVEMENTS, QUALIFY_PA_PER_GAME } from './achievements';
 import type { GameMeta, GameRepository } from './ports';
@@ -227,6 +227,12 @@ export class Records {
       else if (h.postseason === '한국시리즈 준우승') timeline.push({ year: h.season, label: '한국시리즈 준우승', mine: h.mine });
       if (firsts.has(h.season)) timeline.push({ year: h.season, label: '정규시즌 1위', mine: h.mine });
     }
+    const fieldingMap = statsSeason > NEW_GAME.previousSeason ? this.repo.fieldingByClub(statsSeason, club) : new Map<number, { PO: number; A: number; E: number }>();
+    const playerById = new Map(this.repo.getPlayers().map((p) => [p.id, p]));
+    const fielding = [...fieldingMap]
+      .map(([id, t]) => ({ ...fieldingLine(statsSeason, t), playerId: id, name: playerById.get(id)?.name ?? `#${id}`, position: playerById.get(id)?.position ?? '' }))
+      .filter((l) => l.TC > 0)
+      .sort((a, b) => b.TC - a.TC || a.playerId - b.playerId);
     const got = isUser ? this.repo.getAchievements() : [];
     const achievements = ACHIEVEMENTS.map((a) => ({ ...a, achieved: got.filter((g) => g.key === a.key).map((g) => ({ season: g.season, date: g.date, detail: g.detail, xp: g.xp })) }));
     return {
@@ -235,6 +241,7 @@ export class Records {
       statsLabel: statsSeason <= NEW_GAME.previousSeason ? `${statsSeason} 시즌 (시작 이전 기록)` : meta.mode === 'season' && statsSeason === meta.season && this.repo.countFixtures(statsSeason).played < this.repo.countFixtures(statsSeason).total ? `${statsSeason} 시즌 진행 중` : `${statsSeason} 시즌`,
       batting,
       pitching,
+      fielding,
       history,
       records,
       founded: hist?.firstSeason ?? null,
@@ -246,4 +253,10 @@ export class Records {
       owner: { level: meta.ownerLevel, xp: meta.ownerXp, xpToNext: 0 },
     };
   }
+}
+
+/** 수비 기록 한 줄(05 문서): 기회 = 자살 + 보살 + 실책, 수비율 = (자살 + 보살) / 기회. 기회 0이면 수비율 없음 */
+export function fieldingLine(season: number, t: { PO: number; A: number; E: number }): FieldingLineView {
+  const TC = t.PO + t.A + t.E;
+  return { season, PO: t.PO, A: t.A, E: t.E, TC, FPCT: TC > 0 ? (t.PO + t.A) / TC : null };
 }

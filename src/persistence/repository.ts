@@ -322,6 +322,22 @@ export class SqliteGameRepository implements GameRepository {
     return { PO: num(r.PO), A: num(r.A), E: num(r.E) };
   }
 
+  fieldingByClub(season: number, clubId: ClubId): Map<PlayerId, { PO: number; A: number; E: number }> {
+    const rows = (
+      this.isCompressed(season)
+        ? this.stmt("SELECT player_id AS id, SUM(PO) AS PO, SUM(A) AS A, SUM(E) AS E FROM fielding_season WHERE stage = 'regular' AND season = ? AND club_id = ? GROUP BY player_id").all(season, clubId)
+        : this.stmt("SELECT player_id AS id, SUM(kind = 'PO') AS PO, SUM(kind = 'A') AS A, SUM(kind = 'E') AS E FROM fielding WHERE stage = 'regular' AND season = ? AND club_id = ? GROUP BY player_id").all(season, clubId)
+    ) as Row[];
+    return new Map(rows.map((r) => [num(r.id), { PO: num(r.PO), A: num(r.A), E: num(r.E) }]));
+  }
+
+  formRows(season: number, after: GameDate | null, before: GameDate): Array<{ batterId: PlayerId; pitcherId: PlayerId; date: GameDate; outcome: string }> {
+    const rows = this.stmt(
+      "SELECT batter_id AS b, pitcher_id AS p, date, outcome FROM plate_appearances WHERE stage = 'regular' AND season = ? AND date > ? AND date < ? ORDER BY date, game_id, seq",
+    ).all(season, after ?? '', before) as Row[];
+    return rows.map((r) => ({ batterId: num(r.b), pitcherId: num(r.p), date: String(r.date) as GameDate, outcome: String(r.outcome) }));
+  }
+
   teamTotals(season: number): TeamSeasonTotals[] {
     if (this.isCompressed(season)) return this.teamTotalsFrom(season, true);
     return this.teamTotalsFrom(season, false);

@@ -4,8 +4,9 @@ import type { TeamRecordsView, TeamStatItem } from '../../shared/protocol';
 import type { Nav } from '../App';
 import { api } from '../api';
 import { Icon } from '../icons';
+import { FieldingTable } from './PlayerDetail';
 
-type Tab = 'stats' | 'achievements';
+type Tab = 'stats' | 'fielding' | 'achievements';
 
 function StatGrid({ title, items }: { title: string; items: TeamStatItem[] }) {
   return (
@@ -78,6 +79,7 @@ export function TeamRecords({ nav }: { nav: Nav }) {
           {(
             [
               ['stats', '팀 통계'],
+              ['fielding', '수비 기록'],
               ['achievements', `업적 (${achieved})`],
             ] as Array<[Tab, string]>
           ).map(([k, label]) => (
@@ -97,6 +99,17 @@ export function TeamRecords({ nav }: { nav: Nav }) {
           <StatGrid title="팀 타격" items={v.batting} />
           <StatGrid title="팀 투구" items={v.pitching} />
         </div>
+      )}
+
+      {tab === 'fielding' && (
+        <section className="panel">
+          <div className="panel-head">
+            <h2>선수별 수비 기록</h2>
+            <span className="meta">정규시즌 · 이 구단 소속으로 쌓은 기록 · 기회순</span>
+          </div>
+          {v.fielding.length > 0 ? <FieldingTable lines={v.fielding} first="player" /> : <p className="muted">이 시즌 수비 기록이 없습니다(시작 이전 기록에는 수비 기록이 없습니다).</p>}
+          <p className="muted small">기회 = 자살 + 보살 + 실책, 수비율 = (자살 + 보살) / 기회. 삼진 자살은 포수에게 기록됩니다.</p>
+        </section>
       )}
 
       {tab === 'achievements' && (

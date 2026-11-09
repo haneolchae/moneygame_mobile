@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import type { PlayerDetailView, PlayerRecordView, StatValue } from '../../shared/protocol';
+import type { FieldingLineView, PlayerDetailView, PlayerRecordView, StatValue } from '../../shared/protocol';
 import type { Nav } from '../App';
 import { api } from '../api';
+import { SprayChart } from '../SprayChart';
 import { dateKo, fixed2, gradeLabel, innings, int, NON_SCALE_RATINGS, pct, POSITION_LABELS, RATING_LABELS, rate3, won } from '../format';
 
 function StatTable({ stats, spec }: { stats: Record<string, StatValue>; spec: Array<[string, (v: StatValue | undefined) => string]> }) {
@@ -25,6 +26,30 @@ const PITCHING_SPEC: Array<[string, (v: StatValue | undefined) => string]> = [
   ['G', int], ['GS', int], ['IP', innings], ['W', int], ['L', int], ['SV', int], ['BF', int], ['H', int], ['R', int], ['ER', int], ['BB', int], ['HBP', int], ['K', int], ['HR', int],
   ['ERA', fixed2], ['WHIP', fixed2], ['FIP', fixed2], ['K/9', fixed2], ['BB/9', fixed2], ['HR/9', fixed2], ['K-BB%', pct],
 ];
+
+/** 수비 기록 표(시즌별): 기회 = 자살 + 보살 + 실책 */
+export function FieldingTable({ lines, first }: { lines: Array<FieldingLineView & { name?: string; position?: string; playerId?: number }>; first: 'season' | 'player' }) {
+  return (
+    <table className="grid dense">
+      <thead>
+        <tr>
+          <th>{first === 'season' ? '시즌' : '선수'}</th>
+          {first === 'player' && <th>주 포지션</th>}
+          <th className="num">자살</th><th className="num">보살</th><th className="num">실책</th><th className="num">기회</th><th className="num">수비율</th>
+        </tr>
+      </thead>
+      <tbody>
+        {lines.map((l) => (
+          <tr key={first === 'season' ? l.season : l.playerId}>
+            <td>{first === 'season' ? l.season : l.name}</td>
+            {first === 'player' && <td>{POSITION_LABELS[l.position ?? ''] ?? l.position}</td>}
+            <td className="num">{l.PO}</td><td className="num">{l.A}</td><td className="num">{l.E}</td><td className="num">{l.TC}</td><td className="num">{rate3(l.FPCT)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
 
 /** 기간별 기록: 현재 시즌 → 직전 3개 시즌 → 통산 (D-079) */
 function RecordTable({ r }: { r: PlayerRecordView }) {
@@ -120,6 +145,19 @@ export function PlayerDetail({ nav, playerId }: { nav: Nav; playerId: number }) 
         {!p.battingStats && !p.pitchingStats && <p className="muted">이번 시즌 출전 기록이 없습니다.</p>}
         <p className="muted small">분모가 0인 지표는 '—'로 표시합니다. FIP 상수는 리그 평균 ERA에 맞춰 시즌 중 계속 갱신됩니다(잠정치).</p>
       </section>
+      <div className="columns">
+        {p.spray && (
+          <section className="panel">
+            <h2>타구 분포 (스프레이 차트)</h2>
+            <SprayChart spray={p.spray} />
+          </section>
+        )}
+        <section className="panel">
+          <h2>수비 기록</h2>
+          {p.fielding.length > 0 ? <FieldingTable lines={p.fielding} first="season" /> : <p className="muted">수비 기록이 없습니다.</p>}
+          <p className="muted small">정규시즌 기준. 기회 = 자살 + 보살 + 실책, 수비율 = (자살 + 보살) / 기회. 포지션별 구분·수비 기여 추정은 아직 제공하지 않습니다.</p>
+        </section>
+      </div>
     </div>
   );
 }
