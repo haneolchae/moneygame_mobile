@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { SAVE } from '../engine/config';
 import { SqliteGameRepository } from './repository';
-import { createSchema, migrate, MIGRATIONS, readSchemaVersion, SCHEMA_VERSION, type Migration } from './schema';
+import { createSchema, migrate, MIGRATIONS, oldVersionMessage, readSchemaVersion, SCHEMA_VERSION, type Migration } from './schema';
 
 export interface SlotMeta {
   slot: string;
@@ -30,14 +30,14 @@ export interface SlotMeta {
 }
 
 export interface SlotListing extends SlotMeta {
-  status: 'ok' | 'corrupt' | 'newerVersion';
+  status: 'ok' | 'corrupt' | 'newerVersion' | 'oldVersion';
   message?: string;
   backups: Array<{ index: number; savedAt: string; date: string }>;
 }
 
 export class SaveError extends Error {
   constructor(
-    public readonly code: 'CORRUPT' | 'NEWER_VERSION' | 'NOT_FOUND' | 'NO_SESSION' | 'WRITE_FAILED' | 'INVALID_SLOT',
+    public readonly code: 'CORRUPT' | 'NEWER_VERSION' | 'OLD_VERSION' | 'NOT_FOUND' | 'NO_SESSION' | 'WRITE_FAILED' | 'INVALID_SLOT',
     message: string,
   ) {
     super(message);
@@ -58,7 +58,7 @@ function openDb(path: string, readOnly = false): DatabaseSync {
 }
 
 /** 파일 무결성과 필수 메타를 확인한다. 실패하면 이유를 돌려준다. */
-export function inspectSaveFile(path: string): { ok: true; meta: Omit<SlotMeta, 'slot' | 'sizeBytes'> } | { ok: false; code: 'CORRUPT' | 'NEWER_VERSION'; message: string } {
+export function inspectSaveFile(path: string, migrations: Migration[] = MIGRATIONS): { ok: true; meta: Omit<SlotMeta, 'slot' | 'sizeBytes'> } | { ok: false; code: 'CORRUPT' | 'NEWER_VERSION' | 'OLD_VERSION'; message: string } {
   let db: DatabaseSync | null = null;
   try {
     db = openDb(path, true);
@@ -66,6 +66,8 @@ export function inspectSaveFile(path: string): { ok: true; meta: Omit<SlotMeta, 
     if (!check || check.quick_check !== 'ok') return { ok: false, code: 'CORRUPT', message: `무결성 검사 실패: ${check?.quick_check ?? '응답 없음'}` };
     const version = readSchemaVersion(db);
     if (version > SCHEMA_VERSION) return { ok: false, code: 'NEWER_VERSION', message: `더 새로운 버전(${version})에서 만든 저장본입니다. 게임을 업데이트하세요.` };
+    // 출시 전 구버전(D-094): 변환 단계가 없으면 이유를 안내하고 거부한다.
+    if (version < SCHEMA_VERSION && !migrations.some((m) => m.from === version)) return { ok: false, code: 'OLD_VERSION', message: oldVersionMessage(version) };
     const get = (key: string) => {
       const row = db!.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value?: string } | undefined;
       if (!row?.value) throw new Error(`필수 정보 없음: ${key}`);
@@ -156,7 +158,15 @@ export class SaveManager {
     if (this.repo) return this.repo;
     if (!this.inspectRecoverableSession()) throw new SaveError('NO_SESSION', '이어서 할 세션이 없습니다.');
     this.session = openDb(this.sessionPath);
-    migrate(this.session, this.migrations);
+    try {
+      migrate(this.session, this.migrations);
+    } catch (e) {
+      const m = /^OLD_VERSION:(\d+)/.exec((e as Error).message);
+      this.session.close();
+      this.session = null;
+      if (m) throw new SaveError('OLD_VERSION', oldVersionMessage(Number(m[1])));
+      throw e;
+    }
     this.repo = new SqliteGameRepository(this.session);
     return this.repo;
   }
@@ -220,7 +230,7 @@ export class SaveManager {
   load(slot: string, backupIndex = 0): SqliteGameRepository {
     const source = this.slotPath(slot, backupIndex);
     if (!existsSync(source)) throw new SaveError('NOT_FOUND', '저장본이 없습니다.');
-    const inspected = inspectSaveFile(source);
+    const inspected = inspectSaveFile(source, this.migrations);
     if (!inspected.ok) throw new SaveError(inspected.code, inspected.message);
     const staging = join(this.tmpDir, `load.${Date.now()}.db`);
     this.removeDbFiles(staging);
@@ -274,7 +284,7 @@ export class SaveManager {
       const info = inspectSaveFile(path);
       const sizeBytes = statSync(path).size;
       if (info.ok) out.push({ slot, ...info.meta, sizeBytes, status: 'ok', backups });
-      else out.push({ slot, name: slot, season: 0, date: '', clubId: 0, savedAt: '', schemaVersion: 0, sizeBytes, status: info.code === 'NEWER_VERSION' ? 'newerVersion' : 'corrupt', message: info.message, backups });
+      else out.push({ slot, name: slot, season: 0, date: '', clubId: 0, savedAt: '', schemaVersion: 0, sizeBytes, status: info.code === 'NEWER_VERSION' ? 'newerVersion' : info.code === 'OLD_VERSION' ? 'oldVersion' : 'corrupt', message: info.message, backups });
     }
     return out;
   }

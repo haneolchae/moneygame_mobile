@@ -387,7 +387,7 @@ export interface SaveSlotInfo {
   schemaVersion: number;
   sizeBytes: number;
   backups: Array<{ index: number; savedAt: string; date: string }>;
-  status: 'ok' | 'corrupt' | 'newerVersion';
+  status: 'ok' | 'corrupt' | 'newerVersion' | 'oldVersion';
   message?: string;
 }
 

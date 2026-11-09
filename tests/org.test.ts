@@ -281,21 +281,22 @@ describe('저장·재현성·이전 저장본', () => {
     expect(a.tasks2).toBe(a.tasks);
   });
 
-  it('2b(스키마 3) 저장본을 불러오면 조직 테이블을 추가하고 직원을 시드로 만든다', async () => {
+  it('출시 전 구버전 저장본(2b 스키마 3)은 변환하지 않고 이유를 안내하며 거부한다(D-094)', async () => {
     const dir = newDir();
     const d = makeDispatcher(dir);
     await call(d, 'game.new', { clubId: 4, saveName: 't', seed: 'migrate' });
-    const staffBefore = d.saves.repository().getStaff(4).map((s) => s.name);
     await call(d, 'save.save', { slot: 'old' });
     d.close();
     const db = new DatabaseSync(join(dir, 'saves', 'old.db'));
-    db.exec('DROP TABLE staff; DROP TABLE wp_ledger; DROP TABLE delegation; DROP TABLE work_queue; DROP TABLE approvals; DROP TABLE history_lines; DROP TABLE achievements; DROP TABLE amateurs; ALTER TABLE fixtures DROP COLUMN stage; ALTER TABLE games DROP COLUMN stage; ALTER TABLE plate_appearances DROP COLUMN stage; ALTER TABLE runs DROP COLUMN stage; PRAGMA user_version = 3;');
+    db.exec('PRAGMA user_version = 3;');
     db.close();
     const d2 = makeDispatcher(dir);
-    await call(d2, 'save.load', { slot: 'old' });
-    const v = await call(d2, 'org.view');
-    expect(v.headcount).toBeGreaterThan(40);
-    expect(d2.saves.repository().getStaff(4).map((s) => s.name)).toEqual(staffBefore); // 같은 시드 → 같은 직원
+    const r = await d2.respond('save.load', { slot: 'old' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('SAVE_OLD_VERSION');
+      expect(r.error.message).toContain('저장 형식 3');
+    }
     d2.close();
   });
 });

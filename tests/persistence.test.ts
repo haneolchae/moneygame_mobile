@@ -113,7 +113,7 @@ describe('재현성과 저장', () => {
     d2.close();
   });
 
-  it('더 새로운 버전의 저장본은 거부하고, 구버전은 사본에서 변환한다', async () => {
+  it('더 새로운 버전의 저장본은 거부하고, 출시 전 구버전은 이유를 안내하고 거부한다(D-094). 변환 단계가 있으면 사본에서 변환한다', async () => {
     const dir = newDir();
     const d = makeDispatcher(dir);
     await call(d, 'game.new', { clubId: 7, saveName: '버전', seed: 'ver' });
@@ -127,7 +127,28 @@ describe('재현성과 저장', () => {
     expect(info.ok).toBe(false);
     if (!info.ok) expect(info.code).toBe('NEWER_VERSION');
 
-    // 변환 단계 실행 확인 (가상의 1→2 변환)
+    // 출시 전 구버전: 목록에 이유와 함께 표시되고 불러오기는 거부된다. 원본 파일은 그대로다.
+    const dbOld = new DatabaseSync(path);
+    dbOld.exec('PRAGMA user_version = 7');
+    dbOld.close();
+    const old = inspectSaveFile(path);
+    expect(old.ok).toBe(false);
+    if (!old.ok) {
+      expect(old.code).toBe('OLD_VERSION');
+      expect(old.message).toContain('새 게임');
+    }
+    const d2 = makeDispatcher(dir);
+    const slots = await call(d2, 'save.list');
+    expect(slots.find((s) => s.slot === 'v')?.status).toBe('oldVersion');
+    const r = await d2.respond('save.load', { slot: 'v' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('SAVE_OLD_VERSION');
+    d2.close();
+    const check = new DatabaseSync(path);
+    expect(readSchemaVersion(check)).toBe(7);
+    check.close();
+
+    // 변환 단계 실행 확인 (출시 후 정책용 가상의 1→2 변환)
     const db2 = new DatabaseSync(path);
     db2.exec('PRAGMA user_version = 1');
     const step: Migration = { from: 1, to: 2, description: '테스트 열 추가', up: (x) => x.exec('ALTER TABLE players ADD COLUMN test_col INTEGER') };

@@ -3,7 +3,11 @@
 // 변환은 항상 세션 사본에서 실행하고, 원래 세이브 파일은 건드리지 않는다.
 import type { DatabaseSync } from 'node:sqlite';
 
-export const SCHEMA_VERSION = 7;
+/**
+ * 8: 3a 능력치 체계(1~100·세부 능력치·구종·히든 12종, D-086~D-088)와 시즌 리그 환경(D-100). 선수 능력은 truth JSON에 들어 있어 표 구조는 같다.
+ * 출시 전에는 세이브 호환을 보장하지 않는다(D-094): 이전 버전 저장본은 변환하지 않고 불러오기 때 이유를 안내하고 거부한다.
+ */
+export const SCHEMA_VERSION = 8;
 
 const SCHEMA_V3 = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -253,49 +257,16 @@ export interface Migration {
   up(db: DatabaseSync): void;
 }
 
-/** 버전 변환 목록. 예: { from: 1, to: 2, description: '...', up: (db) => db.exec('ALTER TABLE ...') } */
-export const MIGRATIONS: Migration[] = [
-  {
-    from: 1,
-    to: 2,
-    description: '1단계 개발 빌드 저장본(2026 개막 시작)은 스토브리그 시작 구조와 호환되지 않는다',
-    up: () => {
-      throw new Error('이전 개발 빌드(1단계) 저장본은 지원하지 않습니다. 새 게임을 시작해 주세요.');
-    },
-  },
-  {
-    from: 2,
-    to: 3,
-    description: '2a 개발 빌드 저장본은 외국인 선수·계약 구조가 없어 호환되지 않는다',
-    up: () => {
-      throw new Error('이전 개발 빌드(2a) 저장본은 지원하지 않습니다. 새 게임을 시작해 주세요.');
-    },
-  },
-  {
-    from: 3,
-    to: 4,
-    description: '2b 저장본에 조직·위임 테이블을 추가한다. 직원은 불러온 뒤 시드로 결정론적으로 생성한다',
-    up: (db) => db.exec(SCHEMA_V4_ADDITIONS),
-  },
-  {
-    from: 4,
-    to: 5,
-    description: '2c 저장본에 시작 이전 기록·업적 테이블을 추가한다. 기록은 불러온 뒤 시드로 결정론적으로 생성한다',
-    up: (db) => db.exec(SCHEMA_V5_ADDITIONS),
-  },
-  {
-    from: 5,
-    to: 6,
-    description: '경기 단계 구분 열을 추가한다(기존 경기는 모두 정규시즌)',
-    up: (db) => db.exec(SCHEMA_V6_ADDITIONS),
-  },
-  {
-    from: 6,
-    to: 7,
-    description: '고교·대학 선수 풀 테이블을 추가한다. 선수는 불러온 뒤 시드로 만든다',
-    up: (db) => db.exec(SCHEMA_V7_ADDITIONS),
-  },
-];
+/**
+ * 버전 변환 목록. 출시 전에는 비워 둔다(D-094: 구버전은 변환하지 않고 거부).
+ * 출시 후 호환 정책이 정해지면 { from, to, description, up } 단계를 여기에 추가한다.
+ */
+export const MIGRATIONS: Migration[] = [];
+
+/** 구버전 저장본 안내 문구(D-094) */
+export function oldVersionMessage(version: number): string {
+  return `이전 개발 빌드(저장 형식 ${version})에서 만든 저장본입니다. 현재 형식은 ${SCHEMA_VERSION}입니다. 출시 전에는 저장본 호환을 보장하지 않아 불러올 수 없습니다. 새 게임을 시작해 주세요.`;
+}
 
 export function readSchemaVersion(db: DatabaseSync): number {
   const row = db.prepare('PRAGMA user_version').get() as { user_version: number } | undefined;
@@ -318,14 +289,14 @@ export function createSchema(db: DatabaseSync): void {
   }
 }
 
-/** 저장본을 현재 버전으로 변환한다. 더 새로운 버전의 저장본이면 오류. */
+/** 저장본을 현재 버전으로 변환한다. 더 새로운 버전이면 NEWER_VERSION, 변환 단계가 없는 구버전이면 OLD_VERSION 오류(D-094). */
 export function migrate(db: DatabaseSync, migrations: Migration[] = MIGRATIONS, target = SCHEMA_VERSION): number[] {
   const applied: number[] = [];
   let version = readSchemaVersion(db);
   if (version > target) throw new Error(`NEWER_VERSION:${version}`);
   while (version < target) {
     const step = migrations.find((m) => m.from === version);
-    if (!step) throw new Error(`NO_MIGRATION:${version}`);
+    if (!step) throw new Error(`OLD_VERSION:${version}`);
     db.exec('BEGIN');
     try {
       step.up(db);
