@@ -28,7 +28,8 @@ import { TASK_WP, type TeamKey } from '../engine/staff';
 import { inGroup, needFirst, neededGroup, pickRemovals } from '../engine/roster';
 import { stoveEvents } from '../engine/stove';
 import type { ClubId, ClubProfile, PlayerTruth } from '../engine/types';
-import { assignActiveRoster, overall } from '../engine/worldgen';
+import { Rng } from '../engine/rng';
+import { assignActiveRoster, generateDomesticFreePool, overall } from '../engine/worldgen';
 import { GameError } from '../shared/protocol';
 import type { FaEntry, GameMeta, GameRepository, InboxMessage, SalaryTalk } from './ports';
 
@@ -318,8 +319,16 @@ export class Market {
         .filter((p) => p.clubId === null && inGroup(p, g))
         .sort((a, b) => clubEstimate(meta.seed, clubId, b) - clubEstimate(meta.seed, clubId, a) || a.id - b.id)[0];
       if (!pick) {
-        notes.push(`${this.club(clubId).shortName}: 보충할 ${g === 'P' ? '투수' : g === 'C' ? '포수' : '야수'}가 시장에 없음`);
-        break;
+        // 시장에 없으면 독립리그·재야 선수 한 명을 바로 데려온다(D-111). 같은 생성 규칙·능력 보정, 저장 시드에서 파생.
+        const id = Math.max(0, ...this.players().map((p) => p.id)) + 1;
+        const counts = { pitchers: g === 'P' ? 1 : 0, catchers: g === 'C' ? 1 : 0, otherHitters: g === 'H' ? 1 : 0 };
+        const [walkOn] = generateDomesticFreePool(Rng.derive(meta.seed, 'walk-on', meta.season, clubId, guard), meta.season, id, counts);
+        if (!walkOn) break;
+        walkOn.clubId = clubId;
+        walkOn.contractYears = 1;
+        this.repo.savePlayers([walkOn]);
+        notes.push(`${this.club(clubId).shortName}: ${walkOn.name}(${walkOn.position}) 독립리그에서 영입 — 시장에 ${g === 'P' ? '투수' : g === 'C' ? '포수' : '야수'}가 없어 포지션 최소 인원 보충`);
+        continue;
       }
       pick.clubId = clubId;
       pick.level = '2군';
