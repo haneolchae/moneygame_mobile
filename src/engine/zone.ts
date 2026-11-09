@@ -961,6 +961,7 @@ interface ThetaEntry {
 }
 const THETA_CACHE = new Map<number, ThetaEntry[]>();
 const THETA_CACHE_MAX = 100_000;
+const THETA_PER_PAIR = 6;
 /** pairKey: (타자, 투수)를 나타내는 정수(같은 쌍이면 같은 값). 입력이 모두 같을 때만 캐시 값을 쓴다 */
 export function cachedTheta(pairKey: number, shares: TypeShares, power: number, stuff: number, velocityZ: number, hand: 'R' | 'L', xMatch: number): number {
   const list = THETA_CACHE.get(pairKey);
@@ -976,7 +977,11 @@ export function cachedTheta(pairKey: number, shares: TypeShares, power: number, 
   if (THETA_CACHE.size >= THETA_CACHE_MAX) THETA_CACHE.clear();
   const theta = anchorGrouped(shares, power, stuff, velocityZ, hand, xMatch);
   const entry: ThetaEntry = { gb: shares.GB, power, stuff, velocityZ, hand, x: xMatch, theta };
-  if (list) list.unshift(entry);
+  if (list) {
+    list.unshift(entry);
+    // 성적 혼합·압박으로 x가 경기·타석마다 달라지므로 쌍마다 최근 값 몇 개만 둔다(결과는 같고 탐색 비용만 제한)
+    if (list.length > THETA_PER_PAIR) list.length = THETA_PER_PAIR;
+  }
   else THETA_CACHE.set(pairKey, [entry]);
   return theta;
 }

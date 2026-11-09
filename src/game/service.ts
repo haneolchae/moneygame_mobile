@@ -25,6 +25,7 @@ import { asTruth, generateAmateurs } from '../engine/amateur';
 import { assignFaCandidates, generateDomesticFreePool, generateOverseasPool, generateWorld } from '../engine/worldgen';
 import { Achievements } from './achievements';
 import { Market } from './market';
+import { FormTracker } from './formTracker';
 import { fieldingLine, Records } from './records';
 import { Draft, draftDate, isSenior } from './draft';
 import { CLOSE_RULES, SeasonClose } from './seasonClose';
@@ -227,8 +228,11 @@ export class GameService {
   readonly postseason: Postseason;
   readonly draft: Draft;
   readonly seasonClose: SeasonClose;
+  /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
+  private readonly forms: FormTracker;
 
   constructor(private readonly repo: GameRepository) {
+    this.forms = new FormTracker(repo);
     this.clubMap = new Map(repo.getClubs().map((c) => [c.id, c]));
     this.market = new Market(repo, this.clubMap, (source, team, wp) => this.org.charge(this.meta(), source, team, wp));
     this.org = new Organization(repo, this.market);
@@ -308,11 +312,14 @@ export class GameService {
       const usage = this.repo.getRecentPitcherUsage(addDays(date, -6), date).map((u) => ({ ...u, daysAgo: diffDays(date, u.date) }));
       const lastStarters = this.repo.getLastStarters(meta.season);
       const env = meta.leagueEnvironment?.[String(meta.season)] ?? NEUTRAL_ENVIRONMENT;
+      // 최근·과거 성적 표본(10a 4·7장): 그날 모든 경기에 전날까지의 기록으로 한 번에 고정한다.
+      const forms = this.forms.formsFor(meta.season, date, active, env);
       for (const f of fixtures) {
         const teamOf = (clubId: ClubId) => prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null);
         // 경기 난수는 (시드, 경기 ID)에서 파생한다. 처리 순서와 무관하게 같은 경기는 같은 결과를 낸다.
         const maxInnings = f.stage && f.stage !== 'regular' ? POSTSEASON_MAX_INNINGS : LEAGUE.regularSeasonMaxInnings;
-        results.push(simulateGame(f.id, teamOf(f.home), teamOf(f.away), Rng.derive(meta.seed, 'game', f.id), maxInnings, env));
+        const postseason = !!f.stage && f.stage !== 'regular';
+        results.push(simulateGame(f.id, teamOf(f.home), teamOf(f.away), Rng.derive(meta.seed, 'game', f.id), maxInnings, env, { forms, postseason }));
       }
     }
 

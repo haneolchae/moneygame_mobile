@@ -1,9 +1,10 @@
-// 타석 결과 확률 — 성적 혼합 없는 기준 모델 (10a 문서 2·3·5장, D-091·D-102). 계수는 probabilityConfig에만 둔다.
+// 타석 결과 확률 (10a 문서 2~6장, D-091·D-102·D-107). 계수는 probabilityConfig에만 둔다.
 // 순서: 사구 → 볼넷 b → 삼진 k → 홈런 h → 홈런이 아닌 인플레이 타구. 인플레이 타구는 유형(땅볼·라인드라이브·뜬공)을
 // 정한 뒤 존 모델(10b, zone.ts)이 구역·수비수·판정·주자 진루를 정한다. 안타 여부의 기대값은 x_match에 고정된다.
-// 3b에서 최근·과거 성적 혼합(q_player)이 q_ability 자리에 들어온다.
+// 대결 한쪽 값(batterSide·pitcherSide)은 최근·과거 성적을 섞은 q_player이며 경기마다 한 번 계산한다(form.ts).
 import { logit, sigmoid } from './mathx';
 import { PROBABILITY_CONFIG as C } from './probabilityConfig';
+import { blendEvent, FORM_EVENTS, type FormEvent, type PlayerForm } from './form';
 import type { Pitch, PlayerTruth } from './types';
 import { anchorTheta, cellsFor, expectedInPlay, type TypeShares } from './zone';
 
@@ -84,21 +85,74 @@ export function typeShares(batter: PlayerTruth, pitcher: PlayerTruth): TypeShare
   return { GB: gb, LD: ld, FB: air - ld };
 }
 
-/** 타석 위 단계: 사구·볼넷·삼진·홈런·인플레이(합 1)와 인플레이 안타 확률 x_match(10a, D-102: 타자 컨택·장타, 투수 구위·구속만) */
-export function topLevelProbabilities(batter: PlayerTruth, pitcher: PlayerTruth, defense: DefenseContext = NEUTRAL_DEFENSE, env: LeagueEnvironment = NEUTRAL_ENVIRONMENT) {
-  const b = batter.batting;
-  const p = effectivePitching(pitcher);
+/** 사건별 리그 기준 로짓과 득점 환경 이동(D-100·D-103). 득점 이동은 타자 쪽 볼넷·인플레이 안타에 더한다 */
+function leagueLogits(env: LeagueEnvironment): { L: SideLogits; runsShift: number } {
   const hrScale = (1 + env.hr) * (env.hrAdj ?? 1);
   const runsShift = C.environment.runsLogitPerLogRatio * (Math.log(1 + env.runs) + (env.runsAdj ?? 0) - C.environment.hrRunsOffset * Math.log(hrScale));
-  // 볼넷 b (사구가 아닌 타석 대비)
-  const bb = matchProbability(C.base.b, C.walk.batterEye * z(b.eye) + C.walk.batterContact * z(b.contact) + runsShift, -C.walk.pitcherControl * z(p.control), -C.context.framingOnWalk * z(defense.framing));
-  // 삼진 k (볼넷이 아닌 타석 대비)
-  const k = matchProbability(C.base.k, -C.strikeout.batterContact * z(b.contact) - C.strikeout.batterEye * z(b.eye), C.strikeout.pitcherStuff * z(p.stuff) + C.strikeout.pitcherVelocity * p.velocityZ, C.context.framingOnStrikeout * z(defense.framing));
-  // 홈런 h (볼넷·삼진이 아닌 타석 대비). 땅볼 유도는 쓰지 않는다.
-  const h = matchProbability(C.base.h * hrScale, C.homeRun.batterPower * z(b.power) + C.homeRun.batterContact * z(b.contact), -C.homeRun.pitcherStuff * z(p.stuff));
-  // 인플레이 안타 x_match: 타자 주력·수비·구장은 존 모델에서만 적용한다(같은 효과를 두 번 넣지 않음).
+  return { L: { b: logit(C.base.b), k: logit(C.base.k), h: logit(C.base.h * hrScale), x: logit(C.inPlayHit.base) }, runsShift };
+}
+
+/** 대결 한쪽(타자 또는 투수)의 사건별 확률 로짓 logit(q_player). 성적 혼합 표본이 없으면 logit(q_ability) */
+export type SideLogits = Record<FormEvent, number>;
+
+const toSide = (shift: SideLogits, role: 'batter' | 'pitcher', form: PlayerForm | undefined, consistency: number): SideLogits => {
+  const out = {} as SideLogits;
+  for (const e of FORM_EVENTS) out[e] = logit(blendEvent(e, role, sigmoid(shift[e]), form, consistency));
+  return out;
+};
+
+/** 타자 쪽(10a 3·4장): 능력치 로짓을 만들고 최근·과거 성적과 섞는다. 인플레이 안타는 컨택·장타만(D-102) */
+export function batterSide(batter: PlayerTruth, env: LeagueEnvironment = NEUTRAL_ENVIRONMENT, form?: PlayerForm): SideLogits {
+  const b = batter.batting;
+  const { L, runsShift } = leagueLogits(env);
   const X = C.inPlayHit;
-  const x = matchProbability(X.base, X.contact * z(b.contact) + X.power * z(b.power) + runsShift, -X.stuff * z(p.stuff) - X.velocity * p.velocityZ);
+  return toSide(
+    {
+      b: L.b + C.walk.batterEye * z(b.eye) + C.walk.batterContact * z(b.contact) + runsShift,
+      k: L.k - C.strikeout.batterContact * z(b.contact) - C.strikeout.batterEye * z(b.eye),
+      h: L.h + C.homeRun.batterPower * z(b.power) + C.homeRun.batterContact * z(b.contact),
+      x: L.x + X.contact * z(b.contact) + X.power * z(b.power) + runsShift,
+    },
+    'batter',
+    form,
+    batter.hidden.consistency,
+  );
+}
+
+/** 투수 쪽(허용 확률): 구종 반영 실효 구위·제구·구속. 땅볼 유도는 타구 유형에만 쓴다 */
+export function pitcherSide(pitcher: PlayerTruth, env: LeagueEnvironment = NEUTRAL_ENVIRONMENT, form?: PlayerForm): SideLogits {
+  const p = effectivePitching(pitcher);
+  const { L } = leagueLogits(env);
+  const X = C.inPlayHit;
+  return toSide(
+    {
+      b: L.b - C.walk.pitcherControl * z(p.control),
+      k: L.k + C.strikeout.pitcherStuff * z(p.stuff) + C.strikeout.pitcherVelocity * p.velocityZ,
+      h: L.h - C.homeRun.pitcherStuff * z(p.stuff),
+      x: L.x - X.stuff * z(p.stuff) - X.velocity * p.velocityZ,
+    },
+    'pitcher',
+    form,
+    pitcher.hidden.consistency,
+  );
+}
+
+/** 포수 프레이밍의 사건별 상황 보정(로짓) */
+export function framingContext(defense: DefenseContext): SideLogits {
+  return { b: -C.context.framingOnWalk * z(defense.framing), k: C.context.framingOnStrikeout * z(defense.framing), h: 0, x: 0 };
+}
+
+/**
+ * 대결(10a 5장): logit(q) = logit(q_batter) + logit(q_pitcher) − logit(q_league) + delta_context.
+ * context: 사건별 delta_context 합(프레이밍·수행 편차·압박). 사건마다 ±context.maxAbsLogit로 제한한다.
+ */
+export function combineTop(bat: SideLogits, pit: SideLogits, env: LeagueEnvironment, context: SideLogits, shares: TypeShares, stuff: number, velocityZ: number) {
+  const { L } = leagueLogits(env);
+  const cap = C.context.maxAbsLogit;
+  const q = (e: FormEvent) => sigmoid(bat[e] + pit[e] - L[e] + Math.max(-cap, Math.min(cap, context[e])));
+  const bb = q('b');
+  const k = q('k');
+  const h = q('h');
   const hbp = C.base.hbp;
   return {
     BB: (1 - hbp) * bb,
@@ -106,61 +160,21 @@ export function topLevelProbabilities(batter: PlayerTruth, pitcher: PlayerTruth,
     HR: (1 - hbp) * (1 - bb) * (1 - k) * h,
     HBP: hbp,
     inPlay: (1 - hbp) * (1 - bb) * (1 - k) * (1 - h),
-    x,
-    shares: typeShares(batter, pitcher),
-    stuff: p.stuff,
-    velocityZ: p.velocityZ,
+    /** 인플레이 안타 x_match: 타자 주력·수비·구장은 존 모델에서만 적용한다(같은 효과를 두 번 넣지 않음) */
+    x: q('x'),
+    shares,
+    stuff,
+    velocityZ,
   };
 }
 
-export type TopLevel = ReturnType<typeof topLevelProbabilities>;
-
-interface TopEntry {
-  contact: number;
-  power: number;
-  eye: number;
-  stuff: number;
-  control: number;
-  velocityZ: number;
-  groundball: number;
-  framing: number;
-  runs: number;
-  hr: number;
-  runsAdj: number;
-  hrAdj: number;
-  top: TopLevel;
-}
-const TOP_CACHE = new Map<number, TopEntry[]>();
-const TOP_CACHE_MAX = 100_000;
-/**
- * 타석 위 단계 확률 캐시(성능용, 결과 동일): 결과를 정하는 입력(타자 컨택·장타·선구안, 투수 실효 구위·제구·구속·땅볼 유도,
- * 포수 프레이밍, 시즌 환경)이 모두 같을 때만 다시 쓴다. 저장하지 않는다.
- */
-export function cachedTopLevel(batter: PlayerTruth, pitcher: PlayerTruth, defense: DefenseContext, env: LeagueEnvironment): TopLevel {
-  const b = batter.batting;
+/** 타석 위 단계(성적 혼합·수행 편차 없는 기준 모델): 사구·볼넷·삼진·홈런·인플레이(합 1)와 x_match */
+export function topLevelProbabilities(batter: PlayerTruth, pitcher: PlayerTruth, defense: DefenseContext = NEUTRAL_DEFENSE, env: LeagueEnvironment = NEUTRAL_ENVIRONMENT) {
   const p = effectivePitching(pitcher);
-  const gb = pitcher.pitching?.groundball ?? 50;
-  const key = batter.id * 1_000_003 + pitcher.id;
-  const list = TOP_CACHE.get(key);
-  const runsAdj = env.runsAdj ?? 0;
-  const hrAdj = env.hrAdj ?? 1;
-  if (list) {
-    for (let i = 0; i < list.length; i++) {
-      const e = list[i]!;
-      if (e.contact === b.contact && e.power === b.power && e.eye === b.eye && e.stuff === p.stuff && e.control === p.control && e.velocityZ === p.velocityZ && e.groundball === gb && e.framing === defense.framing && e.runs === env.runs && e.hr === env.hr && e.runsAdj === runsAdj && e.hrAdj === hrAdj) {
-        // 최근에 쓴 항목을 앞으로(다른 세이브의 같은 ID 항목이 섞여도 첫 비교에서 맞게)
-        if (i > 0) [list[0], list[i]] = [e, list[0]!];
-        return e.top;
-      }
-    }
-  }
-  if (TOP_CACHE.size >= TOP_CACHE_MAX) TOP_CACHE.clear();
-  const top = topLevelProbabilities(batter, pitcher, defense, env);
-  const entry: TopEntry = { contact: b.contact, power: b.power, eye: b.eye, stuff: p.stuff, control: p.control, velocityZ: p.velocityZ, groundball: gb, framing: defense.framing, runs: env.runs, hr: env.hr, runsAdj, hrAdj, top };
-  if (list) list.unshift(entry);
-  else TOP_CACHE.set(key, [entry]);
-  return top;
+  return combineTop(batterSide(batter, env), pitcherSide(pitcher, env), env, framingContext(defense), typeShares(batter, pitcher), p.stuff, p.velocityZ);
 }
+
+export type TopLevel = ReturnType<typeof topLevelProbabilities>;
 
 /** 존 모델 앵커링(10b §6): 이 대결의 구역 칸과 x 고정 보정 θ */
 export function anchorFor(batter: PlayerTruth, top: ReturnType<typeof topLevelProbabilities>, hand: 'R' | 'L'): { theta: number; cells: ReturnType<typeof cellsFor> } {

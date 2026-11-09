@@ -5,7 +5,7 @@
 import { ZONE_CONFIG } from './zoneConfig';
 
 export const PROBABILITY_CONFIG = {
-  modelVersion: '3a2-zone-1',
+  modelVersion: '3b-form-1',
 
   /** 리그 목표 기준값 (D-100, 사용자 확정): 경기당 득점(양 팀 합), 타석당 홈런 */
   leagueTarget: { runsPerGame: 9.8, hrPerPa: 0.0225 },
@@ -48,6 +48,51 @@ export const PROBABILITY_CONFIG = {
 
   /** 상황 보정(delta_context): 포수 프레이밍. 합 상한 ±0.25 로짓(10a 5장). 개인 수비는 존 모델에서 */
   context: { framingOnWalk: 0.12, framingOnStrikeout: 0.08, maxAbsLogit: 0.25 },
+
+  /**
+   * 최근·과거 성적 혼합(10a 4장, D-090·D-107). 사용자 확정은 기본 비중 50:30:20(recent 0.3, history 0.2)뿐이고 나머지는 밸런스 초안.
+   * nRecent: 사건별 충분 표본(가중 기회). 최근 창(타자 100타석·투수 150상대타석)의 최대 기회보다 작게 둔다(4.2).
+   * recentAge: [최대 경과 일수, 가중치] 순서. historySeasons: [현재 시즌(최근 창 제외), 직전, 2시즌 전] 가중치.
+   * cap: 사건별 보정 상한 d. sensitivity: 최근 민감도 = max − span × c(일관성 1 → 1.4, 100 → 0.6).
+   */
+  form: {
+    weights: { recent: 0.3, history: 0.2 },
+    recentWindow: { batterPa: 100, pitcherPa: 150, maxDays: 60 },
+    recentAge: [
+      [14, 1],
+      [30, 0.75],
+      [60, 0.5],
+    ] as ReadonlyArray<readonly [number, number]>,
+    historySeasons: [1, 0.7, 0.4],
+    nRecent: { batter: { b: 90, k: 80, h: 60, x: 60 }, pitcher: { b: 135, k: 120, h: 90, x: 90 } },
+    nHistory: { b: 400, k: 400, h: 400, x: 400 },
+    cap: { b: 0.1, k: 0.1, h: 0.04, x: 0.1 },
+    sensitivity: { max: 1.4, span: 0.8 },
+  },
+
+  /**
+   * 경기별 수행 편차·압박 손실(10a 6장, D-107). 둘 다 delta_context에 방향 계수로 한 번만 더하고 합 상한(context.maxAbsLogit)을 적용한다.
+   * consistencySigma: sigma = base + span × (1 − c), 선수·경기별 1회 추첨.
+   * pressure: 손실 = coefficient × 압박 × (1 − mentalRelief·m) × (sensitivityBase + sensitivitySpan·s) × (1 + moodSpan·(1 − 기분)).
+   *   압박 = 이닝 계수 × 점수 차 계수 × (1 + perRunner × 주자 수) × (포스트시즌이면 postseason), 0~1로 제한.
+   *   이닝 계수는 1회부터(마지막 값은 그 뒤 연장까지). 점수 차 계수 = max(0, 1 − |점수 차| / (closeMaxDiff + 1)).
+   *   defaultMorale: 기분(사기) 모델 전 임시값(ASSUMPTION(D-107)).
+   */
+  performance: {
+    consistencySigma: { base: 0.02, span: 0.06 },
+    pressure: {
+      coefficient: 0.18,
+      mentalRelief: 0.75,
+      sensitivityBase: 0.5,
+      sensitivitySpan: 0.5,
+      moodSpan: 0.2,
+      defaultMorale: 50,
+      inning: [0.3, 0.3, 0.3, 0.3, 0.3, 0.4, 0.6, 0.8, 1],
+      closeMaxDiff: 3,
+      perRunner: 0.15,
+      postseason: 1.25,
+    },
+  },
 
   /** 확률 계산 전 제한 */
   probabilityFloor: 0.0001,

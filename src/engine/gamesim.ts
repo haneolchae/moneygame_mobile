@@ -7,7 +7,8 @@
 //  - 승리투수: 결승점 시점의 투수. 선발이 5이닝(15아웃) 미만이면 가장 많은 아웃을 잡은 구원투수.
 //  - 홀드는 아직 판정하지 않는다.
 import { SIM } from './config';
-import { battingSide, cachedTopLevel, NEUTRAL_ENVIRONMENT, paProbabilities, type DefenseContext, type LeagueEnvironment, type TopLevel } from './probability';
+import { BATTER_DIRECTION, consistencyPerformance, FORM_EVENTS, pressureIndex, pressureLoss, type PlayerForm } from './form';
+import { batterSide, battingSide, combineTop, effectivePitching, framingContext, NEUTRAL_ENVIRONMENT, paProbabilities, pitcherSide, typeShares, type DefenseContext, type LeagueEnvironment, type SideLogits, type TopLevel } from './probability';
 import { Rng } from './rng';
 import type { ClubId, FixtureId, PlayerId, PlayerTruth, Position } from './types';
 import { cachedTheta, qualityDist, resolveInPlay, type Bases, type Credit, type FieldPos, type Fielders, type Runner } from './zone';
@@ -97,6 +98,12 @@ interface TeamState {
 
 export { paProbabilities };
 
+/** 경기 입력(3b): 경기 시작 때 고정한 선수별 최근·과거 표본(10a 4·7장)과 경기 중요도 */
+export interface GameOptions {
+  forms?: { batter: ReadonlyMap<PlayerId, PlayerForm>; pitcher: ReadonlyMap<PlayerId, PlayerForm> };
+  postseason?: boolean;
+}
+
 /** 타석 위 단계 추첨(순서 고정: 볼넷·삼진·홈런·사구·인플레이) */
 function drawTop(rng: Rng, p: { BB: number; K: number; HR: number; HBP: number }): PaOutcome | 'INPLAY' {
   let r = rng.next();
@@ -119,8 +126,21 @@ function drawOutcome(rng: Rng, probs: Record<string, number>): PaOutcome {
 }
 
 
-/** env: 시즌 리그 환경(D-100) */
-export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSetup, rng: Rng, maxInnings: number, env: LeagueEnvironment = NEUTRAL_ENVIRONMENT): GameResult {
+/** 타구 질 분포(장타·실효 구위·구속이 같으면 같은 값, 결정적 계산 캐시) */
+const QUALITY_CACHE = new Map<string, Record<BallType, [number, number, number]>>();
+function qualitiesFor(power: number, stuff: number, velocityZ: number): Record<BallType, [number, number, number]> {
+  const key = `${power}|${stuff}|${velocityZ}`;
+  let v = QUALITY_CACHE.get(key);
+  if (!v) {
+    if (QUALITY_CACHE.size >= 50_000) QUALITY_CACHE.clear();
+    v = { GB: qualityDist('GB', power, stuff, velocityZ), LD: qualityDist('LD', power, stuff, velocityZ), FB: qualityDist('FB', power, stuff, velocityZ) };
+    QUALITY_CACHE.set(key, v);
+  }
+  return v;
+}
+
+/** env: 시즌 리그 환경(D-100), opts: 성적 혼합 표본·경기 중요도(3b) */
+export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSetup, rng: Rng, maxInnings: number, env: LeagueEnvironment = NEUTRAL_ENVIRONMENT, opts: GameOptions = {}): GameResult {
   const makeTeam = (setup: TeamSetup): TeamState => {
     const stint: PitcherStint = { pitcher: setup.starter, isStarter: true, pitches: 0, outs: 0, runs: 0, leadAtEntry: 0, outsAtEntryOfInning: true };
     return { setup, orderIndex: 0, stint, stints: [stint], usedRelievers: new Set() };
@@ -137,6 +157,30 @@ export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSe
   };
   const homeFielders = fieldersOf(teams.home);
   const awayFielders = fieldersOf(teams.away);
+
+  // 대결 한쪽 값(성적 혼합 포함)과 경기별 수행 편차는 선수마다 경기당 한 번 계산한다(10a 6.1·7장).
+  const batSides = new Map<PlayerId, SideLogits>();
+  const pitSides = new Map<PlayerId, SideLogits>();
+  const perf = new Map<PlayerId, number>();
+  const sideOf = (p: PlayerTruth, role: 'batter' | 'pitcher'): SideLogits => {
+    const cache = role === 'batter' ? batSides : pitSides;
+    let v = cache.get(p.id);
+    if (!v) {
+      v = role === 'batter' ? batterSide(p, env, opts.forms?.batter.get(p.id)) : pitcherSide(p, env, opts.forms?.pitcher.get(p.id));
+      cache.set(p.id, v);
+    }
+    return v;
+  };
+  // u_game: 선수·경기별 1회 추첨(저장되는 경기 난수에서 파생, 타석 흐름과 겹치지 않게 음수 키)
+  const perfOf = (p: PlayerTruth): number => {
+    let v = perf.get(p.id);
+    if (v === undefined) {
+      v = consistencyPerformance(p.hidden.consistency, Rng.fromInts(bbKey, fixtureId, -p.id).next() * 2 - 1);
+      perf.set(p.id, v);
+    }
+    return v;
+  };
+  const framing = { home: framingContext(home.defense), away: framingContext(away.defense) };
 
   const score = { home: 0, away: 0 };
   const lineScore = { home: [] as number[], away: [] as number[] };
@@ -217,8 +261,15 @@ export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSe
         bat.orderIndex++;
         const batter = spot.player;
         const pitcher = def.stint.pitcher;
-        // 타석 위 단계 확률: 입력이 같으면 같은 값(결정적 계산 캐시)
-        const top = cachedTopLevel(batter, pitcher, def.setup.defense, env) as TopLevel & { qualities?: Record<BallType, [number, number, number]> };
+        // 타석 위 단계 확률(10a 5·6장): 대결 한쪽 값 + 사건별 상황 보정(프레이밍 + 방향 계수 × (타자 수행 − 투수 수행))
+        const pressure = pressureIndex({ inning, scoreDiff: score.home - score.away, runners: (bases[0] ? 1 : 0) + (bases[1] ? 1 : 0) + (bases[2] ? 1 : 0), postseason: opts.postseason === true });
+        const batPerf = perfOf(batter) - pressureLoss(pressure, batter.batting.mental, batter.hidden.pressureSensitivity);
+        const pitPerf = perfOf(pitcher) - pressureLoss(pressure, pitcher.pitching?.mental ?? 50, pitcher.hidden.pressureSensitivity);
+        const fr = framing[defSide];
+        const context = {} as SideLogits;
+        for (const e of FORM_EVENTS) context[e] = fr[e] + BATTER_DIRECTION[e] * (batPerf - pitPerf);
+        const eff = effectivePitching(pitcher);
+        const top = combineTop(sideOf(batter, 'batter'), sideOf(pitcher, 'pitcher'), env, context, typeShares(batter, pitcher), eff.stuff, eff.velocityZ) as TopLevel;
         const outcome0 = drawTop(rng, top);
         let outcome: PaOutcome = outcome0 === 'INPLAY' ? 'GO' : outcome0;
         let rbi = 0;
@@ -259,11 +310,7 @@ export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSe
             const hand = battingSide(batter, pitcher);
             // 앵커링 θ(10b §6)는 결정적 계산이라 같은 입력이면 캐시 값을 쓴다.
             const theta = cachedTheta(batter.id * 1_000_003 + pitcher.id, top.shares, batter.batting.power, top.stuff, top.velocityZ, hand, top.x);
-            top.qualities ??= {
-              GB: qualityDist('GB', batter.batting.power, top.stuff, top.velocityZ),
-              LD: qualityDist('LD', batter.batting.power, top.stuff, top.velocityZ),
-              FB: qualityDist('FB', batter.batting.power, top.stuff, top.velocityZ),
-            };
+            const qualities = qualitiesFor(batter.batting.power, top.stuff, top.velocityZ);
             const r = resolveInPlay(Rng.fromInts(bbKey, fixtureId, seq), {
               batter,
               hand,
@@ -275,7 +322,7 @@ export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSe
               outs,
               bases: bases as Bases,
               batterRunner: runnerOf(),
-              qualities: top.qualities,
+              qualities,
             });
             outs += r.outsAdded;
             for (const sr of r.scored) scoreR(sr.runner, sr.rbi, sr.unearned);

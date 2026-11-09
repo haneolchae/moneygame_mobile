@@ -39,6 +39,7 @@ function flatPlayer(v: number): PlayerTruth {
     pitching: { velocityAvg: 143, velocityMax: 147, stuff: v, control: v, groundball: 50, mental: 50, holdRunners: v, stamina: 50, recovery: 50, fielding: v },
     defense: { range: v, fielding: v, armStrength: v, armAccuracy: v },
     positions: {},
+    hidden: { consistency: 50, pressureSensitivity: 50 },
   } as unknown as PlayerTruth;
 }
 
