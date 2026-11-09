@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { PROBABILITY_CONFIG } from '../engine/probabilityConfig';
+import { CLOSE_RULES } from '../game/seasonClose';
 import { Dispatcher } from '../host/dispatcher';
 import { checkInvariants, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
 import type { AdvanceResult, DashboardView, DelegationPolicyView, OrganizationView, PlayerListItem, StandingView } from '../shared/protocol';
@@ -64,7 +65,25 @@ async function main() {
     // 두 번째 시즌부터: 한국시리즈 뒤 스토브리그를 주 단위로 지나 다음 시즌으로 간다(D-085).
     // 스토브리그를 지난 직후: 모든 구단 40인 한도(우리 구단은 의무 안건, AI는 같은 정리 규칙)
     const stoveErrors: string[] = [];
-    if (s > 1) while ((await call<DashboardView>('game.dashboard')).phase === 'stove') await advance('week');
+    // 위임 구단주의 판단(D-110): 최후통첩(성적 목표 2시즌 연속 미달)을 받으면 실제 플레이어처럼 리빌딩을 선언한다.
+    // 규칙(2시즌 유예, 5시즌에 한 번, 행동력 소모)은 게임 쪽이 그대로 검사한다. 선언할 수 없으면 그대로 진행한다.
+    let rebuildTried = false;
+    if (s > 1)
+      while (true) {
+        const sd = await call<DashboardView>('game.dashboard');
+        if (sd.phase !== 'stove') break;
+        if (!rebuildTried && sd.goal.misses >= CLOSE_RULES.warnAfterMisses) {
+          try {
+            const r = await call<{ message: string }>('owner.rebuild');
+            rebuildTried = true;
+            console.log(JSON.stringify({ rebuild: r.message, date: sd.date }));
+          } catch (e) {
+            // 행동력 부족이면 다음 주에 다시, 그 밖(쿨다운 등)이면 포기
+            if (!String((e as Error).message).includes('행동력')) rebuildTried = true;
+          }
+        }
+        await advance('week');
+      }
     stoveErrors.push(...[...checkRosterLimits(d.saves.repository()), ...checkRosterComposition(d.saves.repository())].map((e) => `스토브리그 후 ${e}`));
     const t0 = performance.now();
     const adv = await advance('untilSeasonEnd');

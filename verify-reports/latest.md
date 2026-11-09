@@ -1,21 +1,21 @@
-# 검증 리포트: 3a2-compress
+# 검증 리포트: 3b
 
-- 일시: 2026. 11. 9. 오후 1:12:02
+- 일시: 2026. 11. 9. 오후 2:18:50
 - 모드: 전체 (장기 실행 10시즌, 시드 verify-1)
 - 환경: Node 24.18.0, win32/x64
-- **종합 판정: 조건부 통과(경고 있음)**
+- **종합 판정: 실패**
 
 | 단계 | 판정 | 시간(초) | 요약 |
 | --- | --- | --- | --- |
 | 실행 환경 | PASS | 0 | 준비됨 |
-| 타입 검사 | PASS | 0.9 | 오류 0건 |
-| 계층 경계 검사 | PASS | 0.5 | 계층 경계 검사 통과 (76개 파일) |
-| 자동 테스트 | PASS | 50.9 | 103/103개 통과 |
-| 빌드 | PASS | 1.8 | 완료 |
-| 실제 Electron 자체 점검 | PASS | 6.8 | 스토브리그 12주 1054ms, 시즌 720/720 2867ms, 화면 지연 5ms, 저장 250ms·불러오기 238ms, Steam mock |
-| 장기 실행 10시즌 (시드 verify-1) | PASS | 98.5 | 10시즌, 규칙 위반 0건, 마지막 시즌 저장 550ms·저장본 23.4MB, 불러오기 281ms, 현금 267억 → 590억 |
-| 문서 정합성 | WARN | 0.2 | 실패 0건, 경고 2건, 임시 가정 27건 |
-| 저장소 상태 | PASS | 0 | HEAD 192e243, 커밋되지 않은 변경 0개 |
+| 타입 검사 | PASS | 1.5 | 오류 0건 |
+| 계층 경계 검사 | PASS | 1 | 계층 경계 검사 통과 (79개 파일) |
+| 자동 테스트 | PASS | 116.6 | 109/109개 통과 |
+| 빌드 | PASS | 1.2 | 완료 |
+| 실제 Electron 자체 점검 | PASS | 12.6 | 스토브리그 12주 1478ms, 시즌 720/720 6843ms, 화면 지연 9ms, 저장 348ms·불러오기 245ms, Steam mock |
+| 장기 실행 10시즌 | FAIL | 41.5 | 결과 없음 |
+| 문서 정합성 | WARN | 0.3 | 실패 0건, 경고 2건, 임시 가정 28건 |
+| 저장소 상태 | PASS | 0 | HEAD e47dc52, 커밋되지 않은 변경 0개 |
 
 ## 상세
 
@@ -23,12 +23,27 @@
 
 - Node 24.18.0, win32/x64
 
+### 장기 실행 10시즌 (FAIL)
+
+- {"stoveWeeks":12,"stoveMs":2499,"date":"2027-02-01","cashAfterStove":32914733335}
+- {"season":2027,"games":"720/720","days":231,"simSec":5.59,"msPerGame":7.77,"hitterListMs":109,"pitcherListMs":91,"standingsMs":2,"boxScoreMs":6,"saveMs":230,"sessionMB":13.2,"saveFileMB":12.2,"leagueHRperPA":0.023,"envRuns":0,"envHr":0,"targetRunsPerGame":9.8,"targetHrPerPa":0.0225,"runsPerGame":9.76,"cashWon":26694077892,"invariantErrors":0,"firstErrors":[]}
+- {"season":2028,"games":"720/720","days":231,"simSec":6.51,"msPerGame":9.04,"hitterListMs":99,"pitcherListMs":87,"standingsMs":2,"boxScoreMs":4,"saveMs":671,"sessionMB":14.6,"saveFileMB":13.5,"leagueHRperPA":0.0221,"envRuns":0,"envHr":0.05,"targetRunsPerGame":9.8,"targetHrPerPa":0.0236,"runsPerGame":9.9,"cashWon":24581524466,"invariantErrors":0,"firstErrors":[]}
+- {"season":2029,"games":"720/720","days":231,"simSec":6.68,"msPerGame":9.28,"hitterListMs":115,"pitcherListMs":94,"standingsMs":2,"boxScoreMs":3,"saveMs":442,"sessionMB":16,"saveFileMB":14.7,"leagueHRperPA":0.0238,"envRuns":0.05,"envHr":0.1,"targetRunsPerGame":10.29,"targetHrPerPa":0.0248,"runsPerGame":10.29,"cashWon":21269504930,"invariantErrors":0,"firstErrors":[]}
+- 
+- [stderr]
+- Error: game.advance: 해임: 성적 기본 목표를 3시즌 연속 달성하지 못해 모기업이 경영 책임을 물었습니다.
+-     at call (D:\Documents\02_baseball game\front-office\dist\cli\simulate.js:14491:22)
+-     at async advance (D:\Documents\02_baseball game\front-office\dist\cli\simulate.js:14497:15)
+-     at async main (D:\Documents\02_baseball game\front-office\dist\cli\simulate.js:14523:73)
+
+로그: `verify-reports\logs\20261109-1415_3b\sim.log`
+
 ### 문서 정합성 (WARN)
 
 - [경고] 결정 로그 ID가 없는 임시 가정 4건 (리포트의 '코드의 임시 가정' 참고)
-- [경고] 실제 테스트 103개 > 문서 기록 102개. 이번 차수 결과가 06_progress.md에 아직 없을 수 있음
+- [경고] 실제 테스트 109개 > 문서 기록 103개. 이번 차수 결과가 06_progress.md에 아직 없을 수 있음
 
-로그: `verify-reports\logs\20261109-1309_3a2-compress\docs.log`
+로그: `verify-reports\logs\20261109-1415_3b\docs.log`
 
 ## 문서상 개발 진행 (06_progress.md)
 
@@ -63,6 +78,7 @@
 - `src/engine/finance.ts:69` **(결정 ID 없음)** broadcastRenewalBpAssumed: 1500, // ASSUMPTION: 관중 추세 모델 전까지 10~20%의 중간값
 - `src/engine/gamesim.ts:4` (D-091) 첫 개발 단계의 단순화 (ASSUMPTION(D-091), 설정·후속 단계에서 확장). 타석 결과 확률은 probability.ts(10a):
 - `src/engine/history.ts:18` (D-079) ASSUMPTION(D-079): 출전량 기준. 능력 47 안팎이 주전 경계다.
+- `src/engine/probabilityConfig.ts:79` (D-107) defaultMorale: 기분(사기) 모델 전 임시값(ASSUMPTION(D-107)).
 - `src/engine/staff.ts:101` (D-076) ASSUMPTION(D-076): 직급별 기준 연봉. 능력 평균 50 기준, 능력에 따라 ×0.6~×1.8
 - `src/engine/staff.ts:255` (D-095) ASSUMPTION(D-095): 40인 초과 명단 정리안 준비
 - `src/engine/staff.ts:274` (D-076) 해고 보상금: 남은 계약 연수 연봉의 50% (ASSUMPTION, D-076)
@@ -77,7 +93,7 @@
 - `src/game/records.ts:15` (D-079) ASSUMPTION(D-079): 시작 이전 기록의 규정 기준(144경기)
 - `src/game/seasonClose.ts:20` (D-043, D-085) ASSUMPTION(D-043·D-085): 목표·해임·파산·은퇴 수치
 - `src/game/seasonClose.ts:42` (D-085) ASSUMPTION(D-085): 파산 판정 적용 여부. 입장·스폰서·굿즈 등 사업 수입이 구현되기 전에는 모기업이 없는 구단이
-- `src/game/service.ts:455` **(결정 ID 없음)** ASSUMPTION(임시): 포스트시즌·스토브리그 없이 다음 시즌 정규시즌을 시작한다. 장기 데이터 검증용. 건너뛴 기간의 수입·지출은 처리되지 않는다.
+- `src/game/service.ts:462` **(결정 ID 없음)** ASSUMPTION(임시): 포스트시즌·스토브리그 없이 다음 시즌 정규시즌을 시작한다. 장기 데이터 검증용. 건너뛴 기간의 수입·지출은 처리되지 않는다.
 
 ## 판정 기준
 
