@@ -1,6 +1,7 @@
 // 규칙 위반 검사. 장기 실행·테스트·자체 점검에서 같은 검사를 쓴다.
 import { seasonKeyDates } from '../engine/schedule';
 import { LEAGUE } from '../engine/config';
+import { compositionViolations } from '../engine/roster';
 import type { GameRepository } from '../game/ports';
 
 export function checkInvariants(repo: GameRepository, season: number): string[] {
@@ -22,6 +23,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   }
 
   errors.push(...checkRegularSeasons(repo));
+  errors.push(...checkRosterComposition(repo));
 
   // 경기 기록 일관성: 득점 = 득점 기록 수, 타석 수 = 아웃 + 출루, 이닝 아웃 수
   const games = repo.getGames(season);
@@ -82,4 +84,10 @@ export function checkRosterLimits(repo: GameRepository): string[] {
     .map((c) => ({ c, n: players.filter((p) => p.clubId === c.id).length }))
     .filter((x) => x.n > LEAGUE.rosterMax)
     .map((x) => `${x.c.name} 보유 ${x.n}명 > ${LEAGUE.rosterMax}`);
+}
+
+/** 포지션 최소 인원(D-098): 40인 투수·야수·포수, 1군 투수·야수. 1군 편성이 임시로 채운 경우도 여기서 미달로 드러난다. */
+export function checkRosterComposition(repo: GameRepository): string[] {
+  const players = repo.getPlayers();
+  return repo.getClubs().flatMap((c) => compositionViolations(players.filter((p) => p.clubId === c.id)).map((v) => `${c.name} 포지션 최소 인원 미달: ${v}`));
 }

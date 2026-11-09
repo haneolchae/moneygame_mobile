@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { Dispatcher } from '../host/dispatcher';
-import { checkInvariants, checkRegularSeasons, checkRosterLimits } from '../host/invariants';
+import { checkInvariants, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
 import type { AdvanceResult, DashboardView, DelegationPolicyView, OrganizationView, PlayerListItem, StandingView } from '../shared/protocol';
 
 const arg = (name: string, fallback: string) => {
@@ -64,7 +64,7 @@ async function main() {
     // 스토브리그를 지난 직후: 모든 구단 40인 한도(우리 구단은 의무 안건, AI는 같은 정리 규칙)
     const stoveErrors: string[] = [];
     if (s > 1) while ((await call<DashboardView>('game.dashboard')).phase === 'stove') await advance('week');
-    stoveErrors.push(...checkRosterLimits(d.saves.repository()).map((e) => `스토브리그 후 ${e}`));
+    stoveErrors.push(...[...checkRosterLimits(d.saves.repository()), ...checkRosterComposition(d.saves.repository())].map((e) => `스토브리그 후 ${e}`));
     const t0 = performance.now();
     const adv = await advance('untilSeasonEnd');
     const simMs = performance.now() - t0;

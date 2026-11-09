@@ -2,7 +2,7 @@
 // 분포·연봉 시세는 config의 ASSUMPTION 값과 아래 상수를 따른다.
 import { addDays, makeDate } from './calendar';
 import { CLUB_PROFILES } from './clubs';
-import { FOREIGN, LEAGUE, usdToWon, WORLDGEN } from './config';
+import { FOREIGN, FREE_POOL, LEAGUE, usdToWon, WORLDGEN } from './config';
 import type { Rng } from './rng';
 import type { ClubProfile, HiddenAttributes, PlayerOrigin, PlayerTruth, Position } from './types';
 
@@ -93,6 +93,8 @@ interface GenContext {
   rng: Rng;
   season: number;
   nextId: () => number;
+  /** 능력 평균 보정(국내 미계약 선수 풀처럼 수준이 낮은 집단) */
+  shift?: number;
 }
 
 function genAge(rng: Rng, club: ClubProfile | null, origin: PlayerOrigin): number {
@@ -125,7 +127,7 @@ const ORIGIN_SHIFT: Record<PlayerOrigin, number> = { domestic: 0, foreign: 7, as
 function genPitcher(ctx: GenContext, club: ClubProfile | null, starter: boolean, origin: PlayerOrigin = 'domestic'): PlayerTruth {
   const { rng } = ctx;
   const age = genAge(rng, club, origin);
-  const shift = (club ? (WORLDGEN.strengthShift[club.strength] ?? 0) : 0) + ageCurve(age) + ORIGIN_SHIFT[origin];
+  const shift = (club ? (WORLDGEN.strengthShift[club.strength] ?? 0) : 0) + ageCurve(age) + ORIGIN_SHIFT[origin] + (ctx.shift ?? 0);
   const r = (sd = WORLDGEN.ratingSd) => clamp(rng.normal(WORLDGEN.ratingMean + shift, sd));
   const pitching = {
     stuff: r(),
@@ -161,7 +163,7 @@ function genPitcher(ctx: GenContext, club: ClubProfile | null, starter: boolean,
 function genHitter(ctx: GenContext, club: ClubProfile | null, position: Position, origin: PlayerOrigin = 'domestic'): PlayerTruth {
   const { rng } = ctx;
   const age = genAge(rng, club, origin);
-  const shift = (club ? (WORLDGEN.strengthShift[club.strength] ?? 0) : 0) + ageCurve(age) + ORIGIN_SHIFT[origin];
+  const shift = (club ? (WORLDGEN.strengthShift[club.strength] ?? 0) : 0) + ageCurve(age) + ORIGIN_SHIFT[origin] + (ctx.shift ?? 0);
   const r = (offset = 0) => clamp(rng.normal(WORLDGEN.ratingMean + shift + offset, WORLDGEN.ratingSd));
   // 포지션 성향: 중앙 내야·포수는 수비 쪽, 코너는 장타 쪽으로 기운다. 외국인 타자는 장타 쪽.
   const premium = position === 'C' || position === 'SS' || position === '2B' || position === 'CF';
@@ -221,7 +223,13 @@ export function assignActiveRoster(players: PlayerTruth[]): void {
     if (chosen.size >= LEAGUE.activeHitters) break;
     chosen.add(h);
   }
-  for (const p of [...sps, ...rps, ...chosen]) p.level = '1군';
+  const active = [...sps, ...rps, ...chosen];
+  // D-098: 한쪽이 모자라 26명을 못 채우면 다른 쪽에서 임시로 채운다. 최소 인원 미달은 규칙 검사(invariants)가 기록한다.
+  if (active.length < LEAGUE.activeRoster) {
+    const rest = players.filter((p) => !active.includes(p)).sort(byOvr);
+    active.push(...rest.slice(0, LEAGUE.activeRoster - active.length));
+  }
+  for (const p of active) p.level = '1군';
 }
 
 /** 국내 선수 구성: 투수 18(선발 5), 야수 18. 외국인 3(선발 2 + 타자 1), 아시아쿼터 1. 합계 40 (D-016, D-046) */
@@ -261,6 +269,28 @@ export function generateOverseasPool(rng: Rng, season: number, firstId: number):
     // 신규 영입 상한(외국인 100만 달러, 아시아쿼터 20만 달러) 안에서 요구한다 (D-048).
     const cap = p.origin === 'asia' ? FOREIGN.asiaNewCapUsd : FOREIGN.newCapUsd;
     p.salary = Math.min(salaryForOrigin(rng, p, 29), usdToWon(cap));
+  }
+  return pool;
+}
+
+/**
+ * 국내 미계약 선수 풀(D-098): 방출·미지명·독립리그 출신으로 소속 없이 입단을 기다리는 선수. 포지션 최소 인원 보충의 공급원이다.
+ * 새 게임과 매 시즌 마감 때 만든다. 수준은 리그 평균보다 낮고, 영입하면 최저 연봉 1년 계약이다.
+ */
+export function generateDomesticFreePool(rng: Rng, season: number, firstId: number): PlayerTruth[] {
+  let id = firstId;
+  const ctx: GenContext = { rng, season, nextId: () => id++, shift: FREE_POOL.ratingShift };
+  const pool: PlayerTruth[] = [];
+  for (let i = 0; i < FREE_POOL.pitchers; i++) pool.push(genPitcher(ctx, null, i < FREE_POOL.starters));
+  for (let i = 0; i < FREE_POOL.catchers; i++) pool.push(genHitter(ctx, null, 'C'));
+  for (let i = 0; i < FREE_POOL.otherHitters; i++) pool.push(genHitter(ctx, null, rng.pick(DOMESTIC_HITTER_POSITIONS.filter((x) => x !== 'C'))));
+  for (const p of pool) {
+    p.clubId = null;
+    p.level = '2군';
+    p.contractYears = 0;
+    p.salary = WORLDGEN.minSalary;
+    p.career.franchise = false;
+    p.career.faEligible = false;
   }
   return pool;
 }

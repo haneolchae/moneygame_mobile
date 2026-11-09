@@ -19,7 +19,7 @@ import type { ClubId, ClubProfile, PlayerTruth } from '../engine/types';
 import { clubHistory } from '../engine/data/history';
 import { generateHistory } from '../engine/history';
 import { asTruth, generateAmateurs } from '../engine/amateur';
-import { assignFaCandidates, generateOverseasPool, generateWorld } from '../engine/worldgen';
+import { assignFaCandidates, generateDomesticFreePool, generateOverseasPool, generateWorld } from '../engine/worldgen';
 import { Achievements } from './achievements';
 import { Market } from './market';
 import { Records } from './records';
@@ -166,6 +166,8 @@ export function createNewGame(repo: GameRepository, opts: NewGameOptions): void 
   // 2026 시즌 계약 기준 연봉 스냅샷: 11월분 연봉은 이적과 관계없이 원래 구단이 지급한다.
   const salarySnapshot = Object.fromEntries(CLUB_PROFILES.map((c) => [String(c.id), players.filter((p) => p.clubId === c.id).map((p) => p.salary)]));
   players.push(...generateOverseasPool(Rng.derive(seed, 'overseas', NEW_GAME.previousSeason), NEW_GAME.previousSeason, players.length + 1));
+  // 국내 미계약 선수 풀(D-098): 포지션 최소 인원 보충의 공급원
+  players.push(...generateDomesticFreePool(Rng.derive(seed, 'free-pool', NEW_GAME.previousSeason), NEW_GAME.previousSeason, players.length + 1));
   const scheduleRng = Rng.derive(seed, 'schedule');
   const fixtures = generateSchedule(NEW_GAME.firstSeason, scheduleRng, 1);
   const problems = validateSchedule(fixtures, NEW_GAME.firstSeason);

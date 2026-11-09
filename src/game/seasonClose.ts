@@ -11,7 +11,7 @@ import { generateSchedule, seasonKeyDates, validateSchedule } from '../engine/sc
 import { computeStandings } from '../engine/standings';
 import { stoveEvents } from '../engine/stove';
 import type { ClubId, PlayerTruth } from '../engine/types';
-import { generateOverseasPool, overall } from '../engine/worldgen';
+import { generateDomesticFreePool, generateOverseasPool, overall } from '../engine/worldgen';
 import { GameError } from '../shared/protocol';
 import type { Draft } from './draft';
 import type { GameMeta, GameRepository, InboxMessage } from './ports';
@@ -182,6 +182,8 @@ export class SeasonClose {
     this.repo.saveAmateurs(school.pool);
     const maxId = Math.max(0, ...this.repo.getPlayers().map((p) => p.id));
     this.repo.savePlayers(generateOverseasPool(Rng.derive(meta.seed, 'overseas', season), season, maxId + 1).slice(0, 18));
+    // 국내 미계약 선수 풀 보충(D-098): 포지션 최소 인원 보충의 공급원
+    this.repo.savePlayers(generateDomesticFreePool(Rng.derive(meta.seed, 'free-pool', season), season, maxId + 19));
 
     // 5) 다음 시즌 일정·스토브리그 달력, 11월분 연봉 기준
     const next = season + 1;

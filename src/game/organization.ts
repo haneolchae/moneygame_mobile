@@ -310,6 +310,7 @@ export class Organization {
     const weekId = weekIdFor(date);
     this.ensureWeek(meta, weekId);
     if (weekday(date) === 1) this.expireApprovals(date);
+    this.fillRosterNeedsIfDelegated(meta, date, inbox);
     this.proposeOwnAgenda(meta, date);
     this.enforceRosterDeadline(meta, date, inbox);
     const staff = this.staff(meta.userClubId);
@@ -528,6 +529,16 @@ export class Organization {
   }
 
   // ───────── 마감일 있는 의무 안건: 40인 초과 정리 (D-095) ─────────
+
+  /**
+   * 포지션 최소 인원 보충(D-098): 완전 위임이면 캠프 명단 마감일에 운영팀이 AI 구단과 같은 함수(Market.fillRosterNeeds)로 보충한다.
+   * 40명을 넘기면 같은 날 의무 안건 마감 처리(정리안)가 남는 쪽에서 정리한다.
+   */
+  private fillRosterNeedsIfDelegated(meta: GameMeta, date: GameDate, inbox: InboxMessage[]) {
+    if (meta.mode !== 'stove' || date !== stoveDates(meta.kDate).campRoster || this.policy('ops').mode !== 'auto') return;
+    const notes = this.market.fillRosterNeeds(meta, meta.userClubId);
+    if (notes.length) inbox.push({ date, kind: 'report', sender: '운영팀', title: '위임 처리: 포지션 최소 인원 보충', body: notes.join('\n') });
+  }
 
   /** 다음 명단 마감일(보류선수 명단 → 캠프 명단). 둘 다 지났으면 오늘 */
   private rosterDeadline(meta: GameMeta, date: GameDate): GameDate {

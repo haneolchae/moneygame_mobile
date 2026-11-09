@@ -169,3 +169,24 @@ export const wonToUsd = (won: number) => Math.round(won / FOREIGN.usdKrw);
 export const ROSTER_OBLIGATION = {
   actWindowDays: 7,
 } as const;
+
+/**
+ * ASSUMPTION(D-098): 포지션 최소 인원. AI 구단·우리 운영팀의 드래프트·FA·외국인·방출 판단과 1군 편성이 함께 쓴다.
+ * 40인 기준 투수·야수 각 17명 이상, 포수 3명 이상. 1군 26인 기준 투수 12명·야수 13명 이상.
+ */
+/** ASSUMPTION(D-098): 국내 미계약 선수 풀 규모(새 게임·시즌 마감마다 생성)와 능력 평균 보정 */
+export const FREE_POOL = {
+  pitchers: 8,
+  starters: 3,
+  catchers: 3,
+  otherHitters: 6,
+  ratingShift: -6,
+} as const;
+
+export const ROSTER_COMPOSITION = {
+  minPitchers: 17,
+  minHitters: 17,
+  minCatchers: 3,
+  activeMinPitchers: 12,
+  activeMinHitters: 13,
+} as const;

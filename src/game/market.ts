@@ -2,7 +2,7 @@
 // 날짜 처리(onDay)는 하루 처리 트랜잭션 안에서 호출되고, 사용자 명령은 각각 하나의 트랜잭션으로 반영된다.
 import { addDays, diffDays, weekday, type GameDate } from '../engine/calendar';
 import { SEASON_2026_STANDINGS } from '../engine/clubs';
-import { FOREIGN, LEAGUE, usdToWon, wonToUsd } from '../engine/config';
+import { FOREIGN, LEAGUE, usdToWon, WORLDGEN, wonToUsd } from '../engine/config';
 import {
   acceptThreshold,
   aiOffer,
@@ -25,6 +25,7 @@ import {
 import type { LedgerEntry } from '../engine/finance';
 import { EOK } from '../engine/money';
 import { TASK_WP, type TeamKey } from '../engine/staff';
+import { inGroup, needFirst, neededGroup, pickRemovals } from '../engine/roster';
 import { stoveEvents } from '../engine/stove';
 import type { ClubId, ClubProfile, PlayerTruth } from '../engine/types';
 import { assignActiveRoster, overall } from '../engine/worldgen';
@@ -202,8 +203,9 @@ export class Market {
         .map((e) => ({ e, p: byId.get(e.playerId)!, est: clubEstimate(meta.seed, club.id, byId.get(e.playerId)!) }))
         .filter(({ e, est }) => !mine.some((o) => o.playerId === e.playerId) && (est >= 54 || (e.originClub === club.id && est >= 48)))
         .sort((a, b) => b.est - a.est || a.e.playerId - b.e.playerId);
+      const roster = this.players().filter((p) => p.clubId === club.id);
       let made = 0;
-      for (const { e, p } of candidates) {
+      for (const { e, p } of needFirst(roster, candidates, (x) => x.p)) {
         if (made >= FA_RULES.aiMaxOffersPerWeek || mine.length + made >= 3) break;
         const offer = aiOffer(meta.seed, club, p, e.demand, year, this.contender(club), this.rebuilding(club));
         const comp = e.originClub === club.id ? 0 : compensationFor(e.grade ?? 'C', e.priorSalary);
@@ -288,16 +290,45 @@ export class Market {
   /**
    * 40인 초과 정리안(D-095): 계약이 끝난 선수 먼저, 그다음 구단 자체 평가가 낮은 국내 선수 순으로 초과 인원만큼 고른다.
    * AI 구단 명단 정리와 우리 운영팀 제안안이 같은 규칙을 쓴다. FA 시장에 나간 선수는 방출할 수 없어 뺀다.
+   * 포지션 최소 인원(D-098) 아래로 내려가는 방출은 건너뛴다.
    */
   trimPlan(meta: GameMeta, clubId: ClubId): PlayerTruth[] {
     const roster = this.players().filter((p) => p.clubId === clubId);
     const excess = roster.length - LEAGUE.rosterMax;
     if (excess <= 0) return [];
     const onMarket = new Set(this.repo.getFa(this.offseason(meta)).filter((e) => e.status === 'applied' || e.status === 'approved').map((e) => e.playerId));
-    return roster
+    const ordered = roster
       .filter((p) => p.origin === 'domestic' && !onMarket.has(p.id))
-      .sort((a, b) => (a.contractYears === 0 ? 0 : 1) - (b.contractYears === 0 ? 0 : 1) || clubEstimate(meta.seed, clubId, a) - clubEstimate(meta.seed, clubId, b) || a.id - b.id)
-      .slice(0, excess);
+      .sort((a, b) => (a.contractYears === 0 ? 0 : 1) - (b.contractYears === 0 ? 0 : 1) || clubEstimate(meta.seed, clubId, a) - clubEstimate(meta.seed, clubId, b) || a.id - b.id);
+    return pickRemovals(roster, ordered, excess);
+  }
+
+  /**
+   * 포지션 최소 인원 보충(D-098): 모자란 쪽(포수 → 부족이 큰 쪽)을 소속 없는 국내 선수 중 구단 평가가 높은 순으로 최저 연봉 1년 계약한다.
+   * 40명을 넘기면 이어지는 명단 정리(trimPlan)가 남는 쪽에서 정리한다. AI 구단과 우리 운영팀(완전 위임)이 같이 쓴다.
+   */
+  fillRosterNeeds(meta: GameMeta, clubId: ClubId): string[] {
+    const notes: string[] = [];
+    const free = this.players().filter((p) => p.clubId === null && p.origin === 'domestic' && !p.retired);
+    for (let guard = 0; guard < LEAGUE.rosterMax; guard++) {
+      const roster = this.players().filter((p) => p.clubId === clubId);
+      const g = neededGroup(roster);
+      if (!g) break;
+      const pick = free
+        .filter((p) => p.clubId === null && inGroup(p, g))
+        .sort((a, b) => clubEstimate(meta.seed, clubId, b) - clubEstimate(meta.seed, clubId, a) || a.id - b.id)[0];
+      if (!pick) {
+        notes.push(`${this.club(clubId).shortName}: 보충할 ${g === 'P' ? '투수' : g === 'C' ? '포수' : '야수'}가 시장에 없음`);
+        break;
+      }
+      pick.clubId = clubId;
+      pick.level = '2군';
+      pick.salary = WORLDGEN.minSalary;
+      pick.contractYears = 1;
+      this.repo.savePlayers([pick]);
+      notes.push(`${this.club(clubId).shortName}: ${pick.name}(${pick.position}) 영입 — 포지션 최소 인원 보충`);
+    }
+    return notes;
   }
 
   /** 명단 정리 방출(D-095): 정리안의 선수를 방출하고 진행 중인 연봉 협상을 닫는다. 결과 문장 목록을 돌려준다. */
@@ -445,7 +476,7 @@ export class Market {
           .filter((p) => p.clubId === null && p.origin === origin && p.career.foreignRenewals === 0 && p.contractYears === 0)
           .sort((a, b) => clubEstimate(meta.seed, clubId, b) - clubEstimate(meta.seed, clubId, a) || a.id - b.id);
         const roster = this.foreignOf(clubId);
-        const pick = pool.find((p) => this.foreignCheck([...roster, p], new Map([[p.id, { salaryUsd: wonToUsd(p.salary), isNew: true, renewals: 0 }]])).length === 0);
+        const pick = needFirst(this.players().filter((p) => p.clubId === clubId), pool, (p) => p).find((p) => this.foreignCheck([...roster, p], new Map([[p.id, { salaryUsd: wonToUsd(p.salary), isNew: true, renewals: 0 }]])).length === 0);
         if (!pick) break;
         this.signForeign(clubId, pick, wonToUsd(pick.salary), false);
         notes.push(`${this.club(clubId).shortName}: ${pick.name} 신규 영입 (${Math.round(wonToUsd(pick.salary) / 10_000)}만 달러)`);
@@ -469,7 +500,13 @@ export class Market {
     }
     this.fillForeign(meta, meta.userClubId, notes);
     // AI 구단도 빈자리를 채운 뒤, 캠프 명단(40명 이하)에 맞춰 다시 정리한다.
-    for (const club of this.clubs.values()) if (club.id !== meta.userClubId) this.fillForeign(meta, club.id, []);
+    const filled: string[] = [];
+    for (const club of this.clubs.values()) {
+      if (club.id === meta.userClubId) continue;
+      this.fillForeign(meta, club.id, []);
+      filled.push(...this.fillRosterNeeds(meta, club.id));
+    }
+    if (filled.length) out.inbox.push({ date, kind: 'news', sender: 'KBO 소식', title: '포지션 보강 영입', body: filled.join('\n') });
     this.aiPruneRosters(meta, date, out, '캠프 명단 확정');
     const fa = this.repo.getFa(this.offseason(meta));
     for (const e of fa) if (e.status === 'approved') e.status = 'unsigned';

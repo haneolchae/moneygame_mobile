@@ -7,6 +7,7 @@ import type { LedgerEntry } from '../engine/finance';
 import { EOK } from '../engine/money';
 import { observePlayer } from '../engine/observation';
 import { Rng, stableNormal } from '../engine/rng';
+import { needFirst } from '../engine/roster';
 import { seasonKeyDates } from '../engine/schedule';
 import { computeStandings } from '../engine/standings';
 import type { ClubId, PlayerTruth } from '../engine/types';
@@ -62,7 +63,10 @@ export class Draft {
     return cur * 0.45 + potEst * 0.55;
   }
 
-  /** 드래프트 실행. userBoard: 우리 구단 지명 우선순위(선수 ID). userScale: 우리 스카우트 오차 배율 */
+  /**
+   * 드래프트 실행. userBoard: 우리 구단 지명 우선순위(선수 ID). userScale: 우리 스카우트 오차 배율
+   * 순위표가 없으면(AI 구단, 우리 구단 기본 지명) 포지션 최소 인원(D-098)이 모자란 쪽을 먼저, 그 안에서 평가 순으로 고른다.
+   */
   run(meta: GameMeta, date: GameDate, userBoard: number[], userScale: number): InboxMessage[] {
     const year = meta.season;
     const pool = this.repo.getAmateurs('active');
@@ -73,6 +77,8 @@ export class Draft {
       .map((r) => r.clubId)
       .reverse();
     const taken = new Set<number>();
+    // 구단별 예상 선수단: 현재 소속 + 이번 드래프트 지명 선수
+    const projected = new Map<ClubId, PlayerTruth[]>(clubs.map((c) => [c.id, this.repo.getPlayers().filter((p) => p.clubId === c.id && !p.retired)]));
     const picks: Array<{ round: number; pick: number; clubId: ClubId; a: Amateur }> = [];
     let n = 0;
     for (let round = 1; round <= DRAFT.rounds; round++) {
@@ -82,7 +88,9 @@ export class Draft {
         let choice: Amateur | undefined;
         if (clubId === meta.userClubId) choice = userBoard.map((id) => left.find((a) => a.id === id)).find((a) => a !== undefined);
         const scale = clubId === meta.userClubId ? userScale : 1;
-        choice ??= [...left].sort((x, y) => this.valueFor(meta, clubId, y, scale) - this.valueFor(meta, clubId, x, scale) || x.id - y.id)[0]!;
+        const ranked = [...left].sort((x, y) => this.valueFor(meta, clubId, y, scale) - this.valueFor(meta, clubId, x, scale) || x.id - y.id);
+        choice ??= needFirst(projected.get(clubId) ?? [], ranked, (a) => asTruth(a))[0]!;
+        projected.get(clubId)?.push(asTruth(choice));
         taken.add(choice.id);
         n++;
         choice.status = 'drafted';
