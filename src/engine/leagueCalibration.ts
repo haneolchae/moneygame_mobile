@@ -23,11 +23,21 @@ export interface LeagueTotals {
   b2: number;
   b3: number;
   roe: number;
+  /** 존 모델 검증(10b §14·§15.2): 유형별 인플레이 타구·안타, 내야 안타, 실책, 병살, 희생플라이 */
+  bipGB: number;
+  hitGB: number;
+  bipLD: number;
+  hitLD: number;
+  bipFB: number;
+  hitFB: number;
+  infieldHits: number;
+  errors: number;
+  dp: number;
 }
 
 /** 구단별 1군 선수로 무작위 대진 경기를 돌려 리그 합계를 잰다(선발은 로테이션 순서). */
 export function measureLeague(active: Map<ClubId, PlayerTruth[]>, games: number, seed: string, key: string | number, env: LeagueEnvironment): LeagueTotals {
-  const t: LeagueTotals = { games: 0, runs: 0, pa: 0, ab: 0, h: 0, hr: 0, bb: 0, hbp: 0, k: 0, sf: 0, tb: 0, b2: 0, b3: 0, roe: 0 };
+  const t: LeagueTotals = emptyTotals();
   const clubs = [...active.keys()];
   if (clubs.length < 2) return t;
   const last = new Map<ClubId, PlayerId | null>();
@@ -59,6 +69,15 @@ export function measureLeague(active: Map<ClubId, PlayerTruth[]>, games: number,
       if (o === '2B') t.b2++;
       if (o === '3B') t.b3++;
       if (o === 'HR') t.hr++;
+      if (o === 'DP') t.dp++;
+      for (const c of e.credits) if (c.kind === 'E') t.errors++;
+      if (e.bb) {
+        const isHit = o === '1B' || o === '2B' || o === '3B';
+        if (e.bb.type === 'GB') (t.bipGB++, isHit && t.hitGB++);
+        else if (e.bb.type === 'LD') (t.bipLD++, isHit && t.hitLD++);
+        else (t.bipFB++, isHit && t.hitFB++);
+        if (e.bb.infieldHit) t.infieldHits++;
+      }
     }
   }
   return t;
@@ -80,4 +99,8 @@ export function seasonAdjustment(active: Map<ClubId, PlayerTruth[]>, seed: strin
   const hrAdj = Math.round(clampRatio(targetHr / hr) * 10_000) / 10_000;
   const runsAdj = Math.round(Math.log(clampRatio(targetRuns / runs)) * 10_000) / 10_000;
   return { ...env, runsAdj, hrAdj, measuredRunsPerGame: Math.round(runs * 100) / 100, measuredHrPerPa: Math.round(hr * 10_000) / 10_000 };
+}
+
+export function emptyTotals(): LeagueTotals {
+  return { games: 0, runs: 0, pa: 0, ab: 0, h: 0, hr: 0, bb: 0, hbp: 0, k: 0, sf: 0, tb: 0, b2: 0, b3: 0, roe: 0, bipGB: 0, hitGB: 0, bipLD: 0, hitLD: 0, bipFB: 0, hitFB: 0, infieldHits: 0, errors: 0, dp: 0 };
 }

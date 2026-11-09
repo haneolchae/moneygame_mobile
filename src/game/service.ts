@@ -1322,8 +1322,9 @@ export class GameService {
       }
     }
     for (const p of pitLine.values()) p.IP = formatInnings(p.outs);
-    const outcomeText: Record<string, string> = { '1B': '안타', '2B': '2루타', '3B': '3루타', HR: '홈런', BB: '볼넷', HBP: '몸에 맞는 공', K: '삼진', GO: '땅볼 아웃', FO: '뜬공 아웃', DP: '병살타', SF: '희생플라이', ROE: '실책 출루' };
-    const playByPlay = pas.map((pa) => ({ inning: pa.inning, half: pa.half, text: `${name(pa.batterId)}: ${outcomeText[pa.outcome] ?? pa.outcome}${pa.rbi ? ` (${pa.rbi}타점)` : ''}` }));
+    const outcomeText: Record<string, string> = { '1B': '안타', '2B': '2루타', '3B': '3루타', HR: '홈런', BB: '볼넷', HBP: '몸에 맞는 공', K: '삼진', GO: '땅볼 아웃', FO: '뜬공 아웃', DP: '병살타', SF: '희생플라이', ROE: '실책 출루', FC: '야수 선택' };
+    // 인플레이 타구는 처리(또는 쫓아간) 수비수를 함께 보여 준다(10b §11 기록).
+    const playByPlay = pas.map((pa) => ({ inning: pa.inning, half: pa.half, text: `${name(pa.batterId)}: ${outcomeText[pa.outcome] ?? pa.outcome}${pa.fielderId ? ` · ${name(pa.fielderId)}` : ''}${pa.rbi ? ` (${pa.rbi}타점)` : ''}` }));
     const stripOuts = (list: Array<BoxScoreView['pitching']['home'][number] & { outs?: number }>) => list.map(({ outs: _o, ...rest }) => rest);
     return {
       fixture: this.fixtureView({ id: game.fixtureId, date: game.date, home: game.home, away: game.away }, game),

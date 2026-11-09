@@ -46,6 +46,21 @@ export class Rng {
     return rng;
   }
 
+  /**
+   * 정수 키 조합으로 독립 흐름을 만든다(문자열 해시 없이 빠름). 타석별 하위 흐름(10b §12)처럼 자주 만드는 곳에 쓴다.
+   * 같은 키면 같은 수열이다.
+   */
+  static fromInts(a: number, b: number, c: number): Rng {
+    const mix = (x: number) => {
+      x = Math.imul(x ^ (x >>> 16), 0x85ebca6b);
+      x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35);
+      return (x ^ (x >>> 16)) >>> 0;
+    };
+    const rng = new Rng([mix(a ^ 0x9e3779b9), mix(b + 0x7f4a7c15), mix(c ^ 0x632be5ab), mix((a + b + c) ^ 0x243f6a88)]);
+    for (let i = 0; i < 4; i++) rng.nextUint32();
+    return rng;
+  }
+
   /** 시드와 키 조합으로 독립 흐름을 만든다. 예: 경기별 난수 = derive(seed, 'game', fixtureId). */
   static derive(seed: string, ...keys: Array<string | number>): Rng {
     return Rng.fromSeed(`${seed}::${keys.join('::')}`);

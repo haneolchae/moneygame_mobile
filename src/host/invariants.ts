@@ -29,7 +29,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   const games = repo.getGames(season);
   const playerClub = new Map(players.map((p) => [p.id, p.clubId]));
   for (const g of games) {
-    const { pas, runs } = repo.getGameEvents(g.fixtureId);
+    const { pas, runs, fielding } = repo.getGameEvents(g.fixtureId);
     const homeRuns = runs.filter((r) => r.battingClub === g.home).length;
     const awayRuns = runs.filter((r) => r.battingClub === g.away).length;
     if (homeRuns !== g.homeRuns || awayRuns !== g.awayRuns) errors.push(`경기 ${g.fixtureId} 득점 불일치 (${g.homeRuns}:${g.awayRuns} vs ${homeRuns}:${awayRuns})`);
@@ -48,6 +48,56 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
     if (g.homeRuns !== g.awayRuns) {
       if (!g.winningPitcher || !g.losingPitcher) errors.push(`경기 ${g.fixtureId} 승패 투수 누락`);
     }
+    errors.push(...checkFielding(g.fixtureId, g.home, g.away, pas, runs, fielding));
+  }
+  return errors;
+}
+
+/**
+ * 수비 기록 규칙(10b §11, D-102): 아웃마다 자살 1개, 팀 자살 = 팀 아웃, 보살은 아웃이 있는 플레이에만,
+ * 병살은 아웃 2개, 희생플라이는 2아웃 미만에서 득점이 있는 뜬공 아웃에만.
+ */
+export function checkFielding(
+  fixtureId: number,
+  home: number,
+  away: number,
+  pas: ReturnType<GameRepository['getGameEvents']>['pas'],
+  runs: ReturnType<GameRepository['getGameEvents']>['runs'],
+  fielding: ReturnType<GameRepository['getGameEvents']>['fielding'],
+): string[] {
+  const errors: string[] = [];
+  const bySeq = new Map<number, { po: number; a: number }>();
+  for (const f of fielding) {
+    const c = bySeq.get(f.seq) ?? { po: 0, a: 0 };
+    if (f.kind === 'PO') c.po++;
+    else if (f.kind === 'A') c.a++;
+    bySeq.set(f.seq, c);
+  }
+  const runSeqs = new Set(runs.map((r) => r.seq));
+  const teamOuts = new Map<number, number>([
+    [home, 0],
+    [away, 0],
+  ]);
+  let outsBefore = 0;
+  let half = '';
+  for (const pa of pas) {
+    const key = `${pa.inning}${pa.half}`;
+    if (key !== half) {
+      half = key;
+      outsBefore = 0;
+    }
+    const c = bySeq.get(pa.seq) ?? { po: 0, a: 0 };
+    if (c.po !== pa.outsOnPlay) errors.push(`경기 ${fixtureId} 타석 ${pa.seq} 자살 ${c.po}개 ≠ 아웃 ${pa.outsOnPlay}개`);
+    if (c.a > 0 && pa.outsOnPlay === 0) errors.push(`경기 ${fixtureId} 타석 ${pa.seq} 아웃 없는 보살`);
+    if (pa.outcome === 'DP' && pa.outsOnPlay !== 2) errors.push(`경기 ${fixtureId} 타석 ${pa.seq} 병살인데 아웃 ${pa.outsOnPlay}개`);
+    if (pa.outcome === 'SF' && (outsBefore >= 2 || !runSeqs.has(pa.seq))) errors.push(`경기 ${fixtureId} 타석 ${pa.seq} 희생플라이 조건 위반`);
+    const defClub = pa.battingClub === home ? away : home;
+    teamOuts.set(defClub, (teamOuts.get(defClub) ?? 0) + pa.outsOnPlay);
+    outsBefore += pa.outsOnPlay;
+  }
+  for (const club of [home, away]) {
+    const po = fielding.filter((f) => f.clubId === club && f.kind === 'PO').length;
+    if (po !== teamOuts.get(club)) errors.push(`경기 ${fixtureId} 구단 ${club} 자살 ${po} ≠ 아웃 ${teamOuts.get(club)}`);
   }
   return errors;
 }

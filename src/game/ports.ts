@@ -84,6 +84,19 @@ export interface StoredPa {
   rbi: number;
   outsOnPlay: number;
   pitches: number;
+  /** 인플레이 타구(10b §11): 구역 ID, 유형, 질(0~2), 처리 수비수 */
+  bbZone?: string;
+  bbType?: string;
+  bbQuality?: number;
+  fielderId?: PlayerId;
+}
+
+/** 수비 기록 한 건(자살·보살·실책) */
+export interface StoredFielding {
+  seq: number;
+  clubId: ClubId;
+  playerId: PlayerId;
+  kind: 'PO' | 'A' | 'E';
 }
 
 export interface StoredRun {
@@ -324,7 +337,7 @@ export interface GameRepository {
   /** 기본은 정규시즌 경기. 'postseason'이면 포스트시즌 경기 */
   getGames(season: number, stage?: 'regular' | 'postseason'): StoredGame[];
   getGame(fixtureId: FixtureId): StoredGame | null;
-  getGameEvents(fixtureId: FixtureId): { pas: StoredPa[]; runs: StoredRun[] };
+  getGameEvents(fixtureId: FixtureId): { pas: StoredPa[]; runs: StoredRun[]; fielding: StoredFielding[] };
   battingTotals(season: number, playerIds?: PlayerId[], clubId?: ClubId): Map<PlayerId, BattingTotals>;
   pitchingTotals(season: number, playerIds?: PlayerId[], clubId?: ClubId): Map<PlayerId, PitchingTotals>;
   leaguePitchingTotals(season: number): PitchingTotals;

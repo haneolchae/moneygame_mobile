@@ -7,11 +7,14 @@
 //  - 승리투수: 결승점 시점의 투수. 선발이 5이닝(15아웃) 미만이면 가장 많은 아웃을 잡은 구원투수.
 //  - 홀드는 아직 판정하지 않는다.
 import { SIM } from './config';
-import { NEUTRAL_ENVIRONMENT, paProbabilities, type DefenseContext, type LeagueEnvironment } from './probability';
-import type { Rng } from './rng';
+import { battingSide, cachedTopLevel, NEUTRAL_ENVIRONMENT, paProbabilities, type DefenseContext, type LeagueEnvironment, type TopLevel } from './probability';
+import { Rng } from './rng';
 import type { ClubId, FixtureId, PlayerId, PlayerTruth, Position } from './types';
+import { cachedTheta, qualityDist, resolveInPlay, type Bases, type Credit, type FieldPos, type Fielders, type Runner } from './zone';
+import type { BallType, Quality } from './zoneConfig';
 
-export type PaOutcome = '1B' | '2B' | '3B' | 'HR' | 'BB' | 'HBP' | 'K' | 'GO' | 'FO' | 'DP' | 'SF' | 'ROE';
+/** FC: 야수 선택(타자는 살고 다른 주자가 아웃되거나 진루) */
+export type PaOutcome = '1B' | '2B' | '3B' | 'HR' | 'BB' | 'HBP' | 'K' | 'GO' | 'FO' | 'DP' | 'SF' | 'ROE' | 'FC';
 export const HIT_OUTCOMES: readonly PaOutcome[] = ['1B', '2B', '3B', 'HR'];
 
 export interface LineupSpot {
@@ -43,6 +46,10 @@ export interface PaEvent {
   pitches: number;
   homeScore: number;
   awayScore: number;
+  /** 수비 기록(자살·보살·실책, 10b §11) */
+  credits: Credit[];
+  /** 인플레이 타구 정보(구역·유형·질·처리 수비수). 홈런·볼넷·삼진은 없음 */
+  bb?: { zone: string; type: BallType; quality: Quality; fielderId: PlayerId; infieldHit: boolean };
 }
 
 export interface RunEvent {
@@ -70,13 +77,6 @@ export interface GameResult {
   savePitcher: PlayerId | null;
 }
 
-interface Runner {
-  id: PlayerId;
-  speed: number;
-  pitcherId: PlayerId;
-  earned: boolean;
-}
-
 interface PitcherStint {
   pitcher: PlayerTruth;
   isStarter: boolean;
@@ -95,10 +95,17 @@ interface TeamState {
   usedRelievers: Set<PlayerId>;
 }
 
-const fx = (k: number, x: number) => Math.exp((k * (x - 50)) / 50);
-const clampP = (p: number) => Math.max(0.01, Math.min(0.97, p));
-
 export { paProbabilities };
+
+/** 타석 위 단계 추첨(순서 고정: 볼넷·삼진·홈런·사구·인플레이) */
+function drawTop(rng: Rng, p: { BB: number; K: number; HR: number; HBP: number }): PaOutcome | 'INPLAY' {
+  let r = rng.next();
+  if ((r -= p.BB) < 0) return 'BB';
+  if ((r -= p.K) < 0) return 'K';
+  if ((r -= p.HR) < 0) return 'HR';
+  if ((r -= p.HBP) < 0) return 'HBP';
+  return 'INPLAY';
+}
 
 function drawOutcome(rng: Rng, probs: Record<string, number>): PaOutcome {
   let r = rng.next();
@@ -111,7 +118,6 @@ function drawOutcome(rng: Rng, probs: Record<string, number>): PaOutcome {
   return last as PaOutcome;
 }
 
-const speedAdj = (p: number, speed: number) => clampP(p * fx(0.5, speed));
 
 /** env: 시즌 리그 환경(D-100) */
 export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSetup, rng: Rng, maxInnings: number, env: LeagueEnvironment = NEUTRAL_ENVIRONMENT): GameResult {
@@ -120,6 +126,18 @@ export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSe
     return { setup, orderIndex: 0, stint, stints: [stint], usedRelievers: new Set() };
   };
   const teams = { home: makeTeam(home), away: makeTeam(away) };
+  // 타석별 하위 난수 흐름(10b §12): 인플레이 타구 판정은 (경기 키, 타석 순번)에서 파생한 난수를 쓴다.
+  const bbKey = rng.int(0, 2_000_000_000);
+
+  // 수비 위치(라인업 포지션). 투수는 타석마다 현재 투수로 채운다.
+  const fieldersOf = (t: TeamState): Fielders => {
+    const f = { P: t.stint.pitcher } as Fielders;
+    for (const spot of t.setup.lineup) if (spot.position !== 'DH') f[spot.position as FieldPos] = spot.player;
+    return f;
+  };
+  const homeFielders = fieldersOf(teams.home);
+  const awayFielders = fieldersOf(teams.away);
+
   const score = { home: 0, away: 0 };
   const lineScore = { home: [] as number[], away: [] as number[] };
   const events: PaEvent[] = [];
@@ -199,55 +217,28 @@ export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSe
         bat.orderIndex++;
         const batter = spot.player;
         const pitcher = def.stint.pitcher;
-        const outcome0 = drawOutcome(rng, paProbabilities(batter, pitcher, def.setup.defense, env));
-        let outcome: PaOutcome = outcome0;
+        // 타석 위 단계 확률: 입력이 같으면 같은 값(결정적 계산 캐시)
+        const top = cachedTopLevel(batter, pitcher, def.setup.defense, env) as TopLevel & { qualities?: Record<BallType, [number, number, number]> };
+        const outcome0 = drawTop(rng, top);
+        let outcome: PaOutcome = outcome0 === 'INPLAY' ? 'GO' : outcome0;
         let rbi = 0;
         const outsBefore = outs;
-        const runnerOf = (earned = true): Runner => ({ id: batter.id, speed: SIM.runnerSpeedWeight * batter.batting.speed + (1 - SIM.runnerSpeedWeight) * batter.batting.baserunning, pitcherId: pitcher.id, earned });
+        const runnerOf = (earned = true): Runner => ({ id: batter.id, speed: batter.batting.speed, baserunning: batter.batting.baserunning, pitcherId: pitcher.id, earned });
         const scoreR = (r: Runner, credit: boolean, unearned = false) => {
           scoreRun(batSide, r, unearned);
           halfRuns++;
           if (credit) rbi++;
         };
+        const fielders = def === teams.home ? homeFielders : awayFielders;
+        fielders.P = pitcher;
+        const credits: Credit[] = [];
+        let bb: PaEvent['bb'];
         seq++;
         switch (outcome0) {
           case 'HR': {
             for (const r of bases) if (r) scoreR(r, true);
             scoreR(runnerOf(), true);
             bases = [null, null, null];
-            break;
-          }
-          case '3B': {
-            for (const r of bases) if (r) scoreR(r, true);
-            bases = [null, null, runnerOf()];
-            break;
-          }
-          case '2B': {
-            const [r1, r2, r3] = bases;
-            if (r3) scoreR(r3, true);
-            if (r2) scoreR(r2, true);
-            let third: Runner | null = null;
-            if (r1) {
-              if (rng.chance(speedAdj(SIM.advance.doubleScoresFromFirst, r1.speed))) scoreR(r1, true);
-              else third = r1;
-            }
-            bases = [null, runnerOf(), third];
-            break;
-          }
-          case '1B': {
-            const [r1, r2, r3] = bases;
-            if (r3) scoreR(r3, true);
-            let third: Runner | null = null;
-            if (r2) {
-              if (rng.chance(speedAdj(SIM.advance.singleScoresFromSecond, r2.speed))) scoreR(r2, true);
-              else third = r2;
-            }
-            let second: Runner | null = null;
-            if (r1) {
-              if (!third && rng.chance(speedAdj(SIM.advance.singleFirstToThird, r1.speed))) third = r1;
-              else second = r1;
-            }
-            bases = [runnerOf(), second, third];
             break;
           }
           case 'BB':
@@ -258,81 +249,51 @@ export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSe
             bases = [runnerOf(), r1 ?? r2, r1 && r2 ? r2 : r3];
             break;
           }
-          case 'ROE': {
-            const [r1, r2, r3] = bases;
-            if (r3) scoreR(r3, false, true);
-            bases = [runnerOf(false), r1, r2];
-            break;
-          }
           case 'K': {
             outs++;
+            credits.push({ playerId: fielders.C.id, kind: 'PO' }); // 삼진 자살은 포수
             break;
           }
-          case 'GO': {
-            const [r1, r2, r3] = bases;
-            if (r1 && outs < 2 && rng.chance(SIM.advance.doublePlay)) {
-              outcome = 'DP';
-              outs += 2;
-              let third: Runner | null = r3;
-              if (outs < 3) {
-                if (r3) {
-                  scoreR(r3, false);
-                  third = null;
-                }
-                bases = [null, null, r2 ?? third];
-              } else bases = [null, null, null];
-              break;
-            }
-            // 타자 아웃. 3루·2루 주자는 확률로 진루하고, 1루 주자는 2루로 가며 앞 주자를 밀어낸다.
-            outs++;
-            let third: Runner | null = r3;
-            let second: Runner | null = r2;
-            if (r3 && outs < 3 && rng.chance(speedAdj(SIM.advance.groundoutAdvance, r3.speed))) {
-              scoreR(r3, true);
-              third = null;
-            }
-            if (second && !third && outs < 3 && rng.chance(SIM.advance.groundoutAdvance)) {
-              third = second;
-              second = null;
-            }
-            if (r1 && outs < 3) {
-              if (second) {
-                if (third) scoreR(third, true);
-                third = second;
-              }
-              second = r1;
-            }
-            bases = outs < 3 ? [null, second, third] : [null, null, null];
+          default: {
+            // 홈런이 아닌 인플레이 타구: 존 모델(10b)
+            const hand = battingSide(batter, pitcher);
+            // 앵커링 θ(10b §6)는 결정적 계산이라 같은 입력이면 캐시 값을 쓴다.
+            const theta = cachedTheta(batter.id * 1_000_003 + pitcher.id, top.shares, batter.batting.power, top.stuff, top.velocityZ, hand, top.x);
+            top.qualities ??= {
+              GB: qualityDist('GB', batter.batting.power, top.stuff, top.velocityZ),
+              LD: qualityDist('LD', batter.batting.power, top.stuff, top.velocityZ),
+              FB: qualityDist('FB', batter.batting.power, top.stuff, top.velocityZ),
+            };
+            const r = resolveInPlay(Rng.fromInts(bbKey, fixtureId, seq), {
+              batter,
+              hand,
+              fielders,
+              shares: top.shares,
+              stuff: top.stuff,
+              velocityZ: top.velocityZ,
+              theta,
+              outs,
+              bases: bases as Bases,
+              batterRunner: runnerOf(),
+              qualities: top.qualities,
+            });
+            outs += r.outsAdded;
+            for (const sr of r.scored) scoreR(sr.runner, sr.rbi, sr.unearned);
+            bases = r.bases;
+            outcome = r.outcome;
+            credits.push(...r.credits);
+            bb = { zone: r.zone, type: r.type, quality: r.quality, fielderId: r.fielderId, infieldHit: r.infieldHit };
             break;
           }
-          case 'FO': {
-            const [r1, r2, r3] = bases;
-            outs++;
-            let third: Runner | null = r3;
-            if (r3 && outs < 3 && rng.chance(speedAdj(SIM.advance.sacFlyFromThird, r3.speed))) {
-              outcome = 'SF';
-              scoreR(r3, true);
-              third = null;
-            }
-            let second: Runner | null = r2;
-            if (r2 && !third && outs < 3 && rng.chance(SIM.advance.flyoutSecondToThird)) {
-              third = r2;
-              second = null;
-            }
-            bases = [r1, second, third];
-            break;
-          }
-          default:
-            break;
         }
         const outsOnPlay = outs - outsBefore;
         const pitches = Math.max(1, Math.round(
-          (outcome0 === 'K' ? SIM.pitches.k : outcome0 === 'BB' ? SIM.pitches.bb : outcome0 === 'HBP' ? SIM.pitches.hbp : SIM.pitches.other) +
+          (outcome === 'K' ? SIM.pitches.k : outcome === 'BB' ? SIM.pitches.bb : outcome === 'HBP' ? SIM.pitches.hbp : SIM.pitches.other) +
             rng.normal(0, SIM.pitches.jitter),
         ));
         def.stint.pitches += pitches;
         def.stint.outs += outsOnPlay;
-        events.push({
+        const ev: PaEvent = {
           seq,
           inning,
           half,
@@ -346,7 +307,10 @@ export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSe
           pitches,
           homeScore: score.home,
           awayScore: score.away,
-        });
+          credits,
+        };
+        if (bb) ev.bb = bb;
+        events.push(ev);
         // 끝내기: 9회 이후 말 공격 중 홈팀이 앞서면 즉시 종료
         if (half === 'B' && inning >= 9 && score.home > score.away) {
           gameOver = true;

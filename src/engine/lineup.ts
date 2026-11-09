@@ -20,7 +20,6 @@ const offense = (p: PlayerTruth) => {
 };
 
 const POSITION_WEIGHT: Record<string, number> = { C: 1.3, SS: 1.3, '2B': 1.15, CF: 1.15, '3B': 1, LF: 0.85, RF: 0.9, '1B': 0.7 };
-const INFIELD: readonly Position[] = ['C', '1B', '2B', '3B', 'SS'];
 
 /** 그 포지션에서의 수비 지수: 수비 종합 + 포지션 숙련도 보정(낯선 포지션은 같은 효율을 내지 못함, D-087) */
 export function fieldingAt(p: PlayerTruth, pos: Position): number {
@@ -48,18 +47,9 @@ function buildLineup(hitters: PlayerTruth[]): { lineup: LineupSpot[]; defense: D
   // 타순: 공격력 순으로 정렬한 뒤 2번째로 좋은 타자를 1번, 가장 좋은 타자를 3번에 둔다.
   const sorted = [...spots].sort((a, b) => offense(b.player) - offense(a.player) || a.player.id - b.player.id);
   const order = [1, 3, 0, 2, 4, 5, 6, 7, 8].map((i) => sorted[i]!);
-  const zone = (positions: readonly Position[]) => {
-    let wsum = 0;
-    let dsum = 0;
-    for (const f of field.filter((x) => positions.includes(x.position))) {
-      const w = POSITION_WEIGHT[f.position] ?? 1;
-      wsum += w;
-      dsum += w * fieldingAt(f.player, f.position);
-    }
-    return wsum ? dsum / wsum : 50;
-  };
+  // 개인 수비 능력은 존 모델(10b)이 수비수별로 쓴다. 여기서는 포수 프레이밍(상황 보정)만 넘긴다.
   const catcher = field.find((f) => f.position === 'C')?.player;
-  const defense: DefenseContext = { infield: zone(INFIELD), outfield: zone(['LF', 'CF', 'RF']), framing: catcher?.catcher?.framing ?? 30 };
+  const defense: DefenseContext = { framing: catcher?.catcher?.framing ?? 30 };
   return { lineup: order, defense };
 }
 

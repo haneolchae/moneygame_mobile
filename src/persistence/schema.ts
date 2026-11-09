@@ -5,9 +5,10 @@ import type { DatabaseSync } from 'node:sqlite';
 
 /**
  * 8: 3a 능력치 체계(1~100·세부 능력치·구종·히든 12종, D-086~D-088)와 시즌 리그 환경(D-100). 선수 능력은 truth JSON에 들어 있어 표 구조는 같다.
+ * 9: 3a2 존 기반 수비 판정(D-102). 타석에 타구 구역·유형·질·처리 수비수, 수비 기록(자살·보살·실책) 표.
  * 출시 전에는 세이브 호환을 보장하지 않는다(D-094): 이전 버전 저장본은 변환하지 않고 불러오기 때 이유를 안내하고 거부한다.
  */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 const SCHEMA_V3 = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -250,6 +251,25 @@ CREATE TABLE amateurs (id INTEGER PRIMARY KEY, status TEXT NOT NULL, data TEXT N
 CREATE INDEX amateurs_status ON amateurs (status);
 `;
 
+const SCHEMA_V9_ADDITIONS = `
+ALTER TABLE plate_appearances ADD COLUMN bb_zone TEXT;
+ALTER TABLE plate_appearances ADD COLUMN bb_type TEXT;
+ALTER TABLE plate_appearances ADD COLUMN bb_quality INTEGER;
+ALTER TABLE plate_appearances ADD COLUMN fielder_id INTEGER;
+CREATE TABLE fielding (
+  game_id INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  idx INTEGER NOT NULL,
+  season INTEGER NOT NULL,
+  club_id INTEGER NOT NULL,
+  player_id INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  stage TEXT NOT NULL DEFAULT 'regular',
+  PRIMARY KEY (game_id, seq, idx)
+) WITHOUT ROWID;
+CREATE INDEX fielding_player ON fielding (season, player_id);
+`;
+
 export interface Migration {
   from: number;
   to: number;
@@ -281,6 +301,7 @@ export function createSchema(db: DatabaseSync): void {
     db.exec(SCHEMA_V5_ADDITIONS);
     db.exec(SCHEMA_V6_ADDITIONS);
     db.exec(SCHEMA_V7_ADDITIONS);
+    db.exec(SCHEMA_V9_ADDITIONS);
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

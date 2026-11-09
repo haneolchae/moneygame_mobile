@@ -31,8 +31,8 @@ describe('타석 확률 기준 모델 (10a)', () => {
   it('모든 사건 확률이 0~1이고 합은 1이다(극단 능력·환경 포함)', () => {
     const cases: Array<[PlayerTruth, PlayerTruth, DefenseContext, { runs: number; hr: number }]> = [
       [hitter(), pitcher(), NEUTRAL_DEFENSE, { runs: 0, hr: 0 }],
-      [hitter({ contact: 100, power: 100, eye: 100, speed: 100 }), pitcher({ stuff: 1, control: 1 }), { infield: 1, outfield: 1, framing: 1 }, { runs: 0.1, hr: 0.1 }],
-      [hitter({ contact: 1, power: 1, eye: 1, speed: 1 }), pitcher({ stuff: 100, control: 100, groundball: 100 }), { infield: 100, outfield: 100, framing: 100 }, { runs: -0.1, hr: -0.1 }],
+      [hitter({ contact: 100, power: 100, eye: 100, speed: 100 }), pitcher({ stuff: 1, control: 1 }), { framing: 1 }, { runs: 0.1, hr: 0.1 }],
+      [hitter({ contact: 1, power: 1, eye: 1, speed: 1 }), pitcher({ stuff: 100, control: 100, groundball: 100 }), { framing: 100 }, { runs: -0.1, hr: -0.1 }],
     ];
     for (const [b, p, d, env] of cases) {
       const r = paProbabilities(b, p, d, env);
@@ -67,12 +67,7 @@ describe('타석 확률 기준 모델 (10a)', () => {
     expect(high.K).toBeCloseTo(low.K, 12);
   });
 
-  it('수비가 좋으면 인플레이 안타가 줄고, 포수 프레이밍이 좋으면 볼넷이 줄고 삼진이 는다', () => {
-    const hitsOf = (d: DefenseContext) => {
-      const r = paProbabilities(hitter(), pitcher(), d);
-      return r['1B'] + r['2B'] + r['3B'];
-    };
-    expect(hitsOf({ infield: 75, outfield: 75, framing: 50 })).toBeLessThan(hitsOf(NEUTRAL_DEFENSE));
+  it('포수 프레이밍이 좋으면 볼넷이 줄고 삼진이 는다(개인 수비 효과는 존 모델 테스트, tests/zone.test.ts)', () => {
     const framed = paProbabilities(hitter(), pitcher(), { ...NEUTRAL_DEFENSE, framing: 80 });
     const base = paProbabilities(hitter(), pitcher());
     expect(framed.BB).toBeLessThan(base.BB);
