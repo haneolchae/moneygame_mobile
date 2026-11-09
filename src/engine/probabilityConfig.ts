@@ -67,6 +67,12 @@ export const PROBABILITY_CONFIG = {
    * 이동 크기는 기준 리그 보정(scripts/calibrate-model.ts)으로 맞춘 밸런스 초안.
    */
   environment: { stepPct: 0.05, maxPct: 0.1, runsLogitPerLogRatio: 0.92, hrRunsOffset: 0.22 },
+
+  /**
+   * 시즌 리그 기준 재조정(D-103): 시즌 모드 시작 때 실제 1군으로 games경기를 모의해 목표 대비 보정값을 정한다.
+   * maxAdjustRatio: 보정 배율 상한(득점·홈런 각각 1/상한 ~ 상한). 밸런스 초안.
+   */
+  seasonCalibration: { games: 1440, maxInnings: 12, maxAdjustRatio: 1.3 },
 } as const;
 
 export type ProbabilityConfig = typeof PROBABILITY_CONFIG;

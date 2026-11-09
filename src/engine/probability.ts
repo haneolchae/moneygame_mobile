@@ -9,6 +9,10 @@ import type { Pitch, PlayerTruth } from './types';
 export interface LeagueEnvironment {
   runs: number;
   hr: number;
+  /** 시즌 재조정(D-103): 득점 로그 비율 보정(ln(목표/측정)). 없으면 0 */
+  runsAdj?: number;
+  /** 시즌 재조정(D-103): 홈런 기준 확률 배율. 없으면 1 */
+  hrAdj?: number;
 }
 export const NEUTRAL_ENVIRONMENT: LeagueEnvironment = { runs: 0, hr: 0 };
 
@@ -63,14 +67,15 @@ export function paProbabilities(batter: PlayerTruth, pitcher: PlayerTruth, defen
   const b = batter.batting;
   const p = effectivePitching(pitcher);
   const gbRating = pitcher.pitching?.groundball ?? 50;
-  const runsShift = C.environment.runsLogitPerLogRatio * (Math.log(1 + env.runs) - C.environment.hrRunsOffset * Math.log(1 + env.hr));
+  const hrScale = (1 + env.hr) * (env.hrAdj ?? 1);
+  const runsShift = C.environment.runsLogitPerLogRatio * (Math.log(1 + env.runs) + (env.runsAdj ?? 0) - C.environment.hrRunsOffset * Math.log(hrScale));
 
   // 볼넷 b (사구가 아닌 타석 대비)
   const bb = matchProbability(C.base.b, C.walk.batterEye * z(b.eye) + C.walk.batterContact * z(b.contact) + runsShift, -C.walk.pitcherControl * z(p.control), -C.context.framingOnWalk * z(defense.framing));
   // 삼진 k (볼넷이 아닌 타석 대비)
   const k = matchProbability(C.base.k, -C.strikeout.batterContact * z(b.contact) - C.strikeout.batterEye * z(b.eye), C.strikeout.pitcherStuff * z(p.stuff) + C.strikeout.pitcherVelocity * p.velocityZ, C.context.framingOnStrikeout * z(defense.framing));
   // 홈런 h (볼넷·삼진이 아닌 타석 대비). 땅볼 유도는 쓰지 않는다.
-  const h = matchProbability(C.base.h * (1 + env.hr), C.homeRun.batterPower * z(b.power) + C.homeRun.batterContact * z(b.contact), -C.homeRun.pitcherStuff * z(p.stuff));
+  const h = matchProbability(C.base.h * hrScale, C.homeRun.batterPower * z(b.power) + C.homeRun.batterContact * z(b.contact), -C.homeRun.pitcherStuff * z(p.stuff));
 
   // 홈런이 아닌 인플레이 타구: 유형을 먼저 정한다(땅볼 유도는 이 분포에만 적용).
   const bbCfg = C.battedBall;

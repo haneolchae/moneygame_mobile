@@ -10,6 +10,7 @@ import { EOK } from '../engine/money';
 import { observePlayer } from '../engine/observation';
 import { weeklyAp, xpToNext } from '../engine/owner';
 import { Rng, stableNormal, type RngState } from '../engine/rng';
+import { seasonAdjustment } from '../engine/leagueCalibration';
 import { NEUTRAL_ENVIRONMENT, nextEnvironmentDeviation } from '../engine/probability';
 import { PROBABILITY_CONFIG } from '../engine/probabilityConfig';
 import { generateSchedule, seasonKeyDates, validateSchedule } from '../engine/schedule';
@@ -355,11 +356,15 @@ export class GameService {
       // 시즌 리그 환경(D-100): 첫 시즌은 기준값, 이후 직전 시즌 편차에서 −5%p·0·+5%p(±10% 안, 비누적)
       const prevEnv = meta.leagueEnvironment?.[String(season - 1)];
       const envRng = Rng.derive(meta.seed, 'league-env', season);
-      const env = prevEnv ? { runs: nextEnvironmentDeviation(prevEnv.runs, envRng.int(0, 2)), hr: nextEnvironmentDeviation(prevEnv.hr, envRng.int(0, 2)) } : { ...NEUTRAL_ENVIRONMENT };
+      const deviation = prevEnv ? { runs: nextEnvironmentDeviation(prevEnv.runs, envRng.int(0, 2)), hr: nextEnvironmentDeviation(prevEnv.hr, envRng.int(0, 2)) } : { runs: 0, hr: 0 };
+      // 시즌 리그 기준 재조정(D-103): 방금 짠 1군으로 모의 경기를 돌려 그 시즌 목표에 맞춘다(능력치는 바꾸지 않음).
+      const active = new Map<ClubId, PlayerTruth[]>();
+      for (const p of this.repo.getPlayers()) if (p.clubId !== null && p.level === '1군') active.set(p.clubId, [...(active.get(p.clubId) ?? []), p]);
+      const env = seasonAdjustment(active, meta.seed, season, deviation);
       metaUpdate.leagueEnvironment = { ...(meta.leagueEnvironment ?? {}), [String(season)]: env };
       const pct = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`;
       const target = PROBABILITY_CONFIG.leagueTarget;
-      inbox.push({ date: next, kind: 'news', sender: 'KBO 소식', title: `${season} 시즌 리그 환경: 득점 ${pct(env.runs)}, 홈런 ${pct(env.hr)}`, body: `올해 리그는 기준(경기당 득점 ${target.runsPerGame}, 타석당 홈런 ${target.hrPerPa}) 대비 득점 ${pct(env.runs)}, 홈런 ${pct(env.hr)} 수준의 환경으로 예상됩니다. 공인구·스트라이크 존 같은 리그 조건 변화를 요약한 값이며, 기준 대비 ±10%를 넘지 않습니다.` });
+      inbox.push({ date: next, kind: 'news', sender: 'KBO 소식', title: `${season} 시즌 리그 환경: 득점 ${pct(env.runs)}, 홈런 ${pct(env.hr)}`, body: `올해 리그는 기준(경기당 득점 ${target.runsPerGame}, 타석당 홈런 ${target.hrPerPa}) 대비 득점 ${pct(env.runs)}, 홈런 ${pct(env.hr)} 수준의 환경으로 예상됩니다. 공인구·스트라이크 존 같은 리그 조건 변화를 요약한 값이며, 기준 대비 ±10%를 넘지 않습니다.\n올해 1군 선수 구성으로 리그 기준을 다시 맞췄습니다(보정 전 예상: 경기당 ${env.measuredRunsPerGame}득점, 타석당 홈런 ${env.measuredHrPerPa}).` });
       inbox.push({ date: next, kind: 'task', sender: '모기업', title: `${season} 시즌 목표: 정규시즌 ${expectedRank}위 이내`, body: `직전 시즌 순위와 전력 평가로 정한 예상 순위입니다. 달성하면 구단주 경험치를 받고, ${CLOSE_RULES.warnAfterMisses}시즌 연속 미달이면 지원 삭감 경고, ${CLOSE_RULES.dismissAfterMisses}시즌 연속이면 해임입니다.` });
       inbox.push({ date: next, kind: 'report', sender: '사업본부장', title: `${season} 시즌 물가 상승률 ${(rate / 100).toFixed(2)}%`, body: `올해 비용·가격·시세 기준값이 ${(rate / 100).toFixed(2)}% 올랐습니다. 이미 맺은 계약 금액은 바뀌지 않습니다.` });
     }

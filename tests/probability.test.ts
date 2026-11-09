@@ -1,5 +1,6 @@
 // 타석 확률 기준 모델 (10a 문서 9.1 단위 테스트, D-086~D-088·D-091·D-100)
 import { describe, expect, it } from 'vitest';
+import { measureLeague, seasonAdjustment } from '../src/engine/leagueCalibration';
 import { matchProbability, nextEnvironmentDeviation, paProbabilities, NEUTRAL_DEFENSE, type DefenseContext } from '../src/engine/probability';
 import { PROBABILITY_CONFIG } from '../src/engine/probabilityConfig';
 import { Rng } from '../src/engine/rng';
@@ -94,6 +95,28 @@ describe('타석 확률 기준 모델 (10a)', () => {
     const hr0 = paProbabilities(hitter(), pitcher()).HR;
     expect(hrUp / hr0).toBeGreaterThan(1.07);
     expect(hrUp / hr0).toBeLessThan(1.11);
+  });
+});
+
+describe('시즌 리그 기준 재조정 (D-103)', () => {
+  it('목표에서 벗어난 선수 구성도 보정값을 넣으면 그 시즌 목표 가까이 돌아온다', () => {
+    // 일부러 타자를 강하게 만든 리그(득점·홈런 과다)
+    const strong = generateWorld(Rng.fromSeed('recal'), 2026).map((p) => (p.isPitcher ? p : { ...p, batting: { ...p.batting, contact: Math.min(100, p.batting.contact + 8), power: Math.min(100, p.batting.power + 8) } }));
+    const active = new Map<number, PlayerTruth[]>();
+    for (const p of strong) if (p.clubId !== null && p.level === '1군') active.set(p.clubId, [...(active.get(p.clubId) ?? []), p]);
+    const deviation = { runs: 0.05, hr: -0.05 };
+    const env = seasonAdjustment(active, 'recal', 2030, deviation);
+    const target = PROBABILITY_CONFIG.leagueTarget;
+    expect(env.measuredRunsPerGame).toBeGreaterThan(target.runsPerGame * 1.05 * 1.05); // 보정 전에는 목표보다 높다
+    expect(env.runsAdj).toBeLessThan(0);
+    expect(env.hrAdj).toBeLessThan(1);
+    const after = measureLeague(active, 1440, 'recal-check', 1, env);
+    expect(after.runs / after.games / (target.runsPerGame * 1.05)).toBeGreaterThan(0.96);
+    expect(after.runs / after.games / (target.runsPerGame * 1.05)).toBeLessThan(1.04);
+    expect(after.hr / after.pa / (target.hrPerPa * 0.95)).toBeGreaterThan(0.94);
+    expect(after.hr / after.pa / (target.hrPerPa * 0.95)).toBeLessThan(1.06);
+    // 같은 시드·시즌이면 같은 보정값(재현성)
+    expect(seasonAdjustment(active, 'recal', 2030, deviation)).toEqual(env);
   });
 });
 
