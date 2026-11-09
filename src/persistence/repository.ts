@@ -332,10 +332,13 @@ export class SqliteGameRepository implements GameRepository {
   }
 
   formRows(season: number, after: GameDate | null, before: GameDate): Array<{ batterId: PlayerId; pitcherId: PlayerId; date: GameDate; outcome: string }> {
+    // 날짜 범위로 읽는다(pa_date 색인). season 조건을 함께 쓰면 시즌 색인을 골라 매일 시즌 전체를 다시 훑는다.
     const rows = this.stmt(
-      "SELECT batter_id AS b, pitcher_id AS p, date, outcome FROM plate_appearances WHERE stage = 'regular' AND season = ? AND date > ? AND date < ? ORDER BY date, game_id, seq",
-    ).all(season, after ?? '', before) as Row[];
-    return rows.map((r) => ({ batterId: num(r.b), pitcherId: num(r.p), date: String(r.date) as GameDate, outcome: String(r.outcome) }));
+      "SELECT batter_id AS b, pitcher_id AS p, date, outcome, season FROM plate_appearances INDEXED BY pa_date WHERE date > ? AND date < ? AND stage = 'regular' ORDER BY date, game_id, seq",
+    ).all(after ?? '', before) as Row[];
+    return rows
+      .filter((r) => num(r.season) === season)
+      .map((r) => ({ batterId: num(r.b), pitcherId: num(r.p), date: String(r.date) as GameDate, outcome: String(r.outcome) }));
   }
 
   teamTotals(season: number): TeamSeasonTotals[] {
