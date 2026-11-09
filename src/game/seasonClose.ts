@@ -2,7 +2,7 @@
 // 한국시리즈가 끝난 날 같은 트랜잭션 안에서 실행한다.
 import { addDays, diffDays, type GameDate } from '../engine/calendar';
 import { advanceSchoolYear, asTruth, prospectScore } from '../engine/amateur';
-import { UNDRAFTED_FA, WORLDGEN } from '../engine/config';
+import { FREE_POOL, UNDRAFTED_FA, WORLDGEN } from '../engine/config';
 import { publicOverall } from '../engine/contracts';
 import type { LedgerEntry } from '../engine/finance';
 import { EOK } from '../engine/money';
@@ -12,7 +12,7 @@ import { generateSchedule, seasonKeyDates, validateSchedule } from '../engine/sc
 import { computeStandings } from '../engine/standings';
 import { stoveEvents } from '../engine/stove';
 import type { ClubId, PlayerTruth } from '../engine/types';
-import { generateOverseasPool, overall } from '../engine/worldgen';
+import { generateDomesticFreePool, generateOverseasPool, overall } from '../engine/worldgen';
 import { GameError } from '../shared/protocol';
 import type { Draft } from './draft';
 import type { GameMeta, GameRepository, InboxMessage } from './ports';
@@ -192,6 +192,16 @@ export class SeasonClose {
       .filter((a) => a.status === 'gone' && !a.draft && prospectScore(a) >= (a.level === '대학' ? UNDRAFTED_FA.colMinScore : UNDRAFTED_FA.hsMinScore))
       .map((a): PlayerTruth => ({ ...asTruth(a), id: pid++, clubId: null, level: '2군', salary: WORLDGEN.minSalary, contractYears: 0, honors: a.honors.map((h) => h.title) }));
     this.repo.savePlayers(undrafted);
+    // 국내 무소속 선수 풀 보충(D-111): 투수·포수·그 밖 야수가 처음 풀 규모(FREE_POOL)보다 적으면 모자란 만큼 독립리그·재야 선수로 채운다.
+    const freeNow = this.repo.getPlayers().filter((p) => p.clubId === null && p.origin === 'domestic' && !p.retired);
+    const topUp = {
+      pitchers: Math.max(0, FREE_POOL.pitchers - freeNow.filter((p) => p.isPitcher).length),
+      catchers: Math.max(0, FREE_POOL.catchers - freeNow.filter((p) => !p.isPitcher && p.position === 'C').length),
+      otherHitters: Math.max(0, FREE_POOL.otherHitters - freeNow.filter((p) => !p.isPitcher && p.position !== 'C').length),
+    };
+    const extra = generateDomesticFreePool(Rng.derive(meta.seed, 'free-pool', season), season, pid, topUp);
+    this.repo.savePlayers(extra);
+    if (extra.length) inbox.push({ date, kind: 'news', sender: 'KBO 소식', title: `독립리그·재야 선수 ${extra.length}명 FA 시장 등록`, body: `소속 없는 국내 선수 풀이 줄어 독립리그·재야 선수가 FA 시장에 나왔습니다(투수 ${topUp.pitchers}, 포수 ${topUp.catchers}, 야수 ${topUp.otherHitters}).` });
     const catchers = undrafted.filter((p) => p.position === 'C' && !p.isPitcher).length;
     inbox.push({ date, kind: 'news', sender: 'KBO 소식', title: `${season} 미지명 선수 FA 등록 ${undrafted.length}명`, body: `드래프트에서 지명받지 못한 졸업자 ${undrafted.length}명(투수 ${undrafted.filter((p) => p.isPitcher).length}, 포수 ${catchers}, 야수 ${undrafted.length - catchers - undrafted.filter((p) => p.isPitcher).length})이 소속 없는 FA로 등록됐습니다. 1년 동안 계약하지 못한 무소속 선수 ${unsigned.length}명은 은퇴했습니다.` });
 

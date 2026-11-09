@@ -380,13 +380,14 @@ export function generateOverseasPool(rng: Rng, season: number, firstId: number):
  * 국내 미계약 선수 풀(D-098): 방출·미지명·독립리그 출신으로 소속 없이 입단을 기다리는 선수. 포지션 최소 인원 보충의 공급원이다.
  * 새 게임과 매 시즌 마감 때 만든다. 수준은 리그 평균보다 낮고, 영입하면 최저 연봉 1년 계약이다.
  */
-export function generateDomesticFreePool(rng: Rng, season: number, firstId: number): PlayerTruth[] {
+export function generateDomesticFreePool(rng: Rng, season: number, firstId: number, counts: { pitchers: number; catchers: number; otherHitters: number } = FREE_POOL): PlayerTruth[] {
   let id = firstId;
   const ctx: GenContext = { rng, season, nextId: () => id++, shift: FREE_POOL.ratingShift };
   const pool: PlayerTruth[] = [];
-  for (let i = 0; i < FREE_POOL.pitchers; i++) pool.push(genPitcher(ctx, null, i < FREE_POOL.starters));
-  for (let i = 0; i < FREE_POOL.catchers; i++) pool.push(genHitter(ctx, null, 'C'));
-  for (let i = 0; i < FREE_POOL.otherHitters; i++) pool.push(genHitter(ctx, null, rng.pick(DOMESTIC_HITTER_POSITIONS.filter((x) => x !== 'C'))));
+  const starters = Math.round((counts.pitchers * FREE_POOL.starters) / FREE_POOL.pitchers);
+  for (let i = 0; i < counts.pitchers; i++) pool.push(genPitcher(ctx, null, i < starters));
+  for (let i = 0; i < counts.catchers; i++) pool.push(genHitter(ctx, null, 'C'));
+  for (let i = 0; i < counts.otherHitters; i++) pool.push(genHitter(ctx, null, rng.pick(DOMESTIC_HITTER_POSITIONS.filter((x) => x !== 'C'))));
   for (const p of pool) {
     p.clubId = null;
     p.level = '2군';

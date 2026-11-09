@@ -1,6 +1,6 @@
 # 검증 리포트: 3b
 
-- 일시: 2026. 11. 9. 오후 2:18:50
+- 일시: 2026. 11. 9. 오후 2:30:58
 - 모드: 전체 (장기 실행 10시즌, 시드 verify-1)
 - 환경: Node 24.18.0, win32/x64
 - **종합 판정: 실패**
@@ -8,14 +8,14 @@
 | 단계 | 판정 | 시간(초) | 요약 |
 | --- | --- | --- | --- |
 | 실행 환경 | PASS | 0 | 준비됨 |
-| 타입 검사 | PASS | 1.5 | 오류 0건 |
-| 계층 경계 검사 | PASS | 1 | 계층 경계 검사 통과 (79개 파일) |
-| 자동 테스트 | PASS | 116.6 | 109/109개 통과 |
-| 빌드 | PASS | 1.2 | 완료 |
-| 실제 Electron 자체 점검 | PASS | 12.6 | 스토브리그 12주 1478ms, 시즌 720/720 6843ms, 화면 지연 9ms, 저장 348ms·불러오기 245ms, Steam mock |
-| 장기 실행 10시즌 | FAIL | 41.5 | 결과 없음 |
+| 타입 검사 | PASS | 1.1 | 오류 0건 |
+| 계층 경계 검사 | PASS | 0.6 | 계층 경계 검사 통과 (79개 파일) |
+| 자동 테스트 | PASS | 69.1 | 109/109개 통과 |
+| 빌드 | PASS | 1.5 | 완료 |
+| 실제 Electron 자체 점검 | WARN | 35.1 | 스토브리그 12주 1835ms, 시즌 720/720 24336ms, 화면 지연 35ms, 저장 750ms·불러오기 558ms, Steam mock |
+| 장기 실행 10시즌 (시드 verify-1) | FAIL | 288.1 | 10시즌, 규칙 위반 2건, 마지막 시즌 저장 1508ms·저장본 23.4MB, 불러오기 874ms, 현금 267억 → 670억 |
 | 문서 정합성 | WARN | 0.3 | 실패 0건, 경고 2건, 임시 가정 28건 |
-| 저장소 상태 | PASS | 0 | HEAD e47dc52, 커밋되지 않은 변경 0개 |
+| 저장소 상태 | PASS | 0 | HEAD e4ce55e, 커밋되지 않은 변경 0개 |
 
 ## 상세
 
@@ -23,27 +23,42 @@
 
 - Node 24.18.0, win32/x64
 
-### 장기 실행 10시즌 (FAIL)
+### 실제 Electron 자체 점검 (WARN)
 
-- {"stoveWeeks":12,"stoveMs":2499,"date":"2027-02-01","cashAfterStove":32914733335}
-- {"season":2027,"games":"720/720","days":231,"simSec":5.59,"msPerGame":7.77,"hitterListMs":109,"pitcherListMs":91,"standingsMs":2,"boxScoreMs":6,"saveMs":230,"sessionMB":13.2,"saveFileMB":12.2,"leagueHRperPA":0.023,"envRuns":0,"envHr":0,"targetRunsPerGame":9.8,"targetHrPerPa":0.0225,"runsPerGame":9.76,"cashWon":26694077892,"invariantErrors":0,"firstErrors":[]}
-- {"season":2028,"games":"720/720","days":231,"simSec":6.51,"msPerGame":9.04,"hitterListMs":99,"pitcherListMs":87,"standingsMs":2,"boxScoreMs":4,"saveMs":671,"sessionMB":14.6,"saveFileMB":13.5,"leagueHRperPA":0.0221,"envRuns":0,"envHr":0.05,"targetRunsPerGame":9.8,"targetHrPerPa":0.0236,"runsPerGame":9.9,"cashWon":24581524466,"invariantErrors":0,"firstErrors":[]}
-- {"season":2029,"games":"720/720","days":231,"simSec":6.68,"msPerGame":9.28,"hitterListMs":115,"pitcherListMs":94,"standingsMs":2,"boxScoreMs":3,"saveMs":442,"sessionMB":16,"saveFileMB":14.7,"leagueHRperPA":0.0238,"envRuns":0.05,"envHr":0.1,"targetRunsPerGame":10.29,"targetHrPerPa":0.0248,"runsPerGame":10.29,"cashWon":21269504930,"invariantErrors":0,"firstErrors":[]}
-- 
-- [stderr]
-- Error: game.advance: 해임: 성적 기본 목표를 3시즌 연속 달성하지 못해 모기업이 경영 책임을 물었습니다.
--     at call (D:\Documents\02_baseball game\front-office\dist\cli\simulate.js:14491:22)
--     at async advance (D:\Documents\02_baseball game\front-office\dist\cli\simulate.js:14497:15)
--     at async main (D:\Documents\02_baseball game\front-office\dist\cli\simulate.js:14523:73)
+- 메인 프로세스 최대 지연 157ms
 
-로그: `verify-reports\logs\20261109-1415_3b\sim.log`
+로그: `verify-reports\logs\20261109-1424_3b\selftest.log`
+
+### 장기 실행 10시즌 (시드 verify-1) (FAIL)
+
+- 2027시즌 시즌 진행 10.36s (경고 5s)
+- 2027시즌 선수 목록 정렬 203ms (경고 200ms)
+- 2028시즌 시즌 진행 11.85s (경고 5s)
+- 2028시즌 선수 목록 정렬 234ms (경고 200ms)
+- 2029시즌 시즌 진행 8.43s (경고 5s)
+- 2030시즌 시즌 진행 6.52s (경고 5s)
+- 2031시즌 시즌 진행 13.75s (경고 5s)
+- 2031시즌 선수 목록 정렬 355ms (경고 200ms)
+- 2032시즌 시즌 진행 13.91s (경고 5s)
+- 2032시즌 선수 목록 정렬 302ms (경고 200ms)
+- 2033시즌 시즌 진행 13.65s (경고 5s)
+- 2033시즌 선수 목록 정렬 352ms (경고 200ms)
+- 2034시즌 시즌 진행 12.91s (경고 5s)
+- 2034시즌 선수 목록 정렬 288ms (경고 200ms)
+- 2035시즌 규칙 위반 2건: 스토브리그 후 광주 팬서스 포지션 최소 인원 미달: 포수 2명 < 3 / 광주 팬서스 포지션 최소 인원 미달: 포수 2명 < 3
+- 2035시즌 시즌 진행 13.69s (경고 5s)
+- 2035시즌 선수 목록 정렬 383ms (경고 200ms)
+- 2036시즌 시즌 진행 14.75s (경고 5s)
+- 2036시즌 선수 목록 정렬 385ms (경고 200ms)
+
+로그: `verify-reports\logs\20261109-1424_3b\sim.log`
 
 ### 문서 정합성 (WARN)
 
 - [경고] 결정 로그 ID가 없는 임시 가정 4건 (리포트의 '코드의 임시 가정' 참고)
 - [경고] 실제 테스트 109개 > 문서 기록 103개. 이번 차수 결과가 06_progress.md에 아직 없을 수 있음
 
-로그: `verify-reports\logs\20261109-1415_3b\docs.log`
+로그: `verify-reports\logs\20261109-1424_3b\docs.log`
 
 ## 문서상 개발 진행 (06_progress.md)
 
