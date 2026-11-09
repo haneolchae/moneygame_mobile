@@ -58,6 +58,15 @@ describe('두 번째 스토브리그 (D-084·D-085)', () => {
     // 학년도 넘김: 새 1학년이 들어와 풀 규모가 유지된다.
     expect(repo.getAmateurs('active').filter((a) => a.level === '고교' && a.grade === 1)).toHaveLength(150);
     expect(repo.countFixtures(2028).total).toBe(720);
+    // 미지명 졸업자 FA 등록(D-099): 지명되지 않은 졸업자 중 기준 이상이 소속 없는 국내 선수로 등록되고,
+    // 1년 동안 계약하지 못한 무소속 선수(새 게임의 미계약 선수 풀 포함)는 은퇴한다.
+    const free = repo.getPlayers().filter((p) => p.clubId === null && p.origin === 'domestic' && !p.retired);
+    expect(free.length).toBeGreaterThan(20);
+    expect(free.every((p) => p.contractYears === 0 && p.draft === undefined)).toBe(true);
+    const graduates = new Set(repo.getAmateurs('gone').filter((a) => !a.draft).map((a) => a.name));
+    expect(free.every((p) => graduates.has(p.name))).toBe(true);
+    expect(repo.getPlayers().some((p) => p.retired?.reason === '미계약')).toBe(true);
+    expect(repo.getInbox(500).some((m) => m.title === '2027 미지명 선수 FA 등록 ' + free.length + '명')).toBe(true);
     // 우리 구단 신인 선수 정보에 아마추어 업적·드래프트 정보가 보인다.
     const r0 = rookies.find((p) => p.clubId === 7)!;
     const pv = await call(d, 'game.player', { playerId: r0.id });

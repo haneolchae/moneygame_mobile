@@ -174,7 +174,17 @@ export const ROSTER_OBLIGATION = {
  * ASSUMPTION(D-098): 포지션 최소 인원. AI 구단·우리 운영팀의 드래프트·FA·외국인·방출 판단과 1군 편성이 함께 쓴다.
  * 40인 기준 투수·야수 각 17명 이상, 포수 3명 이상. 1군 26인 기준 투수 12명·야수 13명 이상.
  */
-/** ASSUMPTION(D-098): 국내 미계약 선수 풀 규모(새 게임·시즌 마감마다 생성)와 능력 평균 보정 */
+/**
+ * 미지명 졸업자 FA 등록(D-099, 사용자 확정·기준 초기안): 시즌 마감 때 진학하지 않은 고교 졸업자 중 프로 진출 신청 기준
+ * (DRAFT.hsApplyScore와 같은 값) 이상, 대학 졸업자 중 colMinScore 이상이 소속 없는 FA로 등록된다.
+ * 1년 동안 계약하지 못한 국내 무소속 선수는 다음 시즌 마감 때 은퇴한다.
+ */
+export const UNDRAFTED_FA = {
+  hsMinScore: 38,
+  colMinScore: 40,
+} as const;
+
+/** ASSUMPTION(D-098): 국내 미계약 선수 풀 규모(새 게임 시작 때 1회 생성, 이후 공급은 D-099 미지명 졸업자)와 능력 평균 보정 */
 export const FREE_POOL = {
   pitchers: 8,
   starters: 3,
