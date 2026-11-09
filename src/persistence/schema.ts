@@ -6,9 +6,10 @@ import type { DatabaseSync } from 'node:sqlite';
 /**
  * 8: 3a 능력치 체계(1~100·세부 능력치·구종·히든 12종, D-086~D-088)와 시즌 리그 환경(D-100). 선수 능력은 truth JSON에 들어 있어 표 구조는 같다.
  * 9: 3a2 존 기반 수비 판정(D-102). 타석에 타구 구역·유형·질·처리 수비수, 수비 기록(자살·보살·실책) 표.
+ * 10: 지난 시즌 상세 기록 압축(D-106). 선수별 시즌 타격·투구·수비 합계와 스프레이 차트 합계 표.
  * 출시 전에는 세이브 호환을 보장하지 않는다(D-094): 이전 버전 저장본은 변환하지 않고 불러오기 때 이유를 안내하고 거부한다.
  */
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 const SCHEMA_V3 = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -270,6 +271,31 @@ CREATE TABLE fielding (
 CREATE INDEX fielding_player ON fielding (season, player_id);
 `;
 
+const SCHEMA_V10_ADDITIONS = `
+CREATE TABLE batting_season (
+  season INTEGER NOT NULL, stage TEXT NOT NULL, player_id INTEGER NOT NULL, club_id INTEGER NOT NULL,
+  G INTEGER NOT NULL, PA INTEGER NOT NULL, AB INTEGER NOT NULL, H INTEGER NOT NULL, D INTEGER NOT NULL, T INTEGER NOT NULL,
+  HR INTEGER NOT NULL, RBI INTEGER NOT NULL, R INTEGER NOT NULL, BB INTEGER NOT NULL, HBP INTEGER NOT NULL, SO INTEGER NOT NULL, SF INTEGER NOT NULL,
+  PRIMARY KEY (season, stage, player_id, club_id)
+) WITHOUT ROWID;
+CREATE TABLE pitching_season (
+  season INTEGER NOT NULL, stage TEXT NOT NULL, player_id INTEGER NOT NULL, club_id INTEGER NOT NULL,
+  G INTEGER NOT NULL, OUTS INTEGER NOT NULL, BF INTEGER NOT NULL, H INTEGER NOT NULL, BB INTEGER NOT NULL, HBP INTEGER NOT NULL,
+  K INTEGER NOT NULL, HR INTEGER NOT NULL, P INTEGER NOT NULL, R INTEGER NOT NULL, ER INTEGER NOT NULL,
+  PRIMARY KEY (season, stage, player_id, club_id)
+) WITHOUT ROWID;
+CREATE TABLE fielding_season (
+  season INTEGER NOT NULL, stage TEXT NOT NULL, player_id INTEGER NOT NULL, club_id INTEGER NOT NULL,
+  PO INTEGER NOT NULL, A INTEGER NOT NULL, E INTEGER NOT NULL,
+  PRIMARY KEY (season, stage, player_id, club_id)
+) WITHOUT ROWID;
+CREATE TABLE spray_season (
+  season INTEGER NOT NULL, stage TEXT NOT NULL, player_id INTEGER NOT NULL, zone TEXT NOT NULL, bb_type TEXT NOT NULL,
+  n INTEGER NOT NULL, h INTEGER NOT NULL, xbh INTEGER NOT NULL,
+  PRIMARY KEY (season, stage, player_id, zone, bb_type)
+) WITHOUT ROWID;
+`;
+
 export interface Migration {
   from: number;
   to: number;
@@ -302,6 +328,7 @@ export function createSchema(db: DatabaseSync): void {
     db.exec(SCHEMA_V6_ADDITIONS);
     db.exec(SCHEMA_V7_ADDITIONS);
     db.exec(SCHEMA_V9_ADDITIONS);
+    db.exec(SCHEMA_V10_ADDITIONS);
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

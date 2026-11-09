@@ -341,6 +341,13 @@ export interface GameRepository {
   battingTotals(season: number, playerIds?: PlayerId[], clubId?: ClubId): Map<PlayerId, BattingTotals>;
   pitchingTotals(season: number, playerIds?: PlayerId[], clubId?: ClubId): Map<PlayerId, PitchingTotals>;
   leaguePitchingTotals(season: number): PitchingTotals;
+  /** 지난 시즌 상세 기록 압축(D-106): 원시 타석·득점·수비 기록을 시즌 합계로 바꾼다 */
+  compressSeason(season: number): void;
+  isCompressed(season: number): boolean;
+  /** 스프레이 차트 합계(타자·구역·타구 유형) */
+  sprayTotals(season: number, playerId: PlayerId): Array<{ zone: string; type: string; n: number; h: number; xbh: number }>;
+  /** 수비 합계(자살·보살·실책) */
+  fieldingTotals(season: number, playerId: PlayerId): { PO: number; A: number; E: number };
   getSeasonStandings(season: number): SeasonStanding[];
   /** 시즌 최종 순위 기록(같은 시즌·구단은 덮어쓴다) */
   saveSeasonStandings(rows: SeasonStanding[]): void;

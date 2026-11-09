@@ -361,7 +361,9 @@ export interface BoxPitcherLine {
 export interface BoxScoreView {
   fixture: FixtureView;
   lineScore: { home: number[]; away: number[] };
-  hits: { home: number; away: number };
+  /** false면 지난 시즌 경기라 최종 스코어·이닝별 점수만 보관(D-106) */
+  detailKept: boolean;
+  hits: { home: number; away: number } | null;
   batting: { home: BoxBatterLine[]; away: BoxBatterLine[] };
   pitching: { home: BoxPitcherLine[]; away: BoxPitcherLine[] };
   playByPlay: Array<{ inning: number; half: 'T' | 'B'; text: string }>;

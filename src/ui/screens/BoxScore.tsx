@@ -34,11 +34,12 @@ export function BoxScore({ nav, fixtureId }: { nav: Nav; fixtureId: number }) {
                 <td>{s.club.name}</td>
                 {Array.from({ length: innings }, (_, i) => <td key={i} className="num">{cell(b.lineScore[s.key][i])}</td>)}
                 <td className="num"><strong>{s.runs}</strong></td>
-                <td className="num">{b.hits[s.key]}</td>
+                <td className="num">{b.hits ? b.hits[s.key] : '—'}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        {!b.detailKept && <p className="muted small">지난 시즌 경기는 최종 스코어와 이닝별 점수만 보관합니다. 선수 기록은 시즌 합계로 남아 있습니다.</p>}
       </section>
       <div className="columns">
         {sides.map((s) => (

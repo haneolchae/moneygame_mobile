@@ -350,6 +350,8 @@ export class GameService {
       metaUpdate.inflationBp = { ...meta.inflationBp, [String(season)]: rate };
       metaUpdate.rngStreams = { ...meta.rngStreams, business: business.state() };
       this.market.onSeasonStart();
+      // 지난 시즌 상세 기록 압축(D-106): 새 시즌이 시작될 때 직전 시즌의 원시 기록을 시즌 합계로 바꾼다.
+      this.repo.compressSeason(meta.season);
       // 성적 기본 목표: 시즌 모드 시작 때 예상 순위로 고정한다(02 문서).
       const expectedRank = this.seasonClose.expectedRank(meta, meta.userClubId, season);
       metaUpdate.seasonGoal = { season, expectedRank };
@@ -1326,10 +1328,13 @@ export class GameService {
     // 인플레이 타구는 처리(또는 쫓아간) 수비수를 함께 보여 준다(10b §11 기록).
     const playByPlay = pas.map((pa) => ({ inning: pa.inning, half: pa.half, text: `${name(pa.batterId)}: ${outcomeText[pa.outcome] ?? pa.outcome}${pa.fielderId ? ` · ${name(pa.fielderId)}` : ''}${pa.rbi ? ` (${pa.rbi}타점)` : ''}` }));
     const stripOuts = (list: Array<BoxScoreView['pitching']['home'][number] & { outs?: number }>) => list.map(({ outs: _o, ...rest }) => rest);
+    // 압축된 지난 시즌 경기는 최종 스코어·이닝별 점수만 남아 있다(D-106).
+    const detailKept = pas.length > 0 || !this.repo.isCompressed(game.season);
     return {
       fixture: this.fixtureView({ id: game.fixtureId, date: game.date, home: game.home, away: game.away }, game),
       lineScore: game.lineScore,
-      hits,
+      detailKept,
+      hits: detailKept ? hits : null,
       batting,
       pitching: { home: stripOuts(pitching.home), away: stripOuts(pitching.away) },
       playByPlay,

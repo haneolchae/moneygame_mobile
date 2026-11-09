@@ -249,20 +249,115 @@ export class SqliteGameRepository implements GameRepository {
     return num((this.stmt('SELECT COUNT(*) AS n FROM history_lines').get() as Row).n);
   }
 
+  /** 지난 시즌 상세 기록 압축(D-106)이 끝난 시즌인가 */
+  isCompressed(season: number): boolean {
+    return this.stmt('SELECT 1 AS x FROM batting_season WHERE season = ? LIMIT 1').get(season) !== undefined;
+  }
+
+  /**
+   * 지난 시즌 상세 기록 압축(D-106): 타석·득점·수비 원시 기록을 선수별 시즌 합계(구단·경기 단계별)와
+   * 스프레이 차트 합계로 바꾸고 원시 기록을 지운다. 통계 조회는 압축 전후 같은 값을 낸다.
+   */
+  compressSeason(season: number): void {
+    if (this.isCompressed(season)) return;
+    this.tx(() => {
+      const hit = "outcome IN ('1B','2B','3B','HR')";
+      this.stmt(
+        `INSERT INTO batting_season (season, stage, player_id, club_id, G, PA, AB, H, D, T, HR, RBI, R, BB, HBP, SO, SF)
+         SELECT season, stage, batter_id, batting_club, COUNT(DISTINCT game_id), COUNT(*), SUM(outcome NOT IN ('BB','HBP','SF')), SUM(${hit}),
+                SUM(outcome = '2B'), SUM(outcome = '3B'), SUM(outcome = 'HR'), SUM(rbi), 0, SUM(outcome = 'BB'), SUM(outcome = 'HBP'), SUM(outcome = 'K'), SUM(outcome = 'SF')
+           FROM plate_appearances WHERE season = ? GROUP BY stage, batter_id, batting_club`,
+      ).run(season);
+      this.stmt(
+        `INSERT INTO batting_season (season, stage, player_id, club_id, G, PA, AB, H, D, T, HR, RBI, R, BB, HBP, SO, SF)
+         SELECT season, stage, runner_id, batting_club, 0, 0, 0, 0, 0, 0, 0, 0, COUNT(*), 0, 0, 0, 0
+           FROM runs WHERE season = ? GROUP BY stage, runner_id, batting_club
+         ON CONFLICT (season, stage, player_id, club_id) DO UPDATE SET R = excluded.R`,
+      ).run(season);
+      const defClub = 'CASE WHEN x.batting_club = g.home THEN g.away ELSE g.home END';
+      this.stmt(
+        `INSERT INTO pitching_season (season, stage, player_id, club_id, G, OUTS, BF, H, BB, HBP, K, HR, P, R, ER)
+         SELECT x.season, x.stage, x.pitcher_id, ${defClub}, COUNT(DISTINCT x.game_id), SUM(x.outs_on_play), COUNT(*), SUM(x.${hit}),
+                SUM(x.outcome = 'BB'), SUM(x.outcome = 'HBP'), SUM(x.outcome = 'K'), SUM(x.outcome = 'HR'), SUM(x.pitches), 0, 0
+           FROM plate_appearances x JOIN games g ON g.fixture_id = x.game_id WHERE x.season = ? GROUP BY x.stage, x.pitcher_id, ${defClub}`,
+      ).run(season);
+      this.stmt(
+        `INSERT INTO pitching_season (season, stage, player_id, club_id, G, OUTS, BF, H, BB, HBP, K, HR, P, R, ER)
+         SELECT x.season, x.stage, x.pitcher_id, ${defClub}, 0, 0, 0, 0, 0, 0, 0, 0, 0, COUNT(*), SUM(x.earned)
+           FROM runs x JOIN games g ON g.fixture_id = x.game_id WHERE x.season = ? GROUP BY x.stage, x.pitcher_id, ${defClub}
+         ON CONFLICT (season, stage, player_id, club_id) DO UPDATE SET R = excluded.R, ER = excluded.ER`,
+      ).run(season);
+      this.stmt(
+        `INSERT INTO fielding_season (season, stage, player_id, club_id, PO, A, E)
+         SELECT season, stage, player_id, club_id, SUM(kind = 'PO'), SUM(kind = 'A'), SUM(kind = 'E') FROM fielding WHERE season = ? GROUP BY stage, player_id, club_id`,
+      ).run(season);
+      this.stmt(
+        `INSERT INTO spray_season (season, stage, player_id, zone, bb_type, n, h, xbh)
+         SELECT season, stage, batter_id, bb_zone, bb_type, COUNT(*), SUM(outcome IN ('1B','2B','3B')), SUM(outcome IN ('2B','3B'))
+           FROM plate_appearances WHERE season = ? AND bb_zone IS NOT NULL GROUP BY stage, batter_id, bb_zone, bb_type`,
+      ).run(season);
+      this.stmt('DELETE FROM plate_appearances WHERE season = ?').run(season);
+      this.stmt('DELETE FROM runs WHERE season = ?').run(season);
+      this.stmt('DELETE FROM fielding WHERE season = ?').run(season);
+    });
+  }
+
+  /** 스프레이 차트 합계(타자·구역·타구 유형). 압축 전 시즌은 원시 기록에서 같은 방식으로 센다 */
+  sprayTotals(season: number, playerId: PlayerId): Array<{ zone: string; type: string; n: number; h: number; xbh: number }> {
+    const rows = this.isCompressed(season)
+      ? (this.stmt("SELECT zone, bb_type AS type, SUM(n) AS n, SUM(h) AS h, SUM(xbh) AS xbh FROM spray_season WHERE stage = 'regular' AND season = ? AND player_id = ? GROUP BY zone, bb_type ORDER BY zone, bb_type").all(season, playerId) as Row[])
+      : (this.stmt(
+          "SELECT bb_zone AS zone, bb_type AS type, COUNT(*) AS n, SUM(outcome IN ('1B','2B','3B')) AS h, SUM(outcome IN ('2B','3B')) AS xbh FROM plate_appearances WHERE stage = 'regular' AND season = ? AND batter_id = ? AND bb_zone IS NOT NULL GROUP BY bb_zone, bb_type ORDER BY bb_zone, bb_type",
+        ).all(season, playerId) as Row[]);
+    return rows.map((r) => ({ zone: String(r.zone), type: String(r.type), n: num(r.n), h: num(r.h), xbh: num(r.xbh) }));
+  }
+
+  /** 수비 합계(자살·보살·실책). 압축 전 시즌은 원시 기록에서 같은 방식으로 센다 */
+  fieldingTotals(season: number, playerId: PlayerId): { PO: number; A: number; E: number } {
+    const r = (
+      this.isCompressed(season)
+        ? this.stmt("SELECT SUM(PO) AS PO, SUM(A) AS A, SUM(E) AS E FROM fielding_season WHERE stage = 'regular' AND season = ? AND player_id = ?").get(season, playerId)
+        : this.stmt("SELECT SUM(kind = 'PO') AS PO, SUM(kind = 'A') AS A, SUM(kind = 'E') AS E FROM fielding WHERE stage = 'regular' AND season = ? AND player_id = ?").get(season, playerId)
+    ) as Row;
+    return { PO: num(r.PO), A: num(r.A), E: num(r.E) };
+  }
+
   teamTotals(season: number): TeamSeasonTotals[] {
-    const bat = this.stmt(
+    if (this.isCompressed(season)) return this.teamTotalsFrom(season, true);
+    return this.teamTotalsFrom(season, false);
+  }
+
+  private teamTotalsFrom(season: number, compressed: boolean): TeamSeasonTotals[] {
+    const bat = compressed
+      ? (this.stmt(
+          `SELECT b.club_id AS club, (SELECT COUNT(*) FROM games g WHERE g.stage = 'regular' AND g.season = ?1 AND (g.home = b.club_id OR g.away = b.club_id)) AS G,
+                  SUM(PA) AS PA, SUM(AB) AS AB, SUM(H) AS H, SUM(D) AS D, SUM(T) AS T, SUM(HR) AS HR, SUM(RBI) AS RBI, SUM(BB) AS BB, SUM(HBP) AS HBP, SUM(SO) AS SO, SUM(SF) AS SF
+             FROM batting_season b WHERE b.stage = 'regular' AND b.season = ?1 GROUP BY b.club_id`,
+        ).all(season) as Row[])
+      : null;
+    const pitC = compressed
+      ? (this.stmt(
+          "SELECT club_id AS club, SUM(OUTS) AS OUTS, SUM(BF) AS BF, SUM(H) AS H, SUM(BB) AS BB, SUM(HBP) AS HBP, SUM(K) AS K, SUM(HR) AS HR, SUM(P) AS P FROM pitching_season WHERE stage = 'regular' AND season = ? GROUP BY club_id",
+        ).all(season) as Row[])
+      : null;
+    const erC = compressed ? (this.stmt("SELECT club_id AS club, SUM(ER) AS ER FROM pitching_season WHERE stage = 'regular' AND season = ? GROUP BY club_id").all(season) as Row[]) : null;
+    return this.teamTotalsRaw(season, bat, pitC, erC);
+  }
+
+  private teamTotalsRaw(season: number, batC: Row[] | null, pitC: Row[] | null, erC: Row[] | null): TeamSeasonTotals[] {
+    const bat = batC ?? this.stmt(
       `SELECT batting_club AS club, COUNT(DISTINCT game_id) AS G, COUNT(*) AS PA, SUM(outcome NOT IN ('BB','HBP','SF')) AS AB,
               SUM(outcome IN ('1B','2B','3B','HR')) AS H, SUM(outcome = '2B') AS D, SUM(outcome = '3B') AS T, SUM(outcome = 'HR') AS HR,
               SUM(rbi) AS RBI, SUM(outcome = 'BB') AS BB, SUM(outcome = 'HBP') AS HBP, SUM(outcome = 'K') AS SO, SUM(outcome = 'SF') AS SF
          FROM plate_appearances WHERE stage = 'regular' AND season = ? GROUP BY batting_club`,
     ).all(season) as Row[];
-    const pit = this.stmt(
+    const pit = pitC ?? this.stmt(
       `SELECT CASE WHEN pa.batting_club = g.home THEN g.away ELSE g.home END AS club, SUM(pa.outs_on_play) AS OUTS, COUNT(*) AS BF,
               SUM(pa.outcome IN ('1B','2B','3B','HR')) AS H, SUM(pa.outcome = 'BB') AS BB, SUM(pa.outcome = 'HBP') AS HBP,
               SUM(pa.outcome = 'K') AS K, SUM(pa.outcome = 'HR') AS HR, SUM(pa.pitches) AS P
          FROM plate_appearances pa JOIN games g ON g.fixture_id = pa.game_id WHERE pa.stage = 'regular' AND pa.season = ? GROUP BY club`,
     ).all(season) as Row[];
-    const er = this.stmt(
+    const er = erC ?? this.stmt(
       `SELECT CASE WHEN r.batting_club = g.home THEN g.away ELSE g.home END AS club, SUM(r.earned) AS ER
          FROM runs r JOIN games g ON g.fixture_id = r.game_id WHERE r.stage = 'regular' AND r.season = ? GROUP BY club`,
     ).all(season) as Row[];
@@ -632,6 +727,17 @@ export class SqliteGameRepository implements GameRepository {
   }
 
   battingTotals(season: number, playerIds?: PlayerId[], clubId?: ClubId): Map<PlayerId, BattingTotals> {
+    if (this.isCompressed(season)) {
+      const clubF = clubId === undefined ? '' : ` AND club_id = ${Math.trunc(clubId)}`;
+      const rows = this.db
+        .prepare(
+          `SELECT player_id AS id, SUM(G) AS G, SUM(PA) AS PA, SUM(AB) AS AB, SUM(H) AS H, SUM(D) AS D, SUM(T) AS T, SUM(HR) AS HR, SUM(RBI) AS RBI, SUM(R) AS R,
+                  SUM(BB) AS BB, SUM(HBP) AS HBP, SUM(SO) AS SO, SUM(SF) AS SF
+             FROM batting_season WHERE stage = 'regular' AND season = ?${this.idFilter('player_id', playerIds)}${clubF} GROUP BY player_id HAVING SUM(PA) > 0`,
+        )
+        .all(season) as Row[];
+      return new Map(rows.map((r) => [num(r.id), { G: num(r.G), PA: num(r.PA), AB: num(r.AB), H: num(r.H), '2B': num(r.D), '3B': num(r.T), HR: num(r.HR), RBI: num(r.RBI), R: num(r.R), BB: num(r.BB), HBP: num(r.HBP), SO: num(r.SO), SF: num(r.SF) }]));
+    }
     const club = clubId === undefined ? '' : ` AND batting_club = ${Math.trunc(clubId)}`;
     const rows = this.db
       .prepare(
@@ -660,7 +766,15 @@ export class SqliteGameRepository implements GameRepository {
     // 구단 지정 시: 그 구단 경기에서 상대 타석만(그 구단 소속으로 던진 기록)
     const c = clubId === undefined ? null : Math.trunc(clubId);
     const club = c === null ? '' : ` AND batting_club != ${c} AND game_id IN (SELECT fixture_id FROM games WHERE home = ${c} OR away = ${c})`;
-    const rows = this.db
+    const compressed = this.isCompressed(season);
+    const rows = compressed
+      ? (this.db
+          .prepare(
+            `SELECT player_id AS id, SUM(G) AS G, SUM(OUTS) AS OUTS, SUM(BF) AS BF, SUM(H) AS H, SUM(BB) AS BB, SUM(HBP) AS HBP, SUM(K) AS K, SUM(HR) AS HR, SUM(P) AS P
+               FROM pitching_season WHERE stage = 'regular' AND season = ?${this.idFilter('player_id', playerIds)}${c === null ? '' : ` AND club_id = ${c}`} GROUP BY player_id HAVING SUM(BF) > 0`,
+          )
+          .all(season) as Row[])
+      : this.db
       .prepare(
         `SELECT pitcher_id AS id, COUNT(DISTINCT game_id) AS G, SUM(outs_on_play) AS OUTS, COUNT(*) AS BF,
                 SUM(outcome IN ('1B','2B','3B','HR')) AS H, SUM(outcome = 'BB') AS BB, SUM(outcome = 'HBP') AS HBP,
@@ -668,9 +782,13 @@ export class SqliteGameRepository implements GameRepository {
            FROM plate_appearances WHERE stage = 'regular' AND season = ?${this.idFilter('pitcher_id', playerIds)}${club} GROUP BY pitcher_id`,
       )
       .all(season) as Row[];
-    const runs = this.db
-      .prepare(`SELECT pitcher_id AS id, COUNT(*) AS R, SUM(earned) AS ER FROM runs WHERE stage = 'regular' AND season = ?${this.idFilter('pitcher_id', playerIds)}${club} GROUP BY pitcher_id`)
-      .all(season) as Row[];
+    const runs = compressed
+      ? (this.db
+          .prepare(`SELECT player_id AS id, SUM(R) AS R, SUM(ER) AS ER FROM pitching_season WHERE stage = 'regular' AND season = ?${this.idFilter('player_id', playerIds)}${c === null ? '' : ` AND club_id = ${c}`} GROUP BY player_id`)
+          .all(season) as Row[])
+      : (this.db
+          .prepare(`SELECT pitcher_id AS id, COUNT(*) AS R, SUM(earned) AS ER FROM runs WHERE stage = 'regular' AND season = ?${this.idFilter('pitcher_id', playerIds)}${club} GROUP BY pitcher_id`)
+          .all(season) as Row[]);
     const runMap = new Map(runs.map((r) => [num(r.id), { R: num(r.R), ER: num(r.ER) }]));
     const decisions = this.db
       .prepare(
@@ -775,6 +893,13 @@ export class SqliteGameRepository implements GameRepository {
   }
 
   leaguePitchingTotals(season: number): PitchingTotals {
+    if (this.isCompressed(season)) {
+      const a = this.stmt(
+        "SELECT SUM(OUTS) AS OUTS, SUM(BF) AS BF, SUM(H) AS H, SUM(BB) AS BB, SUM(HBP) AS HBP, SUM(K) AS K, SUM(HR) AS HR, SUM(P) AS P, SUM(R) AS R, SUM(ER) AS ER FROM pitching_season WHERE stage = 'regular' AND season = ?",
+      ).get(season) as Row;
+      const gc = this.stmt("SELECT COUNT(*) AS n FROM games WHERE stage = 'regular' AND season = ?").get(season) as Row;
+      return { G: num(gc.n), GS: num(gc.n) * 2, OUTS: num(a.OUTS), W: 0, L: 0, SV: 0, BF: num(a.BF), H: num(a.H), R: num(a.R), ER: num(a.ER), BB: num(a.BB), HBP: num(a.HBP), K: num(a.K), HR: num(a.HR), pitches: num(a.P) };
+    }
     const r = this.stmt(
       `SELECT SUM(outs_on_play) AS OUTS, COUNT(*) AS BF, SUM(outcome IN ('1B','2B','3B','HR')) AS H, SUM(outcome = 'BB') AS BB,
               SUM(outcome = 'HBP') AS HBP, SUM(outcome = 'K') AS K, SUM(outcome = 'HR') AS HR, SUM(pitches) AS P
