@@ -151,7 +151,8 @@ export class Market {
     const off = this.offseason(meta);
     const year = this.contractYear(meta);
     const entries: FaEntry[] = this.players()
-      .filter((p) => p.clubId !== null && p.career.faEligible)
+      // 은퇴했거나 은퇴를 고민 중인(설득 기한 안) 선수는 FA로 공시하지 않는다. 설득되면 원소속 구단과 연봉 협상으로 남는다.
+      .filter((p) => p.clubId !== null && p.career.faEligible && !p.retired && !(meta.retirementPending ?? []).some((x) => x.playerId === p.id))
       .map((p) => ({ playerId: p.id, offseason: off, originClub: p.clubId!, status: 'eligible', grade: null, priorSalary: p.salary, demand: faDemand(meta.seed, p, year), signedClub: null, signedDate: null, contract: null }));
     this.repo.saveFa(entries);
   }
@@ -194,7 +195,8 @@ export class Market {
   private aiFaOffers(meta: GameMeta, date: GameDate): void {
     const off = this.offseason(meta);
     const year = this.contractYear(meta);
-    const fa = this.repo.getFa(off).filter((e) => e.status === 'approved');
+    const retired = new Set(this.players().filter((p) => p.retired).map((p) => p.id));
+    const fa = this.repo.getFa(off).filter((e) => e.status === 'approved' && !retired.has(e.playerId));
     if (fa.length === 0) return;
     const byId = new Map(this.players().map((p) => [p.id, p]));
     const pending = this.repo.getOffers({ status: 'pending', kind: 'fa' });
@@ -595,6 +597,7 @@ export class Market {
   faTarget(meta: GameMeta, playerId: number): FaEntry {
     const e = this.repo.getFa(this.offseason(meta)).find((x) => x.playerId === playerId);
     if (!e || e.status !== 'approved') throw new GameError('NOT_AVAILABLE', '지금 협상할 수 있는 FA 선수가 아닙니다.');
+    if (this.players().find((p) => p.id === playerId)?.retired) throw new GameError('NOT_AVAILABLE', '은퇴한 선수입니다.');
     if (!this.marketOpen(meta)) throw new GameError('MARKET_CLOSED', `FA 시장이 아직 열리지 않았습니다. (${stoveDates(meta.kDate).faMarketOpen.slice(5).replace('-', '/')} 개장)`);
     return e;
   }

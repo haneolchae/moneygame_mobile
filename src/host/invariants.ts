@@ -19,6 +19,8 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   for (const p of players) {
     if (ids.has(p.id)) errors.push(`선수 ID 중복: ${p.id}`);
     ids.add(p.id);
+    // 5b에서 찾은 결함 회귀 방지: 은퇴 선수는 소속이 없어야 한다(은퇴 고민 선수가 FA로 공시된 뒤 재계약되던 문제)
+    if (p.retired && p.clubId !== null) errors.push(`은퇴 선수 소속 남음: ${p.id} ${p.name}(구단 ${p.clubId})`);
   }
   for (const c of clubs) {
     const mine = players.filter((p) => p.clubId === c.id);

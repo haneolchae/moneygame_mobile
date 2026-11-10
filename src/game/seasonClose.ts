@@ -264,6 +264,12 @@ export class SeasonClose {
         gone.push(p);
       }
       this.repo.savePlayers(gone);
+      // 은퇴가 확정된 선수의 FA 공시가 남아 있으면 닫는다(은퇴 선수가 FA로 다시 계약되지 않게)
+      const off = Number(meta.kDate.slice(0, 4));
+      const goneIds = new Set(gone.map((p) => p.id));
+      const faRows = this.repo.getFa(off).filter((e) => goneIds.has(e.playerId) && e.status !== 'signed' && e.status !== 'unsigned');
+      for (const e of faRows) e.status = 'unsigned';
+      if (faRows.length) this.repo.saveFa(faRows);
       update.retirementPending = pending.filter((x) => !due.includes(x));
       if (gone.length) inbox.push({ date, kind: 'report', sender: '단장', title: `은퇴 ${gone.length}명`, body: gone.map((p) => `· ${p.name} (${p.retired!.reason})`).join('\n') });
     }
