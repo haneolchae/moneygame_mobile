@@ -12,7 +12,7 @@ import { PROBABILITY_CONFIG } from '../engine/probabilityConfig';
 import { CLOSE_RULES } from '../game/seasonClose';
 import { Dispatcher } from '../host/dispatcher';
 import { coreAverage } from '../engine/development';
-import { checkInvariants, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
+import { checkInvariants, injuryStats, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
 import type { AdvanceResult, DashboardView, DelegationPolicyView, OrganizationView, PlayerListItem, RosterView, StandingView } from '../shared/protocol';
 
 const arg = (name: string, fallback: string) => {
@@ -146,10 +146,17 @@ async function main() {
     if (Math.abs(coreMean - firstCoreMean) > 3) devErrors.push(`사전 등록 ② 위반: 핵심 능력 평균 ${firstCoreMean} → ${coreMean}`);
     if (coreP95 !== null && coreP95 > 6) devErrors.push(`사전 등록 ③ 위반: 1년 변화 95% 분위수 ${coreP95}`);
     inv.push(...devErrors);
+    // 4b-1 사전 등록 ①~④(D-127): 정규시즌 구단당 부상 통계
+    const inj = injuryStats(d.saves.repository(), dash.season);
+    if (inj.perClub < 10 || inj.perClub > 30) inv.push(`사전 등록 4b-1 ① 위반: 부상 ${inj.perClub}건/구단`);
+    if (inj.longPerClub < 5 || inj.longPerClub > 20) inv.push(`사전 등록 4b-1 ② 위반: 10일 이상 ${inj.longPerClub}건/구단`);
+    if (inj.concurrent < 1 || inj.concurrent > 5) inv.push(`사전 등록 4b-1 ③ 위반: 동시 부상 ${inj.concurrent}명/구단`);
+    if (inj.seasonOutPerClub > 3) inv.push(`사전 등록 4b-1 ④ 위반: 시즌 아웃 ${inj.seasonOutPerClub}건/구단`);
     rows.push({
       season: dash.season,
       coreMean,
       coreP95,
+      injuries: inj,
       games: regular && regular.season === dash.season ? `${regular.played}/${regular.total}` : '0/1', // 기록이 없으면 미완료로 판정
       days: adv.daysProcessed,
       simSec: +(simMs / 1000).toFixed(2),

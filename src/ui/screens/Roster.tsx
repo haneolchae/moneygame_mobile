@@ -86,7 +86,7 @@ export function Roster({ nav }: { nav: Nav }) {
                 <input
                   type="checkbox"
                   aria-label={`${p.name} ${side === '1군' ? '2군 말소' : '1군 등록'}`}
-                  disabled={!v.editable || busy || (side === '2군' && !!until)}
+                  disabled={!v.editable || busy || (side === '2군' && (!!until || p.healthStatus === '부상'))}
                   checked={list.includes(p.id)}
                   onChange={() => (side === '1군' ? toggle(demote, setDemote, p.id) : toggle(promote, setPromote, p.id))}
                 />
@@ -96,6 +96,7 @@ export function Roster({ nav }: { nav: Nav }) {
                   {p.name}
                 </span>
                 {until && <span className="badge req" title="1군 재등록 제한"> {md(until)}부터</span>}
+                {p.healthStatus && <span className="badge req"> {p.healthStatus}</span>}
               </td>
               <td>{POSITION_LABELS[p.position] ?? p.position}</td>
               <td className="num">{p.age}</td>

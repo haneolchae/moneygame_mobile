@@ -198,9 +198,29 @@ function preparePlanned(clubId: ClubId, activePlayers: PlayerTruth[], usage: Pit
  * 경기 준비. 사용자 수동 계획이 있고 오늘 1군과 맞으면 그 계획을, 아니면 감독 자동 운영을 쓴다.
  * 계획이 어긋나는 경우는 명단 변경 때 repairPlan으로 미리 고치므로 여기서는 안전장치로만 자동 운영에 넘긴다.
  */
-export function prepareTeam(clubId: ClubId, activePlayers: PlayerTruth[], usage: PitcherUsage[], lastStarterId: PlayerId | null, plan: GamePlan | null = null, rotationSize = 5): TeamSetup {
-  if (plan && planProblems(plan, activePlayers, rotationSize).length === 0) return preparePlanned(clubId, activePlayers, usage, lastStarterId, plan);
-  const hitters = activePlayers.filter((p) => !p.isPitcher);
+export function prepareTeam(
+  clubId: ClubId,
+  activeRoster: PlayerTruth[],
+  usage: PitcherUsage[],
+  lastStarterId: PlayerId | null,
+  plan: GamePlan | null = null,
+  rotationSize = 5,
+  avail: { out?: ReadonlySet<PlayerId>; tired?: ReadonlySet<PlayerId> } = {},
+): TeamSetup {
+  // 4b-1(D-126): 부상·휴식 선수는 어떤 경우에도 나서지 않는다.
+  let activePlayers = avail.out?.size ? activeRoster.filter((p) => !avail.out!.has(p.id)) : activeRoster;
+  if (plan) {
+    // 수동 계획에 출전할 수 없는 선수가 있으면 그 경기만 감독 추천으로 대체한다(저장된 계획은 그대로).
+    const blocked = avail.out?.size ? plan.lineup.some((s) => avail.out!.has(s.playerId)) || plan.rotation.some((id) => avail.out!.has(id)) || (plan.closer !== null && avail.out.has(plan.closer)) : false;
+    const effective = blocked ? repairPlan(plan, activePlayers, rotationSize).plan : plan;
+    if (planProblems(effective, activePlayers, rotationSize).length === 0) return preparePlanned(clubId, activePlayers, usage, lastStarterId, effective);
+  } else if (avail.tired?.size) {
+    // 감독 자동 운영: 피로가 높은 야수는 대체가 가능하면 쉬게 한다.
+    const rested = activePlayers.filter((p) => p.isPitcher || !avail.tired!.has(p.id));
+    const h = rested.filter((p) => !p.isPitcher);
+    if (h.length >= 9 && h.some((x) => x.position === 'C')) activePlayers = rested;
+  }
+  let hitters = activePlayers.filter((p) => !p.isPitcher);
   const pitchers = activePlayers.filter((p) => p.isPitcher);
   const starters = pitchers.filter((p) => p.position === 'SP');
   const starter = pickStarter(starters.length > 0 ? starters : pitchers, usage, lastStarterId);
@@ -209,6 +229,8 @@ export function prepareTeam(clubId: ClubId, activePlayers: PlayerTruth[], usage:
     .sort((a, b) => pitcherOverall(b) - pitcherOverall(a) || a.id - b.id);
   const closer = relievers[0] && bullpenAvailable(relievers[0], usage) ? relievers[0] : null;
   const bullpen = relievers.filter((p) => p !== relievers[0] && bullpenAvailable(p, usage));
+  // 비상(D-126): 부상으로 출전 가능한 야수가 9명보다 적으면 선발이 아닌 투수가 빈 타순을 채운다.
+  if (hitters.length < 9) hitters = [...hitters, ...bullpen.filter((p) => p !== closer).slice(-(9 - hitters.length))];
   const { lineup, defense } = buildLineup(hitters);
-  return { clubId, lineup, starter, bullpen, closer, defense };
+  return { clubId, lineup, starter, bullpen: bullpen.filter((p) => !hitters.includes(p)), closer, defense };
 }

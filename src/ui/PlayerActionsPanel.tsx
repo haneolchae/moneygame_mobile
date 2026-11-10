@@ -29,6 +29,7 @@ export function PlayerActionsPanel({ playerId, playerName, nav, beforeAct, onCha
   const [salaryEok, setSalaryEok] = useState(0);
   const [foreignMan, setForeignMan] = useState(0);
   const [releaseChecked, setReleaseChecked] = useState(false);
+  const [restDays, setRestDays] = useState(1);
 
   const load = useCallback(async () => {
     const v = await api('player.actions', { playerId });
@@ -178,6 +179,30 @@ export function PlayerActionsPanel({ playerId, playerName, nav, beforeAct, onCha
               </span>
               <button className="primary" disabled={busy} onClick={() => void run(() => api('roster.persuade', { playerId }))}>
                 설득 면담하기 (행동력 {sel.apCost})
+              </button>
+            </div>
+          )}
+          {sel.key === 'rest' && (
+            <div className="offer-form">
+              <label>
+                휴식 기간{' '}
+                <select value={restDays} onChange={(e) => setRestDays(Number(e.target.value))}>
+                  {[1, 2, 3].map((d) => (
+                    <option key={d} value={d}>
+                      {d}일
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="primary" disabled={busy} onClick={() => void run(() => api('player.rest', { playerId, days: restDays }))}>
+                휴식 지시 (행동력 0)
+              </button>
+            </div>
+          )}
+          {sel.key === 'medicalCheck' && (
+            <div className="offer-form">
+              <button className="primary" disabled={busy} onClick={() => void run(() => api('player.medicalCheck', { playerId }))}>
+                특별 검사 받기 (행동력 {sel.apCost})
               </button>
             </div>
           )}

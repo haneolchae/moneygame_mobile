@@ -114,6 +114,12 @@ export class Dispatcher {
         const p = payload as RequestMap['roster.setPlan']['payload'];
         return this.game().rosterSetPlan(p.mode, p.plan) as R;
       }
+      case 'player.rest': {
+        const p = payload as RequestMap['player.rest']['payload'];
+        return this.game().restPlayer(p.playerId, p.days) as R;
+      }
+      case 'player.medicalCheck':
+        return this.game().medicalCheck((payload as RequestMap['player.medicalCheck']['payload']).playerId) as R;
       case 'player.actions':
         return this.game().playerActions((payload as RequestMap['player.actions']['payload']).playerId) as R;
       case 'game.standings':

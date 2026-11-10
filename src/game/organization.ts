@@ -94,6 +94,13 @@ export class Organization {
     return { ...defaultPolicy(team), ...(this.repo.getPolicies().find((p) => p.team === team) ?? {}) };
   }
 
+  /** 컨디셔닝·메디컬팀 역량(0~1): 팀장·트레이너 전문성 평균, 아무도 없으면 0.3 (4b-1, D-126) */
+  medicalQuality(clubId: number): number {
+    const staff = this.staff(clubId).filter((s) => s.team === 'medical');
+    if (staff.length === 0) return 0.3;
+    return Math.max(0, Math.min(1, staff.reduce((a, s) => a + (s.abilities.expertise ?? 50), 0) / staff.length / 100));
+  }
+
   scoutingScale(meta: GameMeta): number {
     return scoutingSdScale(this.staff(meta.userClubId));
   }

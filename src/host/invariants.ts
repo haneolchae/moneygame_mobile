@@ -30,6 +30,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   errors.push(...checkRosterComposition(repo));
   errors.push(...checkUserRoster(repo, season));
   errors.push(...checkDevelopment(repo));
+  errors.push(...checkHealthPlay(repo, season));
 
   // 경기 기록 일관성: 득점 = 득점 기록 수, 타석 수 = 아웃 + 출루, 이닝 아웃 수
   const games = repo.getGames(season);
@@ -199,4 +200,55 @@ export function checkDevelopment(repo: GameRepository): string[] {
     }
   }
   return errors;
+}
+
+/** 선수별 출전 불가 기간(부상 발생 다음 날 ~ 복귀일 전날) */
+function injuryWindows(repo: GameRepository): Map<number, Array<{ date: string; returnDate: string }>> {
+  const out = new Map<number, Array<{ date: string; returnDate: string }>>();
+  for (const p of repo.getPlayers()) {
+    const list = [...(p.health?.history ?? []), ...(p.health?.injury ? [p.health.injury] : [])].map((h) => ({ date: h.date, returnDate: h.returnDate }));
+    if (list.length) out.set(p.id, list);
+  }
+  return out;
+}
+
+/** 4b-1 사전 등록 ⑤(D-127): 부상 중인 선수는 경기에 나서지 않는다. */
+export function checkHealthPlay(repo: GameRepository, season: number): string[] {
+  const windows = injuryWindows(repo);
+  const errors: string[] = [];
+  for (const g of repo.getGames(season)) {
+    const { pas } = repo.getGameEvents(g.fixtureId);
+    for (const id of new Set(pas.flatMap((pa) => [pa.batterId, pa.pitcherId]))) {
+      if ((windows.get(id) ?? []).some((w) => diffDays(g.date, w.date) > 0 && diffDays(g.date, w.returnDate) < 0)) errors.push(`부상 선수 출전: 선수 ${id} 경기 ${g.fixtureId}(${g.date})`);
+    }
+  }
+  return errors;
+}
+
+/** 4b-1 사전 등록 ①~④ 측정(D-127): 정규시즌 구단당 평균 부상 건수·10일 이상·동시 부상 인원·시즌 아웃 */
+export function injuryStats(repo: GameRepository, season: number) {
+  const k = seasonKeyDates(season);
+  const days = diffDays(k.regularSeasonEnd, k.opening) + 1;
+  const clubs = repo.getClubs().length;
+  let n = 0;
+  let long = 0;
+  let out = 0;
+  let injuredDays = 0;
+  for (const list of injuryWindows(repo).values()) {
+    for (const w of list) {
+      const len = diffDays(w.returnDate, w.date) - 1;
+      if (diffDays(w.date, k.opening) >= 0 && diffDays(w.date, k.regularSeasonEnd) <= 0) {
+        n++;
+        if (len >= 10) long++;
+        if (len >= 91) out++;
+      }
+      // 출전 불가 날짜와 정규시즌의 겹침
+      const from = diffDays(w.date, k.opening) + 1;
+      const to = diffDays(w.returnDate, k.opening) - 1;
+      const lo = Math.max(0, from);
+      const hi = Math.min(days - 1, to);
+      if (hi >= lo) injuredDays += hi - lo + 1;
+    }
+  }
+  return { perClub: +(n / clubs).toFixed(1), longPerClub: +(long / clubs).toFixed(1), concurrent: +(injuredDays / days / clubs).toFixed(2), seasonOutPerClub: +(out / clubs).toFixed(2) };
 }

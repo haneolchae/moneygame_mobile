@@ -201,6 +201,30 @@ export interface PlayerTruth {
   retired?: { season: number; reason: string };
   /** 성장·노화 누적 상태(4a, D-124). 내부 계산용이며 화면 응답에 그대로 넣지 않는다 */
   dev?: DevelopmentState;
+  /** 부상 상태·이력(4b-1, D-126). 실제 복귀일은 화면 응답에 넣지 않는다 */
+  health?: HealthState;
+}
+
+export interface InjuryState {
+  part: string;
+  severity: string;
+  /** 부상 발생일(그날 경기 뒤) */
+  date: GameDate;
+  /** 실제 복귀일(이날부터 출전 가능). 숨김 */
+  returnDate: GameDate;
+  /** 메디컬팀 진단 추정 복귀 범위 */
+  estimate: { from: GameDate; to: GameDate };
+  /** 부상으로 1군에서 내렸는가, 부상 전 1군이었는가 */
+  demoted: boolean;
+  wasActive: boolean;
+}
+
+export interface HealthState {
+  injury: InjuryState | null;
+  /** 지난 부상: 발생일·복귀일·부위·중증도 */
+  history: Array<{ date: GameDate; returnDate: GameDate; part: string; severity: string }>;
+  /** 마지막 특별 검사일 */
+  lastCheck?: GameDate;
 }
 
 export interface DevelopmentState {

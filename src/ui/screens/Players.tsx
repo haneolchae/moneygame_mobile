@@ -133,7 +133,7 @@ export function Players({ nav }: { nav: Nav }) {
             {visible.map((p) => (
               <tr key={p.id} id={`player-row-${p.id}`} tabIndex={0} className="clickable" onClick={() => open(p.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(p.id); } }}>
                 <td className="sticky">
-                  {p.watched ? "★ " : ""}{p.name} {p.franchise && <span className="badge star">간판</span>} {p.faEligible && <span className="badge fa">FA</span>}
+                  {p.watched ? "★ " : ""}{p.name} {p.healthStatus && <span className="badge req">{p.healthStatus}</span>} {p.franchise && <span className="badge star">간판</span>} {p.faEligible && <span className="badge fa">FA</span>}
                 </td>
                 <td>{p.club?.shortName ?? 'FA'}</td>
                 <td>{POSITION_LABELS[p.position] ?? p.position}</td>

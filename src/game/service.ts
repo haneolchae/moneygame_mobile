@@ -2,7 +2,7 @@ import { createSnapshot, currentRatings, snapshotRanges, SCOUTING, type Scouting
 // 게임 진행: 사용자 명령 검증·처리와 조회. 엔진 규칙을 호출하고 결과를 저장 계층에 반영한다.
 import { addDays, ageOn, diffDays, mondayOf, weekday, type GameDate } from '../engine/calendar';
 import { CLUB_PROFILES, SEASON_2026_STANDINGS } from '../engine/clubs';
-import { FOREIGN, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION } from '../engine/config';
+import { FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION } from '../engine/config';
 import { compensationFor, foreignRenewalDemandUsd, offerTotal, wonToUsd, type ContractOffer } from '../engine/contracts';
 import { CATEGORY_LABEL, FINANCE_BASE, NOT_YET_IMPLEMENTED, scheduledEntries, stadiumFee, type LedgerEntry } from '../engine/finance';
 import { simulateGame, type GameResult } from '../engine/gamesim';
@@ -33,6 +33,7 @@ import { Draft, draftDate, isSenior } from './draft';
 import { CLOSE_RULES, SeasonClose } from './seasonClose';
 import { exhibitionDates, RosterOps } from './rosterOps';
 import { Growth } from './growth';
+import { HealthOps } from './health';
 import { DEV_LABEL, devSnapshot, VELOCITY } from '../engine/development';
 import { Postseason, POSTSEASON_MAX_INNINGS, SERIES_LABEL } from './postseason';
 import { DELEGABLE_TEAMS, directWpCost, ORG_AP, Organization } from './organization';
@@ -241,6 +242,7 @@ export class GameService {
   readonly seasonClose: SeasonClose;
   readonly rosterOps: RosterOps;
   readonly growth: Growth;
+  readonly health: HealthOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -293,6 +295,7 @@ export class GameService {
     this.seasonClose = new SeasonClose(repo, this.draft);
     this.rosterOps = new RosterOps(repo, this.forms);
     this.growth = new Growth(repo);
+    this.health = new HealthOps(repo, this.rosterOps, (id) => this.org.medicalQuality(id));
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -362,13 +365,15 @@ export class GameService {
     inbox.push(...this.org.onDay(meta, date));
     // 4a 성장·노화 월간 반영(D-123): 시즌 3~10월 1일, 그날 경기 전에 반영한다.
     inbox.push(...this.growth.monthly(meta, date));
+    // 4b-1 건강(D-126): 복귀·1군 건강 인원 확보·휴식 지시 정리·주간 건강 보고(경기 전)
+    inbox.push(...this.health.beforeGames(meta, date));
 
     // 개막일: 그 시점 1군을 개막 엔트리로 알린다(2d, D-120).
     const opening = this.rosterOps.openingNotice(meta, date);
     if (opening) inbox.push(opening);
     // 시범경기(2d, D-120): 정규 기록·표본·피로·순위와 분리해 점수와 우리 선수 기록만 남긴다.
     const extraMeta: Partial<GameMeta> = {};
-    const exhibition = this.rosterOps.playExhibition(meta, date, meta.leagueEnvironment?.[String(meta.season)] ?? NEUTRAL_ENVIRONMENT);
+    const exhibition = this.rosterOps.playExhibition(meta, date, meta.leagueEnvironment?.[String(meta.season)] ?? NEUTRAL_ENVIRONMENT, this.health.unavailableOn(this.meta(), date, this.repo.getPlayers()));
     if (exhibition) {
       Object.assign(extraMeta, exhibition.update);
       inbox.push(...exhibition.inbox);
@@ -387,8 +392,11 @@ export class GameService {
       const forms = this.forms.formsFor(meta.season, date, active, env);
       // 우리 구단 수동 운영 계획(2d): 감독 자동 운영과 같은 경기 준비 로직이 읽는다.
       const userPlan = this.rosterOps.activePlan(meta);
+      // 4b-1: 부상·휴식 선수 제외, 감독 자동 운영은 피로 높은 야수 휴식
+      const out = this.health.unavailableOn(this.meta(), date, active);
+      const tired = this.health.tiredOn(date, active);
       for (const f of fixtures) {
-        const teamOf = (clubId: ClubId) => prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null, clubId === meta.userClubId ? userPlan : null, ROSTER_MOVE.rotationSize);
+        const teamOf = (clubId: ClubId) => prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null, clubId === meta.userClubId ? userPlan : null, ROSTER_MOVE.rotationSize, { out, tired });
         // 경기 난수는 (시드, 경기 ID)에서 파생한다. 처리 순서와 무관하게 같은 경기는 같은 결과를 낸다.
         const maxInnings = f.stage && f.stage !== 'regular' ? POSTSEASON_MAX_INNINGS : LEAGUE.regularSeasonMaxInnings;
         const postseason = !!f.stage && f.stage !== 'regular';
@@ -460,6 +468,8 @@ export class GameService {
 
     const commit: DayCommit = { results, ledger, inbox, apGrant, metaUpdate };
     this.repo.commitDay(date, commit);
+    // 4b-1 부상 판정(D-126): 그날 경기 기록이 저장된 뒤 출전 선수마다 한 번
+    this.repo.addInbox(this.health.afterGames(this.meta(), date, results));
     // 포스트시즌: 정규시즌 마지막 날 대진 확정, 이후 경기 결과로 시리즈 진행(같은 트랜잭션)
     if (meta.mode === 'season') {
       const now = this.meta();
@@ -658,10 +668,11 @@ export class GameService {
     const usage = this.repo.getRecentPitcherUsage(addDays(fx.date, -6), meta.currentDate).map((u) => ({ ...u, daysAgo: diffDays(fx.date, u.date) }));
     const lastStarters = this.repo.getLastStarters(meta.season);
     const active = this.repo.getActivePlayers([fx.home, fx.away]);
+    const unavailable = this.health.unavailableOn(meta, fx.date, active);
     const pit = this.repo.pitchingTotals(meta.season);
     const starterOf = (clubId: number) => {
       try {
-        const s = prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null, clubId === meta.userClubId ? this.rosterOps.activePlan(meta) : null, ROSTER_MOVE.rotationSize).starter;
+        const s = prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null, clubId === meta.userClubId ? this.rosterOps.activePlan(meta) : null, ROSTER_MOVE.rotationSize, { out: unavailable }).starter;
         const t = pit.get(s.id);
         const era = t && t.OUTS > 0 ? ((27 * t.ER) / t.OUTS).toFixed(2) : '—';
         return { id: s.id, name: s.name, throws: s.throws === 'L' ? '좌완' : '우완', line: `시즌 ${t?.W ?? 0}승 ${t?.L ?? 0}패 · ERA ${era}` };
@@ -1458,6 +1469,15 @@ export class GameService {
     return { message, view: this.rosterView() };
   }
 
+  restPlayer(playerId: number, days: number): OfferResultView {
+    return { result: 'accept', message: this.health.rest(this.meta(), playerId, days) };
+  }
+
+  medicalCheck(playerId: number): OfferResultView {
+    const meta = this.meta();
+    return { result: 'accept', message: this.health.medicalCheck(meta, weekIdFor(meta.currentDate), playerId) };
+  }
+
   /**
    * 선수 상세 행동 영역(3d, 18a·D-118). 조회만 하며 상태·난수를 바꾸지 않는다.
    * 가능 여부와 불가 사유는 실행 명령과 같은 대상 검증 함수(Market·Organization·SeasonClose)로 계산한다.
@@ -1569,6 +1589,13 @@ export class GameService {
       });
     }
 
+    // 4b-1 건강(D-126): 휴식 지시(행동력 0), 특별 검사(행동력 1)
+    if (own && !p.retired) {
+      add({ key: 'rest', group: '건강', label: '휴식 지시', reason: reasonOf(() => this.health.restTarget(meta, playerId, 1)), apCost: 0, executor: '감독·트레이너 · 오늘부터', costNote: '1~3일 경기 제외(피로 회복). 진행된 경기는 바뀌지 않음' });
+      add({ key: 'medicalCheck', group: '건강', label: '특별 검사', reason: reasonOf(() => this.health.checkTarget(meta, playerId)) ?? apReason(HEALTH.checkAp), apCost: HEALTH.checkAp, executor: '컨디셔닝·메디컬팀 · 즉시', costNote: '부상 중이면 복귀 전망을 좁히고, 건강하면 부상 위험 등급을 보고' });
+      if (p.health?.injury && diffDays(meta.currentDate, p.health.injury.returnDate) < 0) badges.push('부상');
+      else if (meta.restOrders?.[String(playerId)] && diffDays(meta.currentDate, meta.restOrders[String(playerId)]!) <= 0) badges.push('휴식 중');
+    }
     let release: PlayerActionsView['release'] = null;
     if (own && !p.retired) {
       const remainingWon = p.salary * p.contractYears;
@@ -1660,6 +1687,7 @@ export class GameService {
       faEligible: p.career.faEligible,
       franchise: p.career.franchise && p.clubId === meta.userClubId,
       contractYears: p.contractYears,
+      healthStatus: this.health.status(meta, p),
     };
   }
 
@@ -1764,6 +1792,7 @@ export class GameService {
       honors: p.honors ?? [],
       draftInfo: p.draft ? `${p.draft.year} 신인 드래프트 ${p.draft.round}라운드 ${p.draft.pick}순위 (${p.draft.school})` : null,
       retired: p.retired ? `${p.retired.season} 시즌 뒤 은퇴 (${p.retired.reason})` : null,
+      health: this.health.view(meta, p, own),
       development: own && p.dev?.base ? this.developmentOf(p) : own ? { since: null, settled: false, changes: [] } : null,
     };
   }

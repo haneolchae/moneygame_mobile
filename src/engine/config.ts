@@ -186,6 +186,46 @@ export const ROSTER_MOVE = {
   rotationSize: 5,
 } as const;
 
+/** 4b-1 건강: 피로·부상·휴식·검사 (D-126 초기안) */
+export const HEALTH = {
+  /** 피로(0~100)는 최근 7일 출전 기록에서 계산 */
+  fatigueDays: 7,
+  fatigueDecay: 0.85,
+  hitterGameLoad: 12,
+  catcherFactor: 1.3,
+  pitchLoad: 0.4,
+  /** 감독 자동 운영: 이 피로 이상 야수는 대체 가능하면 선발 제외 */
+  autoRestFatigue: 70,
+  /** ASSUMPTION(D-126): 출전 1회당 기본 부상 확률과 보정 */
+  baseInjuryChance: 0.005, // 매일 출전 주전의 피로 계수(약 2.1)를 반영해 구단당 연 약 20건 목표(D-126 정정)
+  fatigueDivisor: 50,
+  agePivot: 30,
+  agePerYear: 0.03,
+  durabilityMax: 1.3,
+  durabilitySpan: 0.6,
+  /** 중증도: 누적 비율과 기간(일) */
+  severities: [
+    { label: '경미', share: 0.5, min: 1, max: 7 },
+    { label: '보통', share: 0.3, min: 8, max: 30 },
+    { label: '중증', share: 0.17, min: 31, max: 90 },
+    { label: '시즌 아웃', share: 0.03, min: 91, max: 180 },
+  ],
+  /** 메디컬팀 역량(0~1)에 따른 실제 기간 단축 최대·추정 범위 폭 */
+  maxRecoveryCut: 0.15,
+  estimateWidthBest: 0.15,
+  estimateWidthWorst: 0.4,
+  /** 이 일수 이상이면 1군에서 내리고 대체 선수를 올린다 */
+  demoteDays: 10,
+  /** 1군 건강 최소 인원(이보다 적으면 짧은 부상자도 내리고 채운다) */
+  healthyMinHitters: 10,
+  healthyMinPitchers: 10,
+  restMaxDays: 3,
+  checkAp: 1,
+  checkCooldownDays: 7,
+  /** 외국인 장기 부상 알림 기준(일) */
+  foreignLongDays: 42,
+} as const;
+
 /** 4a 성장·노화(D-123 사용자 확정 주기, D-124 초기안 계수) */
 export const DEVELOPMENT = {
   /** ASSUMPTION(D-124): 정점 전 연간 성장 = (잠재 − 현재) × growthShare × 계수 */

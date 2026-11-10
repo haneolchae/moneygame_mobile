@@ -168,6 +168,8 @@ export type StatValue = number | null;
 export interface PlayerListItem {
   id: number;
   name: string;
+  /** 4b-1: 부상·휴식 상태(다른 구단 선수도 부상 여부는 공개) */
+  healthStatus: string | null;
   club: ClubRef | null;
   level: string;
   position: string;
@@ -208,7 +210,20 @@ export interface FieldingLineView {
 }
 
 export interface PlayerNoteView { text: string; watched: boolean; updatedAt: string | null }
+export interface PlayerHealthView {
+  injured: boolean;
+  /** 우리 선수만: 부위·중증도·발생일·진단 추정 복귀 범위(실제 복귀일은 보내지 않음) */
+  injury: { part: string; severity: string; date: string; estimateFrom: string; estimateTo: string } | null;
+  /** 우리 선수만: 최근 7일 출전 기록으로 계산한 피로(0~100) */
+  fatigue: number | null;
+  restUntil: string | null;
+  lastCheck: string | null;
+  history: Array<{ date: string; returnDate: string; part: string; severity: string }>;
+}
+
 export interface PlayerDetailView extends PlayerListItem {
+  /** 4b-1 건강. 다른 구단 선수는 부상 여부만 */
+  health: PlayerHealthView;
   /** 우리 선수만: 지난 성장·노화 결산 뒤 실제 능력 변화(4a). 다른 구단 선수는 null */
   development: { since: string | null; settled: boolean; changes: Array<{ key: string; label: string; delta: number }> } | null;
   scouting: { confidence: number; date: string; observer: string; stale: boolean; reports: number; nextDate: string; apCost: number };
@@ -612,12 +627,12 @@ export interface RosterView {
 
 // ───────── 선수 상세 행동 영역 (3d, 18a·D-118) ─────────
 
-export type PlayerActionKey = 'faOffer' | 'faDelegate' | 'salaryOffer' | 'salaryDelegate' | 'foreignOffer' | 'release' | 'persuade';
+export type PlayerActionKey = 'faOffer' | 'faDelegate' | 'salaryOffer' | 'salaryDelegate' | 'foreignOffer' | 'release' | 'persuade' | 'rest' | 'medicalCheck';
 
 /** 선수 상세에 보여줄 행동 하나. 가능 여부·비용·불가 사유는 게임 로직이 실행 명령과 같은 검증으로 계산한다. */
 export interface PlayerActionView {
   key: PlayerActionKey;
-  group: '계약·이적' | '면담' | '선수 정리';
+  group: '계약·이적' | '면담' | '건강' | '선수 정리';
   label: string;
   enabled: boolean;
   /** 지금 실행할 수 없는 이유와 해제 조건 */
@@ -770,6 +785,8 @@ export interface RequestMap {
   'player.note': { payload: { playerId: number; text: string; watched: boolean }; result: PlayerNoteView };
   'player.scout': { payload: { playerId: number }; result: PlayerDetailView };
   'player.actions': { payload: { playerId: number }; result: PlayerActionsView };
+  'player.rest': { payload: { playerId: number; days: number }; result: OfferResultView };
+  'player.medicalCheck': { payload: { playerId: number }; result: OfferResultView };
   'club.view': { payload: { clubId: number }; result: ClubView };
   'club.note': { payload: { clubId: number; text: string; rival: boolean }; result: ClubNoteView };
   'roster.view': { payload: void; result: RosterView };
@@ -825,6 +842,8 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'player.note',
   'player.scout',
   'player.actions',
+  'player.rest',
+  'player.medicalCheck',
   'club.view',
   'club.note',
   'roster.view',

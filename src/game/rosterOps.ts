@@ -99,6 +99,7 @@ export class RosterOps {
       const p = byId.get(id);
       if (!p) throw new GameError('NOT_AVAILABLE', '우리 구단 선수가 아닙니다.');
       if (p.level === '1군') throw new GameError('INVALID', `${p.name}은 이미 1군입니다.`);
+      if (p.health?.injury && diffDays(meta.currentDate, p.health.injury.returnDate) < 0) throw new GameError('INJURED', `${p.name}은 부상 중이라 1군에 등록할 수 없습니다(복귀 추정 ${p.health.injury.estimate.from.slice(5).replace('-', '/')}~${p.health.injury.estimate.to.slice(5).replace('-', '/')}).`);
       const until = this.reRegisterDate(meta, id);
       if (until) throw new GameError('RE_REGISTER', `${p.name}은 1군 말소 뒤 ${ROSTER_MOVE.reRegisterDays}일이 지나야 다시 등록할 수 있습니다(${until.slice(5).replace('-', '/')}부터).`);
       p.level = '1군';
@@ -133,6 +134,22 @@ export class RosterOps {
     });
   }
 
+  /**
+   * 부상 처리용 강제 교체(4b-1, D-126): 사용자 교체 검증(최소 인원 등)은 건너뛰지만 이동 기록과 계획 보정은 같게 한다.
+   * 우리 구단 선수만 이동 기록을 남긴다(재등록 10일 판정용).
+   */
+  forceMoves(meta: GameMeta, players: PlayerTruth[], promote: PlayerTruth[], demote: PlayerTruth[]): string {
+    for (const p of promote) p.level = '1군';
+    for (const p of demote) p.level = '2군';
+    this.repo.savePlayers([...promote, ...demote]);
+    const mine = (p: PlayerTruth) => p.clubId === meta.userClubId;
+    const log: RosterMove[] = [...promote.filter(mine).map((p) => ({ date: meta.currentDate, playerId: p.id, to: '1군' as const })), ...demote.filter(mine).map((p) => ({ date: meta.currentDate, playerId: p.id, to: '2군' as const }))];
+    if (log.length === 0) return '';
+    const current = this.repo.getMeta();
+    this.repo.updateMeta({ rosterMoves: [...this.moves(current), ...log] });
+    return this.repairUserPlan(this.repo.getMeta(), players.filter((p) => p.clubId === meta.userClubId && p.level === '1군'));
+  }
+
   /** 시즌 중 1군 선수가 빠져 26명이 안 되면(방출 등) 감독 추천으로 2군에서 채운다. 재등록 제한은 지킨다. */
   fillActive(meta: GameMeta): string {
     const mine = this.mine(meta);
@@ -142,7 +159,7 @@ export class RosterOps {
     const c = rosterCounts(active);
     const wantPitcher = c.pitchers < ROSTER_COMPOSITION.activeMinPitchers ? true : c.hitters < ROSTER_COMPOSITION.activeMinHitters ? false : null;
     const pool = mine
-      .filter((p) => p.level === '2군' && !this.reRegisterDate(meta, p.id) && (wantPitcher === null || p.isPitcher === wantPitcher))
+      .filter((p) => p.level === '2군' && !this.reRegisterDate(meta, p.id) && !(p.health?.injury && diffDays(meta.currentDate, p.health.injury.returnDate) < 0) && (wantPitcher === null || p.isPitcher === wantPitcher))
       .sort((a, b) => overall(b) - overall(a) || a.id - b.id)
       .slice(0, need);
     if (pool.length === 0) return '';
@@ -231,7 +248,7 @@ export class RosterOps {
   }
 
   /** 시범경기 하루: 같은 경기 엔진, 저장 시드 파생 난수. 점수와 우리 선수 기록만 meta에 남긴다(D-120). */
-  playExhibition(meta: GameMeta, date: GameDate, env = NEUTRAL_ENVIRONMENT): { update: Partial<GameMeta>; inbox: InboxMessage[]; games: number } | null {
+  playExhibition(meta: GameMeta, date: GameDate, env = NEUTRAL_ENVIRONMENT, out: ReadonlySet<PlayerId> = new Set()): { update: Partial<GameMeta>; inbox: InboxMessage[]; games: number } | null {
     if (meta.mode !== 'season') return null;
     const dates = exhibitionDates(meta.season);
     const dayIndex = dates.indexOf(date);
@@ -245,7 +262,7 @@ export class RosterOps {
     const results: GameResult[] = [];
     exhibitionPairs(clubIds, dayIndex).forEach(([home, away], i) => {
       const gameId = -(meta.season * 1000 + dayIndex * 10 + i + 1);
-      const team = (clubId: ClubId) => prepareTeam(clubId, active.filter((p) => p.clubId === clubId), [], state.lastStarters[String(clubId)] ?? null, clubId === meta.userClubId ? userPlan : null, ROSTER_MOVE.rotationSize);
+      const team = (clubId: ClubId) => prepareTeam(clubId, active.filter((p) => p.clubId === clubId), [], state.lastStarters[String(clubId)] ?? null, clubId === meta.userClubId ? userPlan : null, ROSTER_MOVE.rotationSize, { out });
       const r = simulateGame(gameId, team(home), team(away), Rng.derive(meta.seed, 'exhibition', meta.season, dayIndex, i), EXHIBITION.maxInnings, env, { forms, postseason: false });
       results.push(r);
       state.lastStarters[String(home)] = r.starters.home;

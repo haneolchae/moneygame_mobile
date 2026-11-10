@@ -65,6 +65,8 @@ export interface GameMeta {
   rosterMoves?: RosterMove[];
   /** 이번 시즌 시범경기 점수·우리 선수 기록(정규 기록과 별도, D-120) */
   exhibition?: ExhibitionState;
+  /** 우리 선수 휴식 지시(4b-1): 선수 ID → 마지막 휴식일(포함) */
+  restOrders?: Record<string, GameDate>;
   /** 구단 메모·라이벌 표시(3e, D-122): 구단 ID → 메모 */
   clubNotes?: Record<string, { text: string; rival: boolean; updatedAt: string | null }>;
 }
@@ -378,6 +380,8 @@ export interface GameRepository {
   addFixtures(fixtures: Fixture[], meta: Partial<GameMeta>): void;
   countFixtures(season: number): { total: number; played: number };
   getRecentPitcherUsage(fromDate: GameDate, toDateExclusive: GameDate): Array<PitcherUsage & { date: GameDate }>;
+  /** 기간 안에 타석에 선 야수와 날짜(피로 계산용, 4b-1) */
+  getRecentBatterGames(fromDate: GameDate, toDateExclusive: GameDate): Array<{ date: GameDate; batterId: PlayerId }>;
   getLastStarters(season: number): Map<ClubId, PlayerId>;
   isDayProcessed(date: GameDate): boolean;
   /** 하루 처리 결과를 원자적으로 반영한다. 같은 날짜를 두 번 처리하면 오류. */

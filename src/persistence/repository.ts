@@ -634,6 +634,11 @@ export class SqliteGameRepository implements GameRepository {
     return { total: num(r.total), played: num(r.played) };
   }
 
+  getRecentBatterGames(fromDate: GameDate, toDateExclusive: GameDate) {
+    const rows = this.stmt('SELECT DISTINCT date, batter_id FROM plate_appearances INDEXED BY pa_date WHERE date >= ? AND date < ?').all(fromDate, toDateExclusive) as Row[];
+    return rows.map((r) => ({ date: String(r.date), batterId: num(r.batter_id) }));
+  }
+
   getRecentPitcherUsage(fromDate: GameDate, toDateExclusive: GameDate) {
     const rows = this.stmt(
       `SELECT pa.date AS date, pa.pitcher_id AS pitcher_id, SUM(pa.pitches) AS pitches,

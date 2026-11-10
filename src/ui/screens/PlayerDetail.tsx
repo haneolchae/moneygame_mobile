@@ -94,6 +94,19 @@ function RecordTable({ r }: { r: PlayerRecordView }) {
   );
 }
 
+/** 건강(4b-1): 우리 선수는 부위·추정 복귀·피로·휴식·이력, 다른 구단 선수는 부상 여부만 */
+function HealthBlock({ h, exact }: { h: PlayerDetailView['health']; exact: boolean }) {
+  if (!exact) return <p>{h.injured ? <span className="badge req">부상</span> : '부상 소식 없음'} <span className="muted small">다른 구단 선수는 부상 여부만 알 수 있습니다.</span></p>;
+  return (
+    <div>
+      <h2>건강</h2>
+      {h.injury ? <p><span className="badge req">부상</span> {h.injury.part} {h.injury.severity} · {dateKo(h.injury.date)} 발생 · 복귀 추정 {dateKo(h.injury.estimateFrom)}~{dateKo(h.injury.estimateTo)}</p> : <p>부상 없음</p>}
+      <p>피로 {h.fatigue ?? '—'} / 100 <span className="muted small">(최근 7일 출전 기록으로 계산, 70 이상이면 감독 자동 운영이 쉬게 함)</span>{h.restUntil && <> · 휴식 지시 {dateKo(h.restUntil)}까지</>}{h.lastCheck && <> · 최근 특별 검사 {dateKo(h.lastCheck)}</>}</p>
+      {h.history.length > 0 && <p className="small">지난 부상: {h.history.map((x) => `${x.date.slice(0, 7)} ${x.part}(${x.severity})`).join(' · ')}</p>}
+    </div>
+  );
+}
+
 const TABS = ['개요', '능력치', '시즌 기록', '계약·이력', '메모'] as const;
 const BACK_LABEL: Partial<Record<Route['name'], string>> = { players: '선수단', roster: '선수단 운영', club: '구단 정보', compare: '선수 비교', market: '계약·이적', dashboard: '구단 현황', boxScore: '박스스코어', draft: '신인 드래프트', team: '팀 기록' };
 export function PlayerDetail({ nav, playerId, list, back }: { nav: Nav; playerId: number; list?: number[]; back?: Route }) {
@@ -200,7 +213,7 @@ export function PlayerDetail({ nav, playerId, list, back }: { nav: Nav; playerId
       }}>{label}</button>)}
     </div>
     <div role="tabpanel" id={'player-panel-'+tab} aria-labelledby={'player-tab-'+tab}>
-      {tab===0 && <section className="panel"><h2>이번 시즌 주요 성적</h2>{p.battingStats && <StatTable stats={p.battingStats} spec={BATTING_SPEC.slice(0,9)} />}{p.pitchingStats && <StatTable stats={p.pitchingStats} spec={PITCHING_SPEC.slice(0,10)} />}{!p.battingStats && !p.pitchingStats && <p>이번 시즌 출전 기록이 없습니다.</p>}<p className="muted small">컨디션·부상·기분·코칭 의견은 해당 모델 구현 후 제공됩니다.</p></section>}
+      {tab===0 && <section className="panel"><h2>이번 시즌 주요 성적</h2>{p.battingStats && <StatTable stats={p.battingStats} spec={BATTING_SPEC.slice(0,9)} />}{p.pitchingStats && <StatTable stats={p.pitchingStats} spec={PITCHING_SPEC.slice(0,10)} />}{!p.battingStats && !p.pitchingStats && <p>이번 시즌 출전 기록이 없습니다.</p>}<HealthBlock h={p.health} exact={p.exactRatings} /><p className="muted small">기분·코칭 의견은 해당 모델 구현 후 제공됩니다.</p></section>}
       {tab===1 && <><section className="panel"><button disabled={saving || !!p.retired || p.scouting.nextDate > (nav.dashboard?.date ?? '')} onClick={() => void scout()}>스카우트 조사 · 행동력 {p.scouting.apCost}</button><span className="muted small"> · 조사 {p.scouting.reports}회 · 다음 조사 {p.scouting.nextDate}</span></section>{p.development && <section className="panel"><h2>성장·노화 <span className="muted small">{p.development.since ? `${dateKo(p.development.since)} ${p.development.settled ? '결산' : '기록 시작'} 뒤 실제 변화` : '아직 결산 기록 없음'} · 월 최대 1점(구속 0.3km/h), 스토브리그에 한 번 크게 반영</span></h2>{p.development.changes.length ? <p>{p.development.changes.map(c => `${c.label} ${c.delta > 0 ? '+' : ''}${c.delta}`).join(' · ')}</p> : <p className="muted">변화 없음</p>}</section>}<PlayerAbilities p={p} /></>}
       {tab===2 && <><section className="panel"><h2>기간별 기록</h2><RecordTable r={p.record} />{p.record.recent.some(l=>l.preGame) && <p className="muted small">2026 시즌까지는 게임 시작 이전 시즌 합계 기록입니다.</p>}</section><section className="panel"><h2>이번 시즌 상세 기록</h2>{p.battingStats && <StatTable stats={p.battingStats} spec={BATTING_SPEC} />}{p.pitchingStats && <StatTable stats={p.pitchingStats} spec={PITCHING_SPEC} />}</section><div className="columns">{p.spray && <section className="panel"><h2>타구 분포</h2><SprayChart spray={p.spray} /></section>}<section className="panel"><h2>수비 기록</h2>{p.fielding.length ? <FieldingTable lines={p.fielding} first="season" /> : <p>수비 기록이 없습니다.</p>}</section></div></>}
       {tab===3 && <section className="panel"><h2>계약·경력</h2><p>연봉 {won(p.salaryWon)} · {p.contractYears===0 ? '이번 시즌 계약 만료' : '계약 잔여 '+p.contractYears+'년'}</p><p>FA 자격 연수 {p.faServiceYears}년 {p.faEligible ? '· 이번 스토브리그 FA 자격' : ''}</p>{p.draftInfo && <p>{p.draftInfo}</p>}{p.retired && <p>{p.retired}</p>}{p.honors.length>0 && <p>아마추어 업적: {p.honors.join(' · ')}</p>}</section>}
