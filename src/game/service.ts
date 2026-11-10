@@ -1,3 +1,4 @@
+import { createSnapshot, currentRatings, snapshotRanges, SCOUTING, type ScoutingSnapshot } from '../engine/scouting';
 // 게임 진행: 사용자 명령 검증·처리와 조회. 엔진 규칙을 호출하고 결과를 저장 계층에 반영한다.
 import { addDays, ageOn, diffDays, mondayOf, weekday, type GameDate } from '../engine/calendar';
 import { CLUB_PROFILES, SEASON_2026_STANDINGS } from '../engine/clubs';
@@ -230,9 +231,47 @@ export class GameService {
   readonly seasonClose: SeasonClose;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
+  private scouting = new Map<number, ScoutingSnapshot>();
+  private ensureScouting(): void {
+    const meta = this.meta();
+    for (const p of this.repo.getPlayers()) if (!this.scouting.has(p.id)) {
+      const snapshot = createSnapshot(meta.seed, meta.userClubId, p, meta.currentDate, '기초 자료', 1);
+      this.repo.saveScouting(snapshot);
+      this.scouting.set(p.id, snapshot);
+    }
+  }
+
+  savePlayerNote(playerId: number, text: string, watched: boolean, updatedAt: string) {
+    if (!this.repo.getPlayer(playerId)) throw new GameError('PLAYER_NOT_FOUND', '선수를 찾을 수 없습니다.');
+    if (typeof text !== 'string' || text.length > 2000 || typeof watched !== 'boolean') throw new GameError('INVALID_NOTE', '메모는 2,000자 이내의 텍스트여야 합니다.');
+    const note = { text, watched, updatedAt };
+    this.repo.savePlayerNote(playerId, note);
+    return note;
+  }
+
+  scoutPlayer(playerId: number): PlayerDetailView {
+    const meta = this.meta();
+    const p = this.repo.getPlayer(playerId);
+    if (!p || p.retired) throw new GameError('PLAYER_NOT_FOUND', '조사할 수 있는 선수가 아닙니다.');
+    if (meta.gameOver) throw new GameError('GAME_OVER', '종료된 게임에서는 조사할 수 없습니다.');
+    const previous = this.scouting.get(playerId)!;
+    if (previous.confidence > 0 && diffDays(meta.currentDate, previous.date) < SCOUTING.cooldownDays) throw new GameError('DUPLICATE_EVIDENCE', '새 자료가 부족합니다. 다음 조사 가능일을 확인하세요.');
+    const staff = this.repo.getStaff(meta.userClubId).filter(s => s.team === 'scout');
+    if (staff.length === 0) throw new GameError('NO_SCOUT', '스카우트팀 직원이 필요합니다.');
+    const observer = staff.find(s => s.title === '팀장') ?? staff[0]!;
+    const snapshot = createSnapshot(meta.seed, meta.userClubId, p, meta.currentDate, observer.name, this.org.scoutingScale(meta), previous);
+    this.repo.transaction(() => {
+      this.repo.spendAp(weekIdFor(meta.currentDate), SCOUTING.ap);
+      this.org.charge(meta, { kind: 'direct', weekId: weekIdFor(meta.currentDate) }, 'scout', SCOUTING.wp);
+      this.repo.saveScouting(snapshot);
+    });
+    this.scouting.set(playerId, snapshot);
+    return this.player(playerId);
+  }
 
   constructor(private readonly repo: GameRepository) {
     this.forms = new FormTracker(repo);
+    this.scouting = new Map(repo.getScouting(repo.getMeta().userClubId).map(s => [s.playerId, s]));
     this.clubMap = new Map(repo.getClubs().map((c) => [c.id, c]));
     this.market = new Market(repo, this.clubMap, (source, team, wp) => this.org.charge(this.meta(), source, team, wp));
     this.org = new Organization(repo, this.market);
@@ -246,6 +285,7 @@ export class GameService {
       const meta = this.meta();
       this.org.ensureStaff(meta, [...this.clubMap.keys()]);
       this.org.ensureWeek(meta, weekIdFor(meta.currentDate));
+      this.ensureScouting();
       // 2c 저장본: 시작 이전 기록이 없으면 시드로 만든다(D-079).
       if (repo.countHistory() === 0) repo.insertHistory(generateHistory(meta.seed, repo.getPlayers(), NEW_GAME.previousSeason));
       // 2c 이전 저장본: 고교·대학 선수 풀이 없으면 시드로 만든다(D-084).
@@ -292,7 +332,11 @@ export class GameService {
     const date = meta.currentDate;
     if (this.repo.isDayProcessed(date)) throw new GameError('DAY_ALREADY_PROCESSED', `${date}는 이미 처리된 날짜입니다.`);
     // 선수 시장 처리와 하루 결과는 하나의 트랜잭션으로 반영한다.
-    return this.repo.transaction(() => this.processDay(meta, date));
+    try { return this.repo.transaction(() => this.processDay(meta, date)); }
+    catch (error) {
+      this.scouting = new Map(this.repo.getScouting(meta.userClubId).map(s => [s.playerId, s]));
+      throw error;
+    }
   }
 
   private processDay(meta: GameMeta, date: GameDate): { gamesPlayed: number } {
@@ -413,6 +457,7 @@ export class GameService {
     if (meta.mode === 'season' && after.postseason?.season === meta.season && after.postseason.finishedDate === date) this.seasonClose.close(after, date);
     // 은퇴 설득 기한·파산 감시
     this.seasonClose.onDay(this.meta(), date);
+    this.ensureScouting();
     return { gamesPlayed: results.length };
   }
 
@@ -459,7 +504,7 @@ export class GameService {
     return { daysProcessed, gamesPlayed, stoppedReason };
   }
 
-  /** ASSUMPTION(임시): 포스트시즌·스토브리그 없이 다음 시즌 정규시즌을 시작한다. 장기 데이터 검증용. 건너뛴 기간의 수입·지출은 처리되지 않는다. */
+  /** ASSUMPTION(D-056, 임시): 포스트시즌·스토브리그 없이 다음 시즌 정규시즌을 시작한다. 장기 데이터 검증용. 건너뛴 기간의 수입·지출은 처리되지 않는다. */
   startNextSeason(): void {
     const meta = this.meta();
     if (this.phase(meta) !== 'seasonComplete') throw new GameError('SEASON_NOT_COMPLETE', '한국시리즈가 끝난 뒤에만 다음 시즌을 시작할 수 있습니다.');
@@ -750,7 +795,7 @@ export class GameService {
   // ───────── 선수 시장 (계약·이적) ─────────
 
   private scoutGrade(meta: GameMeta, p: PlayerTruth, scale = 1): number {
-    const r = observePlayer(meta.seed, meta.userClubId, p, scale);
+    const r = p.clubId === meta.userClubId ? currentRatings(p) : this.scouting.get(p.id)?.centers ?? {};
     const keys = p.isPitcher ? ['stuff', 'control', 'groundball'] : ['contact', 'eye', 'power'];
     const vals = keys.map((k) => r[k] ?? 50);
     return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
@@ -1201,7 +1246,9 @@ export class GameService {
       bats: p.bats,
       throws: p.throws,
       salaryWon: p.salary,
-      ratings: observePlayer(meta.seed, meta.userClubId, p, scale),
+      ratings: p.clubId === meta.userClubId ? currentRatings(p) : {},
+      ratingRanges: p.clubId === meta.userClubId ? {} : snapshotRanges(this.scouting.get(p.id)!, meta.currentDate),
+      watched: this.repo.getPlayerNote(p.id).watched,
       stats: p.isPitcher ? this.pitchingSummary(pit, fipC) : this.battingSummary(bat),
       faEligible: p.career.faEligible,
       franchise: p.career.franchise && p.clubId === meta.userClubId,
@@ -1231,6 +1278,7 @@ export class GameService {
         if (key === 'age') return i.age;
         if (key === 'salary') return i.salaryWon;
         if (key in i.ratings) return i.ratings[key] ?? -1;
+        if (key in i.ratingRanges) { const r = i.ratingRanges[key]!; return (r.low + r.high) / 2; }
         const v = i.stats[key];
         return v === null || v === undefined ? -Infinity : v;
       };
@@ -1254,7 +1302,13 @@ export class GameService {
     const scale = this.org.scoutingScale(meta);
     const base = this.listItem(p, meta, bat, pit, fipC, scale);
     const own = p.clubId === meta.userClubId;
-    const scoutText = `스카우트팀 평가 오차 배율 ×${scale.toFixed(2)} (낮을수록 정확).`;
+    const snapshot = this.scouting.get(p.id)!;
+    const allRatings = own ? currentRatings(p) : {};
+    const allRanges = own ? {} : snapshotRanges(snapshot, meta.currentDate);
+    const neighbors = this.repo.getPlayers().filter(x => !x.retired && x.isPitcher === p.isPitcher && x.clubId === p.clubId).sort((a,b) => a.id - b.id);
+    const index = neighbors.findIndex(x => x.id === p.id);
+    const limit = p.isPitcher ? PROBABILITY_CONFIG.form.recentWindow.pitcherPa : PROBABILITY_CONFIG.form.recentWindow.batterPa;
+    const sample = this.forms.sampleCount(meta.season, meta.currentDate, p.id, p.isPitcher);
     const record = this.records.playerRecord(meta, p);
     // 스프레이 차트: 이번 시즌 기록이 없으면 직전 시즌(압축된 시즌은 합계 표에서 읽는다, D-106)
     let spray: PlayerDetailView['spray'] = null;
@@ -1281,14 +1335,21 @@ export class GameService {
     }
     return {
       ...base,
+      scouting: { confidence: snapshot.confidence, date: snapshot.date, observer: snapshot.observer, stale: diffDays(meta.currentDate, snapshot.date) >= SCOUTING.staleDays, reports: snapshot.evidence.length - 1, nextDate: snapshot.confidence > 0 ? addDays(snapshot.date, SCOUTING.cooldownDays) : meta.currentDate, apCost: SCOUTING.ap },
+      traits: snapshot.traits.length ? snapshot.traits : [{ label: '성향', text: '판단 유보 — 관찰 근거가 부족합니다.' }],
+      pitches: (p.pitches ?? []).map((pitch, i) => ({ type: pitch.type, values: Object.fromEntries(Object.entries(allRatings).filter(([k]) => k.startsWith('pitch_' + i + '_')).map(([k,v]) => [k.split('_').slice(2).join('_'),v])), ranges: Object.fromEntries(Object.entries(allRanges).filter(([k]) => k.startsWith('pitch_' + i + '_')).map(([k,v]) => [k.split('_').slice(2).join('_'),v])) })),
+      recentSample: { count: sample, limit, sufficient: sample >= limit },
+      note: this.repo.getPlayerNote(p.id),
+      previousId: neighbors[index - 1]?.id ?? null,
+      nextId: neighbors[index + 1]?.id ?? null,
       birthDate: p.birthDate,
       proSeasons: p.career.proSeasons,
       faServiceYears: p.career.faServiceYears,
       battingStats: !p.isPitcher && bat ? { ...bat, ...battingRates(bat) } : null,
       pitchingStats: p.isPitcher && pit ? { ...pit, IP: pit.OUTS / 3, ...pitchingRates(pit, fipC) } : null,
       observationNote: own
-        ? '우리 구단 선수라 현재 능력치를 정확히 보여줍니다. 잠재력·성장·성향은 육성팀 관찰로 추정합니다(다음 단계).'
-        : `타 구단 선수라 평가 오차가 큽니다. 실제 능력과 다를 수 있습니다. ${scoutText}`,
+        ? '현재 능력치는 실제값입니다. 히든 성향은 관찰에 따른 의견입니다.'
+        : '스카우트 추정 범위입니다. 실제 능력을 반드시 포함하지는 않습니다.',
       exactRatings: own,
       record,
       spray,

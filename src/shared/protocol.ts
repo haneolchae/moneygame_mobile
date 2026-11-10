@@ -176,8 +176,10 @@ export interface PlayerListItem {
   bats: string;
   throws: string;
   salaryWon: number;
-  /** 우리 구단 스카우트의 관찰 평가 (1~100) */
+  /** 우리 선수 실제값만. 타 구단·시장 선수는 빈 객체이며 ratingRanges만 전달한다. */
   ratings: Record<string, number>;
+  ratingRanges: Record<string, { low: number; high: number }>;
+  watched: boolean;
   stats: Record<string, StatValue>;
   /** 이번 스토브리그 FA 자격 선수 */
   faEligible: boolean;
@@ -205,7 +207,15 @@ export interface FieldingLineView {
   FPCT: number | null;
 }
 
+export interface PlayerNoteView { text: string; watched: boolean; updatedAt: string | null }
 export interface PlayerDetailView extends PlayerListItem {
+  scouting: { confidence: number; date: string; observer: string; stale: boolean; reports: number; nextDate: string; apCost: number };
+  traits: Array<{ label: string; text: string }>;
+  pitches: Array<{ type: string; values: Record<string, number>; ranges: Record<string, { low: number; high: number }> }>;
+  recentSample: { count: number; sufficient: boolean; limit: number };
+  note: PlayerNoteView;
+  previousId: number | null;
+  nextId: number | null;
   birthDate: string;
   proSeasons: number;
   faServiceYears: number;
@@ -635,6 +645,8 @@ export interface RequestMap {
   'game.advance': { payload: { mode: 'day' | 'week' | 'untilSeasonEnd' }; result: AdvanceResult };
   'game.players': { payload: PlayerQuery; result: PlayerListItem[] };
   'game.player': { payload: { playerId: number }; result: PlayerDetailView };
+  'player.note': { payload: { playerId: number; text: string; watched: boolean }; result: PlayerNoteView };
+  'player.scout': { payload: { playerId: number }; result: PlayerDetailView };
   'game.standings': { payload: void; result: StandingView[] };
   'game.schedule': { payload: { clubId?: number; month?: string }; result: FixtureView[] };
   'game.boxScore': { payload: { fixtureId: number }; result: BoxScoreView };
@@ -682,6 +694,8 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'game.advance',
   'game.players',
   'game.player',
+  'player.note',
+  'player.scout',
   'game.standings',
   'game.schedule',
   'game.boxScore',

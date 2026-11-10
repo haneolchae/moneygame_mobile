@@ -1,3 +1,5 @@
+import type { ScoutingSnapshot } from '../engine/scouting';
+import type { PlayerNote } from '../game/ports';
 // GameRepository의 SQLite 구현 (node:sqlite).
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type { GameDate } from '../engine/calendar';
@@ -28,6 +30,22 @@ export class SqliteGameRepository implements GameRepository {
     return s;
   }
 
+  getScouting(clubId: number): ScoutingSnapshot[] {
+    return (this.stmt('SELECT data FROM scouting_snapshots WHERE club_id = ?').all(clubId) as Row[]).map(r => JSON.parse(String(r.data)));
+  }
+  saveScouting(s: ScoutingSnapshot): void {
+    this.tx(() => {
+      this.stmt('INSERT INTO scouting_snapshots VALUES (?, ?, ?) ON CONFLICT(club_id, player_id) DO UPDATE SET data = excluded.data').run(s.clubId, s.playerId, JSON.stringify(s));
+      this.stmt('INSERT OR REPLACE INTO scouting_history VALUES (?, ?, ?, ?)').run(s.clubId, s.playerId, s.date, JSON.stringify(s));
+    });
+  }
+  getPlayerNote(playerId: number): PlayerNote {
+    const r = this.stmt('SELECT * FROM player_notes WHERE player_id = ?').get(playerId) as Row | undefined;
+    return r ? { text: String(r.text), watched: !!r.watched, updatedAt: String(r.updated_at) } : { text: '', watched: false, updatedAt: null };
+  }
+  savePlayerNote(playerId: number, n: PlayerNote): void {
+    this.stmt('INSERT INTO player_notes VALUES (?, ?, ?, ?) ON CONFLICT(player_id) DO UPDATE SET text = excluded.text, watched = excluded.watched, updated_at = excluded.updated_at').run(playerId, n.text, n.watched ? 1 : 0, n.updatedAt);
+  }
   private txDepth = 0;
 
   /** 중첩 가능한 트랜잭션: 가장 바깥 호출만 BEGIN·COMMIT 한다. 실패하면 전체가 취소된다. */

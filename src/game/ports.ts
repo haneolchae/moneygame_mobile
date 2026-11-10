@@ -1,3 +1,4 @@
+import type { ScoutingSnapshot } from '../engine/scouting';
 // 게임 진행 계층이 저장 계층에 요구하는 기능. SQLite 구현은 persistence에 있다.
 // 이 인터페이스 덕분에 게임 진행 로직은 저장 방식(SQLite 드라이버 등)을 모른다.
 import type { GameDate } from '../engine/calendar';
@@ -273,7 +274,12 @@ export interface TeamSeasonTotals {
   runsAgainst: number;
 }
 
+export interface PlayerNote { text: string; watched: boolean; updatedAt: string | null }
 export interface GameRepository {
+  getScouting(clubId: number): ScoutingSnapshot[];
+  saveScouting(snapshot: ScoutingSnapshot): void;
+  getPlayerNote(playerId: number): PlayerNote;
+  savePlayerNote(playerId: number, note: PlayerNote): void;
   /** 여러 쓰기를 하나의 변경으로 묶는다. 중첩 호출은 바깥 트랜잭션에 합쳐진다. */
   transaction<T>(fn: () => T): T;
   savePlayers(players: PlayerTruth[]): void;

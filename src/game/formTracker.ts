@@ -44,6 +44,20 @@ export class FormTracker {
 
   constructor(private readonly repo: GameRepository) {}
 
+  sampleCount(season: number, date: GameDate, playerId: number, pitcher: boolean): number {
+    this.load(season, date);
+    const track = (pitcher ? this.pit : this.bat).get(playerId);
+    if (!track) return 0;
+    const today = dayNumber(date);
+    const max = pitcher ? PROBABILITY_CONFIG.form.recentWindow.pitcherPa : PROBABILITY_CONFIG.form.recentWindow.batterPa;
+    let count = 0;
+    for (let i = track.days.length - 1; i >= 0 && count < max; i--) {
+      const age = today - track.days[i]!;
+      if (age > 0 && age <= PROBABILITY_CONFIG.form.recentWindow.maxDays) count++;
+    }
+    return count;
+  }
+
   /** date 경기에 쓸 선수별 표본(date 전날까지 확정된 기록만, 리그 수준 중립화 뒤) */
   formsFor(season: number, date: GameDate, players: readonly PlayerTruth[], env: LeagueEnvironment): DayForms {
     this.load(season, date);

@@ -92,6 +92,12 @@ export class Dispatcher {
         return this.game().players(payload as RequestMap['game.players']['payload']) as R;
       case 'game.player':
         return this.game().player((payload as RequestMap['game.player']['payload']).playerId) as R;
+      case 'player.note': {
+        const p = payload as RequestMap['player.note']['payload'];
+        return this.game().savePlayerNote(p.playerId, p.text, p.watched, this.now()) as R;
+      }
+      case 'player.scout':
+        return this.game().scoutPlayer((payload as RequestMap['player.scout']['payload']).playerId) as R;
       case 'game.standings':
         return this.game().standings() as R;
       case 'game.schedule': {

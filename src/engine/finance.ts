@@ -66,7 +66,7 @@ export const FINANCE_BASE = {
   broadcastGrowthBp: 500, // CONFIRMED D-036: 매년 5%
   broadcastRenewalEveryYears: 3,
   broadcastFirstContractYear: 2027,
-  broadcastRenewalBpAssumed: 1500, // ASSUMPTION: 관중 추세 모델 전까지 10~20%의 중간값
+  broadcastRenewalBpAssumed: 1500, // ASSUMPTION(D-112): 관중 추세 모델 전까지 10~20%의 중간값
   kboShare: 15 * EOK,
   staffPayroll: 60 * EOK, // 2b까지 쓰던 임시 총액. 2c부터 장부는 실제 직원 연봉 합계를 쓰고, 이 값은 비교용 기준으로만 남긴다 (D-038, D-076)
   generalAdmin: 15 * EOK,

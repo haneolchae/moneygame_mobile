@@ -1,3 +1,5 @@
+import { ratingText } from '../PlayerAbilities';
+import { playerFocus } from '../playerFocus';
 import { useEffect, useMemo, useState } from 'react';
 import type { PlayerListItem, PlayerQuery } from '../../shared/protocol';
 import type { Nav } from '../App';
@@ -12,11 +14,11 @@ interface Column {
 }
 
 const HITTER_COLUMNS: Column[] = [
-  { key: 'contact', label: '컨택', render: (p) => int(p.ratings.contact) },
-  { key: 'eye', label: '선구', render: (p) => int(p.ratings.eye) },
-  { key: 'power', label: '장타', render: (p) => int(p.ratings.power) },
-  { key: 'speed', label: '주력', render: (p) => int(p.ratings.speed) },
-  { key: 'def_fielding', label: '수비', render: (p) => int(p.ratings.def_fielding) },
+  { key: 'contact', label: '컨택', render: (p) => ratingText(p, 'contact') },
+  { key: 'eye', label: '선구', render: (p) => ratingText(p, 'eye') },
+  { key: 'power', label: '장타', render: (p) => ratingText(p, 'power') },
+  { key: 'speed', label: '주력', render: (p) => ratingText(p, 'speed') },
+  { key: 'def_fielding', label: '수비', render: (p) => ratingText(p, 'def_fielding') },
   { key: 'G', label: 'G', render: (p) => int(p.stats.G) },
   { key: 'PA', label: 'PA', render: (p) => int(p.stats.PA) },
   { key: 'AVG', label: 'AVG', render: (p) => rate3(p.stats.AVG), title: '타율 = H / AB' },
@@ -26,10 +28,10 @@ const HITTER_COLUMNS: Column[] = [
 ];
 
 const PITCHER_COLUMNS: Column[] = [
-  { key: 'stuff', label: '구위', render: (p) => int(p.ratings.stuff) },
-  { key: 'control', label: '제구', render: (p) => int(p.ratings.control) },
-  { key: 'groundball', label: '땅볼', render: (p) => int(p.ratings.groundball) },
-  { key: 'stamina', label: '지구력', render: (p) => int(p.ratings.stamina) },
+  { key: 'stuff', label: '구위', render: (p) => ratingText(p, 'stuff') },
+  { key: 'control', label: '제구', render: (p) => ratingText(p, 'control') },
+  { key: 'groundball', label: '땅볼', render: (p) => ratingText(p, 'groundball') },
+  { key: 'stamina', label: '지구력', render: (p) => ratingText(p, 'stamina') },
   { key: 'G', label: 'G', render: (p) => int(p.stats.G) },
   { key: 'IP', label: 'IP', render: (p) => innings(p.stats.IP) },
   { key: 'W', label: 'W', render: (p) => int(p.stats.W) },
@@ -44,6 +46,7 @@ export function Players({ nav }: { nav: Nav }) {
   const [rows, setRows] = useState<PlayerListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [watchedOnly, setWatchedOnly] = useState(false);
   const clubs = useMemo(() => nav.dashboard?.standings.map((s) => s.club).sort((a, b) => a.id - b.id) ?? [], [nav.dashboard]);
 
   useEffect(() => {
@@ -64,6 +67,11 @@ export function Players({ nav }: { nav: Nav }) {
   }, [query, nav]);
 
   const columns = query.group === 'pitchers' ? PITCHER_COLUMNS : HITTER_COLUMNS;
+  useEffect(() => {
+    if (loading || rows.length === 0 || playerFocus.id === null) return;
+    const row = document.getElementById(`player-row-${playerFocus.id}`);
+    if (row) { row.focus(); playerFocus.id = null; }
+  }, [rows, loading]);
   const sortBy = (key: string) => setQuery((q) => ({ ...q, sortKey: key, sortDesc: q.sortKey === key ? !q.sortDesc : key !== 'name' && key !== 'ERA' && key !== 'age' }));
   const arrow = (key: string) => (query.sortKey === key ? (query.sortDesc ? ' ▼' : ' ▲') : '');
 
@@ -90,8 +98,9 @@ export function Players({ nav }: { nav: Nav }) {
           ))}
         </div>
         <input placeholder="이름 검색" value={query.search ?? ''} onChange={(e) => setQuery((q) => ({ ...q, search: e.target.value }))} />
+        <label><input type="checkbox" checked={watchedOnly} onChange={e => setWatchedOnly(e.target.checked)} /> 관심 선수만</label>
         <span className="muted small">
-          {rows.length}명 · {loading ? '불러오는 중' : `${elapsed.toFixed(0)}ms`} · 능력(1~100): 우리 선수는 실제 능력치, 타 구단 선수는 스카우트 평가
+          {rows.length}명 · {loading ? '불러오는 중' : `${elapsed.toFixed(0)}ms`} · 능력(1~100): 우리 선수는 실제 능력치, 타 구단 선수는 스카우트 추정 범위
         </span>
       </div>
       <div className="table-wrap">
@@ -114,10 +123,10 @@ export function Players({ nav }: { nav: Nav }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((p) => (
-              <tr key={p.id} className="clickable" onClick={() => nav.go({ name: 'player', playerId: p.id })}>
+            {rows.filter(p => !watchedOnly || p.watched).map((p) => (
+              <tr key={p.id} id={`player-row-${p.id}`} tabIndex={0} className="clickable" onClick={() => nav.go({ name: 'player', playerId: p.id })} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav.go({ name: 'player', playerId: p.id }); } }}>
                 <td className="sticky">
-                  {p.name} {p.franchise && <span className="badge star">간판</span>} {p.faEligible && <span className="badge fa">FA</span>}
+                  {p.watched ? "★ " : ""}{p.name} {p.franchise && <span className="badge star">간판</span>} {p.faEligible && <span className="badge fa">FA</span>}
                 </td>
                 <td>{p.club?.shortName ?? 'FA'}</td>
                 <td>{POSITION_LABELS[p.position] ?? p.position}</td>

@@ -18,7 +18,8 @@
     "sim": "node scripts/build.mjs && node scripts/run-electron-node.mjs dist/cli/simulate.js",
     "test:electron": "node scripts/run-electron-node.mjs node_modules/vitest/vitest.mjs run",
     "selftest": "npm run build && node scripts/selftest.mjs",
-    "calibrate": "esbuild scripts/calibrate-model.ts --bundle --platform=node --format=cjs --outfile=dist/cli/calibrate.js --log-level=warning && node dist/cli/calibrate.js"
+    "calibrate": "esbuild scripts/calibrate-model.ts --bundle --platform=node --format=cjs --outfile=dist/cli/calibrate.js --log-level=warning && node dist/cli/calibrate.js",
+    "validate:form": "esbuild scripts/validate-form.ts --bundle --platform=node --format=cjs --outfile=dist/cli/validate-form.js --log-level=warning && node dist/cli/validate-form.js"
   },
   "dependencies": {
     "react": "^19.3.1",

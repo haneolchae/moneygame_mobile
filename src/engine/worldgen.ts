@@ -399,7 +399,7 @@ export function generateDomesticFreePool(rng: Rng, season: number, firstId: numb
   return pool;
 }
 
-/** FA 자격 기준 연수 (ASSUMPTION: KBO 등록일수 규정 원문 확인 전 단순화) */
+/** FA 자격 기준 연수 (ASSUMPTION(D-085): KBO 등록일수 규정 원문 확인 전 단순화) */
 export const FA_SERVICE_YEARS_REQUIRED = 8;
 
 /**

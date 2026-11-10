@@ -177,6 +177,9 @@ table.grid td.score { font-weight: 700; width: 90px; }
 .rating { display: grid; grid-template-columns: 80px 1fr 32px 40px; align-items: center; gap: 8px; }
 .rating .bar { height: 8px; background: #ebe7da; border-radius: 4px; overflow: hidden; }
 .rating .bar span { display: block; height: 100%; background: var(--green-2); }
+.player-rating { grid-template-columns: 100px 1fr 100px; }
+.player-rating .num { white-space: nowrap; }
+textarea { font: inherit; color: inherit; background: var(--paper, #fffdf7); border: 1px solid #b9b4a5; border-radius: 4px; padding: 12px; }
 .plays { columns: 2; font-size: 13px; padding-left: 22px; }
 .plays li { break-inside: avoid; margin-bottom: 2px; }
 .linescore td, .linescore th { min-width: 28px; }

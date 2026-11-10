@@ -9,7 +9,8 @@ import type { DatabaseSync } from 'node:sqlite';
  * 10: 지난 시즌 상세 기록 압축(D-106). 선수별 시즌 타격·투구·수비 합계와 스프레이 차트 합계 표.
  * 출시 전에는 세이브 호환을 보장하지 않는다(D-094): 이전 버전 저장본은 변환하지 않고 불러오기 때 이유를 안내하고 거부한다.
  */
-export const SCHEMA_VERSION = 10;
+// 11: 고정 관측·보고서 이력·세이브별 메모와 관심 등록(D-113).
+export const SCHEMA_VERSION = 11;
 
 const SCHEMA_V3 = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -329,6 +330,9 @@ export function createSchema(db: DatabaseSync): void {
     db.exec(SCHEMA_V7_ADDITIONS);
     db.exec(SCHEMA_V9_ADDITIONS);
     db.exec(SCHEMA_V10_ADDITIONS);
+    db.exec(`CREATE TABLE scouting_snapshots (club_id INTEGER NOT NULL, player_id INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (club_id, player_id));
+      CREATE TABLE scouting_history (club_id INTEGER NOT NULL, player_id INTEGER NOT NULL, date TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (club_id, player_id, date));
+      CREATE TABLE player_notes (player_id INTEGER PRIMARY KEY, text TEXT NOT NULL, watched INTEGER NOT NULL, updated_at TEXT NOT NULL);`);
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {
