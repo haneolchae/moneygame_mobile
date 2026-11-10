@@ -633,6 +633,20 @@ export type TicketPolicyView = 'low' | 'normal' | 'high';
 export type FacilityKindView = 'stadium' | 'training' | 'rehab' | 'scouting';
 export type CampaignKindView = 'family' | 'local' | 'online' | 'fanEvent';
 
+export interface SponsorRowView {
+  id: string;
+  slot: 'main' | 'sub';
+  brand: string;
+  industry: string;
+  tier: string;
+  style: string;
+  season: number;
+  guaranteedWon: number;
+  incentiveWon: number;
+  incentive: string;
+  obligation: string;
+}
+
 export interface BusinessView {
   date: string;
   club: { name: string; capacity: number };
@@ -646,6 +660,14 @@ export interface BusinessView {
   /** 6b 팬 만족도(0~100). 20 미만은 팬 반발, dismissDate까지 recoverAt 이상으로 회복하지 못하면 해임 */
   fans: { satisfaction: number; backlash: boolean; lowSince: string | null; dismissDate: string | null; recoverAt: number };
   campaignAp: number;
+  /** 6c 스폰서: 계약과 이번 스토브리그 제안 */
+  sponsors: {
+    signAp: number;
+    open: boolean;
+    note: string;
+    contracts: Array<SponsorRowView & { by: string }>;
+    offers: Array<SponsorRowView & { signReason: string | null }>;
+  };
   campaigns: Array<{ kind: CampaignKindView; label: string; weeks: number; costWon: number; demandPct: number; satisfaction: number; active: { start: string; end: string } | null; startReason: string | null }>;
   facilities: Array<{
     kind: FacilityKindView;
@@ -908,6 +930,7 @@ export interface RequestMap {
   'business.setTicketPolicy': { payload: { policy: TicketPolicyView }; result: { message: string; view: BusinessView } };
   'business.startFacility': { payload: { kind: FacilityKindView }; result: { message: string; view: BusinessView } };
   'business.startCampaign': { payload: { kind: CampaignKindView }; result: { message: string; view: BusinessView } };
+  'business.signSponsor': { payload: { offerId: string }; result: { message: string; view: BusinessView } };
   'business.cancelFacility': { payload: { kind: FacilityKindView }; result: { message: string; view: BusinessView } };
   'trade.view': { payload: { clubId: number }; result: TradeView };
   'trade.preview': { payload: { clubId: number } & TradePackageView; result: TradePreviewView };
@@ -979,6 +1002,7 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'business.setTicketPolicy',
   'business.startFacility',
   'business.startCampaign',
+  'business.signSponsor',
   'business.cancelFacility',
   'trade.view',
   'trade.preview',

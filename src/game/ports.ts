@@ -3,6 +3,7 @@ import type { ScoutingSnapshot } from '../engine/scouting';
 // 이 인터페이스 덕분에 게임 진행 로직은 저장 방식(SQLite 드라이버 등)을 모른다.
 import type { GameDate } from '../engine/calendar';
 import type { Campaign, ClubFacilities, FanState, TicketPolicy } from '../engine/business';
+import type { SponsorContract, SponsorOffer } from '../engine/sponsors';
 import type { ContractOffer, FaGrade } from '../engine/contracts';
 import type { LedgerCategory, LedgerEntry } from '../engine/finance';
 import type { GameResult } from '../engine/gamesim';
@@ -87,6 +88,11 @@ export interface GameMeta {
   /** 6b 팬 만족도·진행 캠페인(D-147): 구단 ID → 값 */
   fans?: Record<string, FanState>;
   campaigns?: Record<string, Campaign[]>;
+  /** 6c 스폰서(D-149): 구단별 계약, 우리 구단이 받은 제안, 시즌별 실행 캠페인 수·스폰서 순수입 */
+  sponsors?: Record<string, SponsorContract[]>;
+  sponsorOffers?: SponsorOffer[];
+  campaignCounts?: Record<string, Record<string, number>>;
+  sponsorTotals?: Record<string, Record<string, number>>;
   /** D-136 계약 세션: 선수 ID → 이번 주 세션(주·제안 횟수) */
   contractSessions?: Record<string, { weekId: string; count: number }>;
 }

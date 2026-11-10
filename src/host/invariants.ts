@@ -1,6 +1,6 @@
 // 규칙 위반 검사. 장기 실행·테스트·자체 점검에서 같은 검사를 쓴다.
 import { seasonKeyDates } from '../engine/schedule';
-import { DEVELOPMENT, FACILITY, LEAGUE, ROSTER_MOVE, TRAINING } from '../engine/config';
+import { DEVELOPMENT, FACILITY, LEAGUE, ROSTER_MOVE, SPONSOR, TRAINING } from '../engine/config';
 import { FACILITY_KINDS } from '../engine/business';
 import { activePlan, planError } from '../engine/training';
 import { devSnapshot, VELOCITY } from '../engine/development';
@@ -248,6 +248,15 @@ export function checkBusiness(repo: GameRepository): string[] {
   for (const [id, list] of Object.entries(meta.campaigns ?? {})) {
     const live = list.filter((c) => c.end >= meta.currentDate).map((c) => c.kind);
     if (new Set(live).size !== live.length) errors.push(`캠페인 중복: 구단 ${id}`);
+  }
+  // 6c 사전 등록 ①(D-150): 구단당 메인 1·서브 3 이하, 업종 중복 없음, 계약 시즌은 현재 또는 다음 시즌
+  for (const [id, list] of Object.entries(meta.sponsors ?? {})) {
+    for (const season of new Set(list.map((c) => c.season))) {
+      const same = list.filter((c) => c.season === season);
+      if (season !== meta.season && season !== meta.season + 1) errors.push(`스폰서 계약 시즌 오류: 구단 ${id} ${season}`);
+      if (same.filter((c) => c.slot === 'main').length > SPONSOR.mainSlots || same.filter((c) => c.slot === 'sub').length > SPONSOR.subSlots) errors.push(`스폰서 슬롯 초과: 구단 ${id} ${season}`);
+      if (new Set(same.map((c) => c.industry)).size !== same.length) errors.push(`스폰서 업종 중복: 구단 ${id} ${season}`);
+    }
   }
   for (const [id, f] of Object.entries(meta.facilities ?? {})) {
     for (const kind of FACILITY_KINDS) {

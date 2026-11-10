@@ -112,6 +112,81 @@ export function Business({ nav }: { nav: Nav }) {
         </div>
       </section>
 
+      <section className="panel">
+        <div className="panel-head">
+          <h2>스폰서</h2>
+          <span className="meta">메인 1·서브 3 · 1년 계약 · 체결 행동력 {v.sponsors.signAp} · 같은 업종은 한 자리 · {v.sponsors.note}</span>
+        </div>
+        <div className="table-wrap" style={{ maxHeight: 360, border: 'none', borderRadius: 0 }}>
+          <table className="grid dense">
+            <thead>
+              <tr>
+                <th>구분</th>
+                <th>브랜드</th>
+                <th>업종</th>
+                <th>유형</th>
+                <th className="num">보장액</th>
+                <th>인센티브</th>
+                <th>구단 의무</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody>
+              {v.sponsors.contracts.map((c) => (
+                <tr key={c.id} className="mine">
+                  <td>{c.slot === 'main' ? '메인' : '서브'}</td>
+                  <td>{c.brand}</td>
+                  <td>{c.industry}</td>
+                  <td>{c.style}</td>
+                  <td className="num amount-pos">{won(c.guaranteedWon)}</td>
+                  <td>
+                    {won(c.incentiveWon)} · {c.incentive}
+                  </td>
+                  <td>{c.obligation}</td>
+                  <td>
+                    <span className="badge rec">{c.season} 계약 · {c.by}</span>
+                  </td>
+                </tr>
+              ))}
+              {v.sponsors.offers
+                .filter((o) => !v.sponsors.contracts.some((c) => c.id === o.id))
+                .map((o) => (
+                  <tr key={o.id}>
+                    <td>{o.slot === 'main' ? '메인' : '서브'}</td>
+                    <td>
+                      {o.brand} <span className="muted small">인지도 {o.tier}</span>
+                    </td>
+                    <td>{o.industry}</td>
+                    <td>{o.style}</td>
+                    <td className="num">{won(o.guaranteedWon)}</td>
+                    <td>
+                      {won(o.incentiveWon)} · {o.incentive}
+                    </td>
+                    <td>{o.obligation}</td>
+                    <td>
+                      {o.signReason ? (
+                        <span className="small reason">{o.signReason}</span>
+                      ) : (
+                        <button className="small" disabled={busy} onClick={() => void run(() => api('business.signSponsor', { offerId: o.id }))}>
+                          체결 (행동력 {v.sponsors.signAp})
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              {v.sponsors.contracts.length === 0 && v.sponsors.offers.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="muted">
+                    계약과 제안이 없습니다. {v.sponsors.note}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="panel-body muted small">보장액은 체결 때 받고, 인센티브와 의무 미달 반환은 시즌 마감 때 정산합니다.</div>
+      </section>
+
       <div className="columns even">
         <section className="panel">
           <div className="panel-head">
@@ -217,7 +292,7 @@ export function Business({ nav }: { nav: Nav }) {
                 )}
               </div>
             ))}
-            <p className="muted small">시즌권·좌석 증설·시설 노후도·스폰서·굿즈는 다음 차수에서 추가됩니다.</p>
+            <p className="muted small">시즌권·좌석 증설·시설 노후도·굿즈는 다음 차수에서 추가됩니다.</p>
           </div>
         </section>
       </div>

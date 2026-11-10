@@ -52,9 +52,21 @@ async function main() {
   const org = await call<OrganizationView>('org.view');
   for (const p of org.policies.filter((x) => x.team === 'ops' || x.team === 'admin')) await call('org.setPolicy', { ...p, mode: 'auto' } satisfies DelegationPolicyView);
 
+  // 6c(D-149): 스토브리그 제안 기간에 주마다 스폰서 1건을 직접 체결한다(보장액이 큰 제안부터). 남은 자리는 1/31 기본 계약이 채운다.
+  const trySponsor = async () => {
+    const bv = await call<BusinessView>('business.view');
+    const pick = bv.sponsors.offers.filter((o) => !o.signReason).sort((a, b) => b.guaranteedWon - a.guaranteedWon)[0];
+    if (!pick) return;
+    try {
+      await call('business.signSponsor', { offerId: pick.id });
+    } catch {
+      // 행동력 부족 등 규칙상 거부
+    }
+  };
   const tStove = performance.now();
   let stoveWeeks = 0;
   while ((await call<DashboardView>('game.dashboard')).phase === 'stove') {
+    await trySponsor();
     await advance('week');
     stoveWeeks++;
   }
@@ -87,6 +99,7 @@ async function main() {
             if (!String((e as Error).message).includes('행동력')) rebuildTried = true;
           }
         }
+        await trySponsor();
         await advance('week');
       }
     stoveErrors.push(...[...checkRosterLimits(d.saves.repository()), ...checkRosterComposition(d.saves.repository())].map((e) => `스토브리그 후 ${e}`));
@@ -264,6 +277,10 @@ async function main() {
     const ticketEok2026 = +(attSum.ticket / 10 / infl / 1e8).toFixed(1);
     if (occupancy < 0.55 || occupancy > 0.85) inv.push(`사전 등록 6a ② 위반: 리그 평균 점유율 ${occupancy}`);
     if (ticketEok2026 < 100 || ticketEok2026 > 200) inv.push(`사전 등록 6a ③ 위반: 구단당 입장수입(2026 기준) ${ticketEok2026}억`);
+    // 6c 사전 등록 ②(D-150): 정산이 끝난 시즌(직전 시즌)의 구단당 스폰서 순수입 리그 평균 2026 기준 20~70억. 현재 시즌 정산은 포스트시즌 뒤라 다음 행에서 판정한다
+    const spPrev = Object.values(repo5.getMeta().sponsorTotals?.[String(dash.season - 1)] ?? {});
+    const sponsorEok2026 = spPrev.length && s > 1 ? +(spPrev.reduce((a, b) => a + b, 0) / 10 / (infl / (1 + (repo5.getMeta().inflationBp[String(dash.season)] ?? 0) / 10_000)) / 1e8).toFixed(1) : null;
+    if (sponsorEok2026 !== null && (sponsorEok2026 < 20 || sponsorEok2026 > 70)) inv.push(`사전 등록 6c ② 위반: 구단당 스폰서 순수입(2026 기준) ${sponsorEok2026}억`);
     // 6b 사전 등록 ②(D-148): 시즌 종료 시 리그 평균 만족도 40~60
     const fanVals = Object.values(repo5.getMeta().fans ?? {}).map((f) => f.satisfaction);
     const fanAvg = fanVals.length ? +(fanVals.reduce((a, b) => a + b, 0) / fanVals.length).toFixed(1) : null;
@@ -277,6 +294,7 @@ async function main() {
       occupancy,
       ticketEok2026,
       fanAvg,
+      sponsorEok2026,
       userFan: repo5.getMeta().fans?.['1']?.satisfaction ?? null,
       facilityLevelAvg: facLevels.length ? +(facLevels.reduce((a, b) => a + b, 0) / facLevels.length).toFixed(1) : null,
       userFacilityLevels: Object.values(repo5.getMeta().facilities?.['1']?.levels ?? {}).join('/'),

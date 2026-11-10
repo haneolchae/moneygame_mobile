@@ -36,6 +36,7 @@ import { Growth } from './growth';
 import { TrainingOps } from './training';
 import { TradeOps } from './trade';
 import { BusinessOps } from './business';
+import { SponsorOps } from './sponsors';
 import type { CampaignKind, FacilityKind, TicketPolicy } from '../engine/business';
 import { HealthOps } from './health';
 import { DEV_LABEL, devSnapshot, VELOCITY } from '../engine/development';
@@ -255,6 +256,7 @@ export class GameService {
   readonly training: TrainingOps;
   readonly trades: TradeOps;
   readonly business: BusinessOps;
+  readonly sponsors: SponsorOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -311,6 +313,7 @@ export class GameService {
     // 6a 시설 효과(D-141): 재활센터 → 메디컬 역량, 실내 훈련장 → 집중 훈련 효과
     this.health = new HealthOps(repo, this.rosterOps, (id) => Math.min(1, this.org.medicalQuality(id) + this.business.rehabBoost(id)));
     this.training = new TrainingOps(repo, this.org, (id) => this.business.trainingBoost(id));
+    this.sponsors = new SponsorOps(repo, this.clubMap, this.org, this.business);
     this.trades = new TradeOps(repo, this.org, this.rosterOps, (id) => this.standings().find((s) => s.club.id === id)?.rank ?? null);
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
@@ -431,6 +434,10 @@ export class GameService {
     const biz = this.business.onDay(this.meta(), date);
     ledger.push(...biz.ledger);
     inbox.push(...biz.inbox);
+    // 6c(D-149): 스토브리그 스폰서 제안 도착·AI 선택·기본 계약
+    const sp = this.sponsors.onDay(this.meta(), date);
+    ledger.push(...sp.ledger);
+    inbox.push(...sp.inbox);
     for (const club of this.clubMap.values()) {
       ledger.push(
         ...scheduledEntries({
@@ -523,6 +530,8 @@ export class GameService {
     if (meta.mode === 'season' && after.postseason?.season === meta.season && after.postseason.finishedDate === date) {
       // 4a 연간 성장·노화(D-124): 시즌 마감 직전 1회
       this.repo.addInbox(this.growth.annual(after, date));
+      // 6c 스폰서 시즌 마감 정산(D-149): 인센티브·의무 반환, 계약 종료
+      this.repo.addInbox(this.sponsors.settleSeason(this.meta(), date));
       this.seasonClose.close(after, date);
     }
     // 은퇴 설득 기한·파산 감시
@@ -1542,10 +1551,25 @@ export class GameService {
   // ───────── 6a 관중·티켓·시설 (D-141) ─────────
 
   businessView(): BusinessView {
-    return this.business.view(this.meta());
+    const meta = this.meta();
+    return { ...this.business.view(meta), sponsors: this.sponsors.view(meta) };
+  }
+
+  signSponsor(offerId: string): { message: string; view: BusinessView } {
+    const meta = this.meta();
+    let message = this.sponsors.sign(meta, weekIdFor(meta.currentDate), offerId);
+    // 고가 티켓 금지 의무: 지금 고가 정책이면 보통으로 돌린다
+    const now = this.meta();
+    if (now.ticketPolicy === 'high' && this.sponsors.highPriceBlock(now)) {
+      this.business.setPolicy(now, 'normal');
+      message += ' 티켓 가격 정책을 보통으로 바꿨습니다.';
+    }
+    return { message, view: this.businessView() };
   }
 
   setTicketPolicy(policy: TicketPolicy): { message: string; view: BusinessView } {
+    const block = policy === 'high' ? this.sponsors.highPriceBlock(this.meta()) : null;
+    if (block) throw new GameError('SPONSOR_RULE', block);
     const message = this.business.setPolicy(this.meta(), policy);
     return { message, view: this.businessView() };
   }

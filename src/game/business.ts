@@ -66,6 +66,8 @@ export class BusinessOps {
     const prior = this.priorPct(meta.season);
     const fans: Record<string, FanState> = {};
     const campaigns: Record<string, Campaign[]> = {};
+    // 6c: 시즌별 실행 캠페인 수(스폰서 의무 정산용)
+    const counts: Record<string, number> = { ...(meta.campaignCounts?.[String(meta.season)] ?? {}) };
     let gameOver: GameMeta['gameOver'] | undefined;
     for (const club of this.clubs.values()) {
       const id = String(club.id);
@@ -75,6 +77,7 @@ export class BusinessOps {
       if (!mine && list.length === 0 && this.repo.cashBalance(club.id) >= club.startCash * MARKETING.aiCashFloor) {
         list = MARKETING.aiKinds.map((k) => this.newCampaign(meta, k as CampaignKind, date));
         for (const c of list) ledger.push({ clubId: club.id, date, category: 'marketing', amount: -c.costWon, memo: MARKETING.campaigns[c.kind].label });
+        counts[id] = (counts[id] ?? 0) + list.length;
       }
       campaigns[id] = list;
       const t = season[id];
@@ -96,7 +99,7 @@ export class BusinessOps {
       } else if (!mine) delete next.lowSince;
       fans[id] = next;
     }
-    this.repo.updateMeta({ fans, campaigns, ...(gameOver ? { gameOver } : {}) });
+    this.repo.updateMeta({ fans, campaigns, campaignCounts: { ...(meta.campaignCounts ?? {}), [String(meta.season)]: counts }, ...(gameOver ? { gameOver } : {}) });
     return { ledger, inbox };
   }
 
@@ -121,7 +124,11 @@ export class BusinessOps {
       }
       const cur = this.repo.getMeta();
       const id = String(meta.userClubId);
-      this.repo.updateMeta({ campaigns: { ...(cur.campaigns ?? {}), [id]: [...(cur.campaigns?.[id] ?? []).filter((x) => diffDays(meta.currentDate, x.end) <= 0), c] } });
+      const sk = String(meta.season);
+      this.repo.updateMeta({
+        campaigns: { ...(cur.campaigns ?? {}), [id]: [...(cur.campaigns?.[id] ?? []).filter((x) => diffDays(meta.currentDate, x.end) <= 0), c] },
+        campaignCounts: { ...(cur.campaignCounts ?? {}), [sk]: { ...(cur.campaignCounts?.[sk] ?? {}), [id]: (cur.campaignCounts?.[sk]?.[id] ?? 0) + 1 } },
+      });
       this.repo.addLedger([{ clubId: meta.userClubId, date: meta.currentDate, category: 'marketing', amount: -c.costWon, memo: MARKETING.campaigns[kind].label }]);
       return `${MARKETING.campaigns[kind].label} 캠페인을 시작했습니다. 비용 ${won(c.costWon)}, ${md(c.start)}~${md(c.end)}.`;
     });

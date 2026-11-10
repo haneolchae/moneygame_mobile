@@ -64,9 +64,9 @@ describe('관중·티켓·시설 (6a)', () => {
 
       // 가격 정책: 행동력 0, 다음 홈경기부터 가격 반영
       const apP = await ap();
-      const pv = await call(d, 'business.setTicketPolicy', { policy: 'high' });
+      const pv = await call(d, 'business.setTicketPolicy', { policy: 'low' }); // 고가는 스폰서 의무로 막힐 수 있어(6c) 저가로 확인
       expect(await ap()).toBe(apP);
-      expect(pv.view.ticket.priceWon).toBeGreaterThan(v0.ticket.priceWon);
+      expect(pv.view.ticket.priceWon).toBeLessThan(v0.ticket.priceWon);
 
       await until(d, proj.end > '2027-04-20' ? addDay(proj.end) : '2027-04-21');
       const ledger = repo.ledgerEntries(1, 100000);
@@ -76,7 +76,7 @@ describe('관중·티켓·시설 (6a)', () => {
       const v1 = await call(d, 'business.view');
       expect(v1.facilities.find((f) => f.kind === 'training')).toMatchObject({ level: 2, project: null });
 
-      // 홈경기: 관중 ≤ 좌석 수, 입장수입·매점·관람료 장부, 고가 정책 가격
+      // 홈경기: 관중 ≤ 좌석 수, 입장수입·매점·관람료 장부, 바꾼 정책 가격
       const s = v1.seasons[0]!;
       expect(s.games).toBeGreaterThan(3);
       expect(s.average).toBeLessThanOrEqual(v1.club.capacity);

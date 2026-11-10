@@ -253,6 +253,75 @@ export const ATTENDANCE = {
   },
 } as const;
 
+/**
+ * 6c 스폰서(D-149 초기안). ASSUMPTION(D-149): 금액 규모(mainBaseWon·subBaseWon)는 사용자 결정 대기인 임시값이다.
+ * 금액은 2026 기준(물가 연동).
+ */
+export const SPONSOR = {
+  mainSlots: 1,
+  subSlots: 3,
+  mainOffers: 4,
+  subOffers: 6,
+  mainBaseWon: 2_500_000_000,
+  subBaseWon: 400_000_000,
+  tier: { 상: 1.2, 중: 1.0, 하: 0.8 } as Record<string, number>,
+  styles: {
+    guaranteed: { label: '보장형', guaranteed: 1.1, incentive: 0.1 },
+    balanced: { label: '균형형', guaranteed: 1.0, incentive: 0.25 },
+    performance: { label: '성과형', guaranteed: 0.8, incentive: 0.5 },
+  },
+  incentives: {
+    postseason: '포스트시즌 진출',
+    top3: '정규시즌 3위 이내',
+    occupancy: '시즌 좌석 점유율 75% 이상',
+    satisfaction: '시즌 말 팬 만족도 60 이상',
+  },
+  obligations: {
+    none: '의무 없음',
+    campaigns: '시즌 중 캠페인 2회 이상(미달 시 보장액의 20% 반환)',
+    noHighPrice: '고가 티켓 정책 금지',
+  },
+  topRank: 3,
+  occupancyGoal: 0.75,
+  satisfactionGoal: 60,
+  campaignsRequired: 2,
+  refundShare: 0.2,
+  /** 구단 매력 = 1 + 시장·승률·만족도 보정, 0.7~1.4 */
+  appealMarket: 0.25,
+  appealPct: 0.8,
+  appealSatisfaction: 0.004,
+  appealMin: 0.7,
+  appealMax: 1.4,
+  /** 사업제휴팀 전문성 평균 100일 때 +10% */
+  staffBoostMax: 0.1,
+  /** 일정(스토브리그): 제안 도착·AI 선택(12월), 기본 계약(다음 해 1월) */
+  offerMonthDay: '12-07',
+  aiPickMonthDay: '12-14',
+  defaultMonthDay: '01-31',
+  defaultShare: 0.9,
+  aiIncentiveWeight: 0.4,
+  signAp: 2,
+  /** 후보: 가상 일반 기업 8 + 23 문서 브랜드 일부 8 */
+  candidates: [
+    { brand: '한빛은행', industry: '금융', tier: '상' },
+    { brand: '새솔통신', industry: '통신', tier: '상' },
+    { brand: '다온식품', industry: '식품', tier: '중' },
+    { brand: '가람자동차', industry: '자동차', tier: '상' },
+    { brand: '누리보험', industry: '보험', tier: '중' },
+    { brand: '바른유통', industry: '유통', tier: '중' },
+    { brand: '하늘항공', industry: '항공', tier: '중' },
+    { brand: '미르게임즈', industry: '게임', tier: '하' },
+    { brand: '나이크', industry: '스포츠 의류', tier: '상' },
+    { brand: '아이도스', industry: '스포츠 의류', tier: '상' },
+    { brand: '뉴밸런스', industry: '스포츠 의류', tier: '상' },
+    { brand: '휠러', industry: '스포츠 의류', tier: '중' },
+    { brand: 'HON', industry: '러닝', tier: '상' },
+    { brand: '노스페이즈', industry: '아웃도어', tier: '상' },
+    { brand: '뉴이어', industry: '모자', tier: '상' },
+    { brand: '미주노', industry: '야구 용품', tier: '상' },
+  ] as ReadonlyArray<{ brand: string; industry: string; tier: '상' | '중' | '하' }>,
+} as const;
+
 /** 6b 팬 만족도·캠페인(D-147 초기안, 팬 반발 해임은 D-043). 비용은 2026 기준(물가 연동) */
 export const MARKETING = {
   startSatisfaction: 50,
