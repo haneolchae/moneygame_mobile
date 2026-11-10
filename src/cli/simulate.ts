@@ -91,7 +91,10 @@ async function main() {
       const rv = await call<RosterView>('roster.view');
       if (rv.editable && rv.recommended) {
         await call('roster.setPlan', { mode: 'manual', plan: rv.recommended });
-        const dh = rv.recommended.lineup.find((x) => x.position === 'DH')?.playerId;
+        // 포수 최소 인원(2명) 규칙에 걸리지 않도록 포수가 아닌 계획 타자를 고른다(지명타자 우선).
+        const isC = (id: number) => rv.players.find((p) => p.id === id)?.position === 'C';
+        const lineup = [...rv.recommended.lineup].sort((a, b) => Number(b.position === 'DH') - Number(a.position === 'DH'));
+        const dh = lineup.find((x) => !isC(x.playerId))?.playerId;
         const up = rv.players.find((p) => p.level !== '1군' && !p.isPitcher && p.position !== 'C');
         if (dh && up) await call('roster.move', { promote: [up.id], demote: [dh] });
       }
