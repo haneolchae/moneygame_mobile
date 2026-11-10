@@ -35,6 +35,8 @@ import { exhibitionDates, RosterOps } from './rosterOps';
 import { Growth } from './growth';
 import { TrainingOps } from './training';
 import { TradeOps } from './trade';
+import { BusinessOps } from './business';
+import type { FacilityKind, TicketPolicy } from '../engine/business';
 import { HealthOps } from './health';
 import { DEV_LABEL, devSnapshot, VELOCITY } from '../engine/development';
 import { Postseason, POSTSEASON_MAX_INNINGS, SERIES_LABEL } from './postseason';
@@ -82,6 +84,7 @@ import {
   type TradePreviewView,
   type TradeResultView,
   type TradeView,
+  type BusinessView,
 } from '../shared/protocol';
 import type { CalendarEvent, DayCommit, GameMeta, GameRepository, InboxMessage, StoredGame } from './ports';
 
@@ -251,6 +254,7 @@ export class GameService {
   readonly health: HealthOps;
   readonly training: TrainingOps;
   readonly trades: TradeOps;
+  readonly business: BusinessOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -303,8 +307,10 @@ export class GameService {
     this.seasonClose = new SeasonClose(repo, this.draft);
     this.rosterOps = new RosterOps(repo, this.forms);
     this.growth = new Growth(repo);
-    this.health = new HealthOps(repo, this.rosterOps, (id) => this.org.medicalQuality(id));
-    this.training = new TrainingOps(repo, this.org);
+    this.business = new BusinessOps(repo, this.clubMap);
+    // 6a 시설 효과(D-141): 재활센터 → 메디컬 역량, 실내 훈련장 → 집중 훈련 효과
+    this.health = new HealthOps(repo, this.rosterOps, (id) => Math.min(1, this.org.medicalQuality(id) + this.business.rehabBoost(id)));
+    this.training = new TrainingOps(repo, this.org, (id) => this.business.trainingBoost(id));
     this.trades = new TradeOps(repo, this.org, this.rosterOps, (id) => this.standings().find((s) => s.club.id === id)?.rank ?? null);
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
@@ -420,6 +426,11 @@ export class GameService {
     // 직원 급여는 월말에만 지급하므로 그날만 합계를 낸다.
     const staffPayroll = addDays(date, 1).slice(8, 10) === '01' ? this.org.payrollByClub() : new Map<ClubId, number>();
     const ledger: LedgerEntry[] = [...market.ledger];
+    // 6a(D-141): 정규시즌 홈경기 관중·입장수입·매점·관람료, 시설 공사 지급·완공·유지비·AI 투자
+    ledger.push(...this.business.onGames(meta, date, fixtures, results));
+    const biz = this.business.onDay(this.meta(), date);
+    ledger.push(...biz.ledger);
+    inbox.push(...biz.inbox);
     for (const club of this.clubMap.values()) {
       ledger.push(
         ...scheduledEntries({
@@ -1521,6 +1532,28 @@ export class GameService {
 
   trainStop(playerId: number): OfferResultView {
     return { result: 'accept', message: this.training.stop(this.meta(), playerId) };
+  }
+
+  // ───────── 6a 관중·티켓·시설 (D-141) ─────────
+
+  businessView(): BusinessView {
+    return this.business.view(this.meta());
+  }
+
+  setTicketPolicy(policy: TicketPolicy): { message: string; view: BusinessView } {
+    const message = this.business.setPolicy(this.meta(), policy);
+    return { message, view: this.businessView() };
+  }
+
+  startFacility(kind: FacilityKind): { message: string; view: BusinessView } {
+    const meta = this.meta();
+    const message = this.business.start(meta, weekIdFor(meta.currentDate), kind);
+    return { message, view: this.businessView() };
+  }
+
+  cancelFacility(kind: FacilityKind): { message: string; view: BusinessView } {
+    const message = this.business.cancel(this.meta(), kind);
+    return { message, view: this.businessView() };
   }
 
   // ───────── 5a 트레이드 (D-130·D-131) ─────────

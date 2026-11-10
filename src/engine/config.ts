@@ -226,6 +226,60 @@ export const HEALTH = {
   foreignLongDays: 42,
 } as const;
 
+/** 6a 관중·티켓·매점(D-141 초기안) */
+export const ATTENDANCE = {
+  baseOccupancy: 0.62,
+  marketBase: 0.85,
+  marketSlope: 0.15,
+  loyaltyBase: { 낮음: 0.96, 보통: 1.0, 높음: 1.04, '매우 높음': 1.08 } as Record<string, number>,
+  /** 성적 민감도: 충성도가 높을수록 부진기에도 덜 줄어든다 */
+  loyaltySensitivity: { 낮음: 0.6, 보통: 0.5, 높음: 0.35, '매우 높음': 0.25 } as Record<string, number>,
+  /** 시즌 초 이 경기 수까지 직전 시즌 승률과 섞는다 */
+  blendGames: 20,
+  /** 요일 배율(0=일 … 6=토) */
+  weekday: [1.12, 0.92, 0.92, 0.92, 0.92, 1.05, 1.2] as readonly number[],
+  opponentSlope: 0.08,
+  noise: 0.05,
+  minOccupancy: 0.2,
+  /** 2026 기준 평균 객단가·매점 객단가(원), 매점 구단 몫, 입장수입 관람료 비율 */
+  ticketPriceWon: 15_000,
+  concessionPerHeadWon: 7_000,
+  concessionShareBp: 5_000,
+  gateFeeBp: 1_000,
+  policy: {
+    low: { label: '저가', price: 0.85, demand: 1.08 },
+    normal: { label: '보통', price: 1.0, demand: 1.0 },
+    high: { label: '고가', price: 1.2, demand: 0.88 },
+  },
+} as const;
+
+/** 6a 시설 투자(D-141: 큰 투자 방향은 사용자 확정 D-135, 수치 초기안). 금액은 2026 기준(물가 연동) */
+export const FACILITY = {
+  maxLevel: 5,
+  /** 다음 단계(2~5) 공사비·공사 기간(주) */
+  costWon: { 2: 6_000_000_000, 3: 10_000_000_000, 4: 16_000_000_000, 5: 24_000_000_000 } as Record<number, number>,
+  weeks: { 2: 12, 3: 16, 4: 20, 5: 24 } as Record<number, number>,
+  /** 지급: 착공·중간·완공 (bp) */
+  paymentsBp: [3_000, 4_000, 3_000] as readonly number[],
+  upkeepPerLevelWon: 200_000_000,
+  startAp: 3,
+  /** 구장 시설: 지자체 승인(주) */
+  approvalWeeks: 4,
+  /** AI·장기 실행 드라이버: 투자 뒤에도 남길 현금 = 시작 현금 × 이 값 */
+  aiCashFloor: 0.9,
+  kinds: {
+    stadium: { label: '구장 편의시설', effect: '관중 수요 +3%, 매점 객단가 +5% (단계당)', needsApproval: true },
+    training: { label: '실내 훈련장', effect: '집중 훈련 효과 +4% (단계당)', needsApproval: false },
+    rehab: { label: '재활센터', effect: '메디컬 역량 +0.05 (단계당)', needsApproval: false },
+    scouting: { label: '분석·스카우팅 사무실', effect: '스카우트 추정 오차 −3% (단계당)', needsApproval: false },
+  },
+  stadiumDemandPerLevel: 0.03,
+  stadiumConcessionPerLevel: 0.05,
+  trainingPerLevel: 0.04,
+  rehabPerLevel: 0.05,
+  scoutingPerLevel: 0.03,
+} as const;
+
 /** D-135 모기업 지원금 재협상(방향 사용자 확정, 계수 초기안): 보유 현금 / 시작 현금 R로 다음 시즌 지원 배수 */
 export const SUPPORT_RENEGOTIATION = {
   upper: 1.2,

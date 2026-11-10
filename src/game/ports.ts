@@ -2,6 +2,7 @@ import type { ScoutingSnapshot } from '../engine/scouting';
 // 게임 진행 계층이 저장 계층에 요구하는 기능. SQLite 구현은 persistence에 있다.
 // 이 인터페이스 덕분에 게임 진행 로직은 저장 방식(SQLite 드라이버 등)을 모른다.
 import type { GameDate } from '../engine/calendar';
+import type { ClubFacilities, TicketPolicy } from '../engine/business';
 import type { ContractOffer, FaGrade } from '../engine/contracts';
 import type { LedgerCategory, LedgerEntry } from '../engine/finance';
 import type { GameResult } from '../engine/gamesim';
@@ -77,6 +78,12 @@ export interface GameMeta {
   actionLog?: ActionLogEntry[];
   /** D-135 모기업 지원금 재협상 배수: 시즌 → 구단 ID → bp */
   supportBp?: Record<string, Record<string, number>>;
+  /** 6a 관중 집계(D-141): 시즌 → 구단 ID → 홈경기·관중·수입·승패 */
+  attendance?: Record<string, Record<string, AttendanceTotals>>;
+  /** 우리 구단 티켓 가격 정책 */
+  ticketPolicy?: TicketPolicy;
+  /** 구단 시설 단계·공사: 구단 ID → 시설 */
+  facilities?: Record<string, ClubFacilities>;
   /** D-136 계약 세션: 선수 ID → 이번 주 세션(주·제안 횟수) */
   contractSessions?: Record<string, { weekId: string; count: number }>;
 }
@@ -127,6 +134,16 @@ export interface ActionLogEntry {
   talkClubId: ClubId | null;
   result: 'accept' | 'counter' | 'reject' | 'error';
   message: string;
+}
+
+export interface AttendanceTotals {
+  games: number;
+  total: number;
+  max: number;
+  sellouts: number;
+  ticketWon: number;
+  w: number;
+  l: number;
 }
 
 export interface UserPlanState {

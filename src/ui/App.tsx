@@ -12,6 +12,7 @@ import { leaveGuard } from './playerFocus';
 import { BoxScore } from './screens/BoxScore';
 import { Dashboard } from './screens/Dashboard';
 import { Draft } from './screens/Draft';
+import { Business } from './screens/Business';
 import { Finance } from './screens/Finance';
 import { HallOfFame } from './screens/HallOfFame';
 import { Inbox } from './screens/Inbox';
@@ -43,6 +44,7 @@ export type Route =
   | { name: 'boxScore'; fixtureId: number }
   | { name: 'standings' }
   | { name: 'finance' }
+  | { name: 'business' }
   | { name: 'market' }
   | { name: 'org' }
   | { name: 'team' }
@@ -79,6 +81,7 @@ const MENU: Array<{ route: Route; label: string; icon: string }> = [
   { route: { name: 'compare' }, label: '선수 비교', icon: 'do-compare' },
   { route: { name: 'team' }, label: '팀 기록', icon: 'do-development' },
   { route: { name: 'hof' }, label: '명예의 전당', icon: 'do-star' },
+  { route: { name: 'business' }, label: '사업·시설', icon: 'do-market' },
   { route: { name: 'finance' }, label: '재정', icon: 'do-finance' },
   { route: { name: 'saves' }, label: '저장·불러오기', icon: 'save' },
 ];
@@ -261,6 +264,7 @@ export function App() {
         {route.name === 'boxScore' && <BoxScore nav={nav} fixtureId={route.fixtureId} />}
         {route.name === 'standings' && <Standings nav={nav} />}
         {route.name === 'finance' && <Finance nav={nav} />}
+        {route.name === 'business' && <Business nav={nav} />}
         {route.name === 'market' && <Market nav={nav} />}
         {route.name === 'org' && <Organization nav={nav} />}
         {route.name === 'team' && <TeamRecords nav={nav} />}

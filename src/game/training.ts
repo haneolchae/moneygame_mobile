@@ -25,6 +25,8 @@ export class TrainingOps {
   constructor(
     private readonly repo: GameRepository,
     private readonly org: Organization,
+    /** 6a 실내 훈련장 효과 배수(구단별, 완공 단계만) */
+    private readonly facilityBoost: (clubId: number) => number = () => 1,
   ) {}
 
   private hurt(p: PlayerTruth, date: GameDate): boolean {
@@ -83,7 +85,7 @@ export class TrainingOps {
         const plan = activePlan(p)!;
         const part = coachPart(p, plan.primary);
         const coach = coaches.get(part);
-        const factor = coachFactor(coach?.abilities.coaching ?? T.vacantCoaching, p.hidden.coachability) * overloadFactor(loads.get(part) ?? 0, coachCapacity(coach?.abilities.communication ?? 0));
+        const factor = coachFactor(coach?.abilities.coaching ?? T.vacantCoaching, p.hidden.coachability) * overloadFactor(loads.get(part) ?? 0, coachCapacity(coach?.abilities.communication ?? 0)) * this.facilityBoost(clubId);
         const s = planStrength(plan, factor, this.coverage(p, plan, date));
         if (Object.keys(s).length) out.set(p.id, s);
       }
@@ -242,7 +244,7 @@ export class TrainingOps {
     const over = overloadFactor(coach.load + (plan ? 0 : 1), coach.capacity);
     const coaching = coach.coaching ?? T.vacantCoaching;
     // 보통 강도 기준(화면이 고른 강도의 효과 배수를 곱한다)
-    const pct = (cb: number) => T.growthBonus * coachFactor(coaching, cb) * over * 100;
+    const pct = (cb: number) => T.growthBonus * coachFactor(coaching, cb) * over * this.facilityBoost(p.clubId!) * 100;
     return {
       plan: plan
         ? { primary: plan.primary, primaryLabel: DEV_LABEL[plan.primary] ?? plan.primary, secondary: plan.secondary, secondaryLabel: plan.secondary ? (DEV_LABEL[plan.secondary] ?? plan.secondary) : null, intensity: plan.intensity, intensityLabel: T.intensity[plan.intensity].label, since: plan.since, source: plan.source === 'owner' ? '구단주 지시' : '육성팀 계획' }

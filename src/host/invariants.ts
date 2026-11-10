@@ -1,6 +1,7 @@
 // 규칙 위반 검사. 장기 실행·테스트·자체 점검에서 같은 검사를 쓴다.
 import { seasonKeyDates } from '../engine/schedule';
-import { DEVELOPMENT, LEAGUE, ROSTER_MOVE, TRAINING } from '../engine/config';
+import { DEVELOPMENT, FACILITY, LEAGUE, ROSTER_MOVE, TRAINING } from '../engine/config';
+import { FACILITY_KINDS } from '../engine/business';
 import { activePlan, planError } from '../engine/training';
 import { devSnapshot, VELOCITY } from '../engine/development';
 import { diffDays } from '../engine/calendar';
@@ -35,6 +36,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   errors.push(...checkDevelopment(repo));
   errors.push(...checkHealthPlay(repo, season));
   errors.push(...checkTraining(repo));
+  errors.push(...checkBusiness(repo));
 
   // 경기 기록 일관성: 득점 = 득점 기록 수, 타석 수 = 아웃 + 출루, 이닝 아웃 수
   const games = repo.getGames(season);
@@ -223,6 +225,36 @@ export function checkTraining(repo: GameRepository): string[] {
     if (p.clubId !== meta.userClubId) aiCount.set(p.clubId!, (aiCount.get(p.clubId!) ?? 0) + 1);
   }
   for (const [clubId, n] of aiCount) if (n > TRAINING.aiPlans) errors.push(`AI 구단 ${clubId} 훈련 계획 ${n}명 > ${TRAINING.aiPlans}`);
+  return errors;
+}
+
+/**
+ * 6a 사전 등록 ①⑤(D-142): 관중은 좌석 수를 넘지 않는다. 시설 단계 1~5, 시설마다 진행 공사 1건 이하,
+ * 공사는 현재 단계 + 1(완공 전 단계 반영 없음), 지급 일정 합계 = 공사비.
+ */
+export function checkBusiness(repo: GameRepository): string[] {
+  const meta = repo.getMeta();
+  const errors: string[] = [];
+  const cap = new Map(repo.getClubs().map((c) => [String(c.id), c.stadiumCapacity]));
+  for (const [season, byClub] of Object.entries(meta.attendance ?? {})) {
+    for (const [id, t] of Object.entries(byClub)) {
+      const c = cap.get(id) ?? 0;
+      if (t.max > c || t.total > t.games * c) errors.push(`관중이 좌석 수 초과: ${season} 구단 ${id} 최대 ${t.max} > ${c}`);
+      if (t.sellouts > t.games) errors.push(`매진 수 오류: ${season} 구단 ${id}`);
+    }
+  }
+  for (const [id, f] of Object.entries(meta.facilities ?? {})) {
+    for (const kind of FACILITY_KINDS) {
+      const level = f.levels[kind];
+      if (!(level >= 1 && level <= FACILITY.maxLevel)) errors.push(`시설 단계 오류: 구단 ${id} ${kind} ${level}`);
+      const ps = f.projects.filter((p) => p.kind === kind);
+      if (ps.length > 1) errors.push(`시설 중복 공사: 구단 ${id} ${kind}`);
+      for (const p of ps) {
+        if (p.toLevel !== level + 1) errors.push(`공사 단계 오류: 구단 ${id} ${kind} ${level} → ${p.toLevel}`);
+        if (p.payments.reduce((a, x) => a + x.amountWon, 0) !== p.costWon) errors.push(`공사 지급 합계 ≠ 공사비: 구단 ${id} ${kind}`);
+      }
+    }
+  }
   return errors;
 }
 

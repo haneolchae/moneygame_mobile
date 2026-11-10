@@ -1,0 +1,253 @@
+// 6a 관중·티켓·시설 투자(13·14·16 문서, D-141): 홈경기 관중과 입장·매점 수입, 구장 관람료, 가격 정책,
+// 시설 공사(착수·지급·완공·취소)와 유지비, AI 구단 투자, 시설 효과. 모든 구단이 같은 규칙을 쓴다.
+import { addDays, diffDays, weekday, type GameDate } from '../engine/calendar';
+import { ATTENDANCE, FACILITY } from '../engine/config';
+import { FACILITY_KINDS, gate, newFacilities, planProject, rehabBoost, scoutingBoost, trainingBoost, unpaid, type ClubFacilities, type FacilityKind, type FacilityProject, type TicketPolicy } from '../engine/business';
+import { inflate, type LedgerEntry } from '../engine/finance';
+import type { GameResult } from '../engine/gamesim';
+import { EOK } from '../engine/money';
+import type { ClubId, ClubProfile, Fixture } from '../engine/types';
+import { GameError } from '../shared/protocol';
+import type { AttendanceTotals, GameMeta, GameRepository, InboxMessage } from './ports';
+
+const won = (n: number) => (Math.abs(n) >= EOK ? `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억` : `${Math.round(n / 10_000).toLocaleString('ko-KR')}만`);
+const md = (d: GameDate) => d.slice(5).replace('-', '/');
+const emptyTotals = (): AttendanceTotals => ({ games: 0, total: 0, max: 0, sellouts: 0, ticketWon: 0, w: 0, l: 0 });
+
+export class BusinessOps {
+  private priorCache: { season: number; pct: Map<ClubId, number> } | null = null;
+
+  constructor(
+    private readonly repo: GameRepository,
+    private readonly clubs: Map<ClubId, ClubProfile>,
+  ) {}
+
+  /** 그 시즌 물가 지수(2026 = 1) */
+  inflation(meta: GameMeta, season = meta.season): number {
+    return inflate(EOK, season, meta.inflationBp) / EOK;
+  }
+
+  facilitiesOf(meta: GameMeta, clubId: ClubId): ClubFacilities {
+    const f = meta.facilities?.[String(clubId)];
+    return f ? { levels: { ...f.levels }, projects: f.projects.map((p) => ({ ...p, payments: p.payments.map((x) => ({ ...x })) })) } : newFacilities();
+  }
+
+  private saveFacilities(clubId: ClubId, f: ClubFacilities) {
+    const cur = this.repo.getMeta();
+    this.repo.updateMeta({ facilities: { ...(cur.facilities ?? {}), [String(clubId)]: f } });
+  }
+
+  // 시설 효과(완공 단계만)
+  trainingBoost = (clubId: ClubId) => trainingBoost(this.repo.getMeta().facilities?.[String(clubId)]);
+  rehabBoost = (clubId: ClubId) => rehabBoost(this.repo.getMeta().facilities?.[String(clubId)]);
+  scoutingBoost = (clubId: ClubId) => scoutingBoost(this.repo.getMeta().facilities?.[String(clubId)]);
+
+  private priorPct(season: number): Map<ClubId, number> {
+    if (this.priorCache?.season !== season) {
+      const pct = new Map<ClubId, number>();
+      for (const s of this.repo.getSeasonStandings(season - 1)) pct.set(s.clubId, s.wins + s.losses > 0 ? s.wins / (s.wins + s.losses) : 0.5);
+      this.priorCache = { season, pct };
+    }
+    return this.priorCache.pct;
+  }
+
+  /** 그날 정규시즌 홈경기의 관중·입장수입·매점·관람료. 집계(meta.attendance)와 승패를 갱신하고 장부 항목을 돌려준다 */
+  onGames(meta: GameMeta, date: GameDate, fixtures: Fixture[], results: GameResult[]): LedgerEntry[] {
+    const regular = new Set(fixtures.filter((f) => !f.stage || f.stage === 'regular').map((f) => f.id));
+    const games = results.filter((r) => regular.has(r.fixtureId));
+    if (games.length === 0) return [];
+    const key = String(meta.season);
+    const season: Record<string, AttendanceTotals> = Object.fromEntries(Object.entries(meta.attendance?.[key] ?? {}).map(([k, v]) => [k, { ...v }]));
+    const totals = (id: ClubId) => (season[String(id)] ??= emptyTotals());
+    const prior = this.priorPct(meta.season);
+    const inflation = this.inflation(meta);
+    const out: LedgerEntry[] = [];
+    for (const r of games) {
+      const home = this.clubs.get(r.home)!;
+      const away = this.clubs.get(r.away)!;
+      const t = totals(r.home);
+      const g = gate(
+        { seed: meta.seed, fixtureId: r.fixtureId, home, away, weekday: weekday(date), wins: t.w, losses: t.l, priorPct: prior.get(r.home) ?? 0.5, policy: r.home === meta.userClubId ? (meta.ticketPolicy ?? 'normal') : 'normal', stadiumLevel: meta.facilities?.[String(r.home)]?.levels.stadium ?? 1 },
+        inflation,
+      );
+      t.games += 1;
+      t.total += g.attendance;
+      t.max = Math.max(t.max, g.attendance);
+      if (g.attendance >= home.stadiumCapacity) t.sellouts += 1;
+      t.ticketWon += g.ticketWon;
+      const memo = `${away.shortName}전 관중 ${g.attendance.toLocaleString('ko-KR')}명`;
+      out.push({ clubId: r.home, date, category: 'ticketRevenue', amount: g.ticketWon, memo }, { clubId: r.home, date, category: 'concessions', amount: g.concessionWon, memo }, { clubId: r.home, date, category: 'stadiumGateFee', amount: -g.gateFeeWon, memo });
+    }
+    // 승패는 그날 관중 계산 뒤에 반영한다(전날까지의 성적으로 수요를 정함)
+    for (const r of games) {
+      if (r.outcome === 'tie') continue;
+      totals(r.outcome === 'home' ? r.home : r.away).w += 1;
+      totals(r.outcome === 'home' ? r.away : r.home).l += 1;
+    }
+    this.repo.updateMeta({ attendance: { ...(meta.attendance ?? {}), [key]: season } });
+    return out;
+  }
+
+  /** 매일: 공사 지급·완공, 월말 유지비, 월요일 AI 구단 투자 */
+  onDay(meta: GameMeta, date: GameDate): { ledger: LedgerEntry[]; inbox: InboxMessage[] } {
+    const ledger: LedgerEntry[] = [];
+    const inbox: InboxMessage[] = [];
+    const inflation = this.inflation(meta);
+    const monthEnd = addDays(date, 1).slice(8, 10) === '01';
+    const all: Record<string, ClubFacilities> = {};
+    let changed = false;
+    for (const club of this.clubs.values()) {
+      const f = this.facilitiesOf(meta, club.id);
+      const mine = club.id === meta.userClubId;
+      for (const p of [...f.projects]) {
+        for (const pay of p.payments) {
+          if (pay.paid || diffDays(date, pay.date) < 0) continue;
+          pay.paid = true;
+          changed = true;
+          ledger.push({ clubId: club.id, date, category: 'facilityConstruction', amount: -pay.amountWon, memo: `${FACILITY.kinds[p.kind].label} ${p.toLevel}단계 공사비` });
+        }
+        if (diffDays(date, p.end) >= 0) {
+          f.levels[p.kind] = p.toLevel;
+          f.projects = f.projects.filter((x) => x !== p);
+          changed = true;
+          if (mine) inbox.push({ date, kind: 'report', sender: '구장시설팀', title: `완공: ${FACILITY.kinds[p.kind].label} ${p.toLevel}단계`, body: `${FACILITY.kinds[p.kind].label}이(가) ${p.toLevel}단계가 됐습니다. 오늘부터 효과가 적용됩니다: ${FACILITY.kinds[p.kind].effect}.\n유지비는 연 ${won(Math.round(FACILITY.upkeepPerLevelWon * p.toLevel * inflation))}입니다.` });
+        }
+      }
+      if (monthEnd) {
+        const levels = FACILITY_KINDS.reduce((a, k) => a + f.levels[k], 0);
+        ledger.push({ clubId: club.id, date, category: 'facilityUpkeep', amount: -Math.round((FACILITY.upkeepPerLevelWon * levels * inflation) / 12), memo: `시설 유지비(단계 합 ${levels})` });
+      }
+      // AI 구단: 월요일, 여유 현금이 있으면 가장 낮은 단계 시설부터(D-141 (6))
+      if (!mine && weekday(date) === 1) {
+        const pick = this.investCandidate(meta, club.id, f, inflation, date);
+        if (pick) {
+          f.projects.push(pick);
+          changed = true;
+        }
+      }
+      all[String(club.id)] = f;
+    }
+    if (changed) this.repo.updateMeta({ facilities: all });
+    return { ledger, inbox };
+  }
+
+  /** AI 투자 규칙: 현금 − (진행 공사 남은 지급 + 새 공사비) ≥ 시작 현금 × 0.9 */
+  private investCandidate(meta: GameMeta, clubId: ClubId, f: ClubFacilities, inflation: number, date: GameDate): FacilityProject | null {
+    const kind = FACILITY_KINDS.filter((k) => f.levels[k] < FACILITY.maxLevel && !f.projects.some((p) => p.kind === k)).sort((a, b) => f.levels[a] - f.levels[b] || FACILITY_KINDS.indexOf(a) - FACILITY_KINDS.indexOf(b))[0];
+    if (!kind) return null;
+    const project = planProject(kind, f.levels[kind] + 1, date, inflation);
+    const committed = f.projects.reduce((a, p) => a + unpaid(p), 0);
+    const floor = this.clubs.get(clubId)!.startCash * FACILITY.aiCashFloor;
+    return this.repo.cashBalance(clubId) - committed - project.costWon >= floor ? project : null;
+  }
+
+  // ───────── 구단주 명령 ─────────
+
+  /** 착수 검증(무료): 실패하면 사유를 던진다 */
+  startTarget(meta: GameMeta, kind: FacilityKind): FacilityProject {
+    if (!FACILITY_KINDS.includes(kind)) throw new GameError('INVALID', '없는 시설입니다.');
+    if (meta.gameOver) throw new GameError('GAME_OVER', '종료된 게임입니다.');
+    const f = this.facilitiesOf(meta, meta.userClubId);
+    if (f.levels[kind] >= FACILITY.maxLevel) throw new GameError('NOT_AVAILABLE', '이미 최고 단계입니다.');
+    if (f.projects.some((p) => p.kind === kind)) throw new GameError('DUPLICATE', '이 시설은 이미 공사 중입니다.');
+    const project = planProject(kind, f.levels[kind] + 1, meta.currentDate, this.inflation(meta));
+    if (this.repo.cashBalance(meta.userClubId) < project.payments[0]!.amountWon) throw new GameError('CASH_SHORT', `현금이 부족합니다. 착공 때 ${won(project.payments[0]!.amountWon)}을 지급합니다.`);
+    return project;
+  }
+
+  /** 착수: 행동력 3. 공사비는 착공·중간·완공일에 지급한다 */
+  start(meta: GameMeta, weekId: string, kind: FacilityKind): string {
+    const project = this.startTarget(meta, kind);
+    return this.repo.transaction(() => {
+      try {
+        this.repo.spendAp(weekId, FACILITY.startAp);
+      } catch {
+        throw new GameError('AP_SHORT', `이번 주 행동력이 부족합니다(시설 착수 행동력 ${FACILITY.startAp}).`);
+      }
+      const f = this.facilitiesOf(this.repo.getMeta(), meta.userClubId);
+      f.projects.push(project);
+      this.saveFacilities(meta.userClubId, f);
+      const k = FACILITY.kinds[kind];
+      return `${k.label} ${project.toLevel}단계 공사를 착수했습니다. 공사비 ${won(project.costWon)}${k.needsApproval ? `, 지자체 승인 뒤 ${md(project.start)} 착공` : `, ${md(project.start)} 착공`}, ${md(project.end)} 완공 예정.`;
+    });
+  }
+
+  /** 취소: 착공 전은 무비용, 착공 뒤는 지급분 손실·남은 지급 해제 */
+  cancel(meta: GameMeta, kind: FacilityKind): string {
+    const f = this.facilitiesOf(meta, meta.userClubId);
+    const p = f.projects.find((x) => x.kind === kind);
+    if (!p) throw new GameError('NOT_AVAILABLE', '진행 중인 공사가 없습니다.');
+    f.projects = f.projects.filter((x) => x !== p);
+    this.saveFacilities(meta.userClubId, f);
+    const paid = p.costWon - unpaid(p);
+    return paid > 0 ? `${FACILITY.kinds[kind].label} 공사를 취소했습니다. 이미 지급한 ${won(paid)}은 돌아오지 않고, 남은 ${won(unpaid(p))} 지급은 해제됩니다.` : `${FACILITY.kinds[kind].label} 공사를 착공 전에 취소했습니다(비용 없음).`;
+  }
+
+  setPolicy(meta: GameMeta, policy: TicketPolicy): string {
+    if (!(policy in ATTENDANCE.policy)) throw new GameError('INVALID', '가격 정책은 저가·보통·고가 중 하나입니다.');
+    if (meta.gameOver) throw new GameError('GAME_OVER', '종료된 게임입니다.');
+    this.repo.updateMeta({ ticketPolicy: policy });
+    return `티켓 가격을 ${ATTENDANCE.policy[policy].label}로 정했습니다. 다음 홈경기부터 적용됩니다.`;
+  }
+
+  /** 화면용: 우리 구단 관중·가격 정책·시설 */
+  view(meta: GameMeta) {
+    const club = this.clubs.get(meta.userClubId)!;
+    const inflation = this.inflation(meta);
+    const f = this.facilitiesOf(meta, club.id);
+    const policy = meta.ticketPolicy ?? 'normal';
+    const seasons = Object.entries(meta.attendance ?? {})
+      .map(([season, byClub]) => {
+        const t = byClub[String(club.id)];
+        const league = Object.entries(byClub).reduce((a, [id, v]) => ({ total: a.total + v.total, seats: a.seats + v.games * (this.clubs.get(Number(id))?.stadiumCapacity ?? 0) }), { total: 0, seats: 0 });
+        return t && t.games > 0 ? { season: Number(season), games: t.games, total: t.total, average: Math.round(t.total / t.games), occupancy: t.total / (t.games * club.stadiumCapacity), sellouts: t.sellouts, ticketWon: t.ticketWon, leagueOccupancy: league.seats > 0 ? league.total / league.seats : null } : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .sort((a, b) => b.season - a.season);
+    let reason: string | null = null;
+    const facilities = FACILITY_KINDS.map((kind) => {
+      const k = FACILITY.kinds[kind];
+      const p = f.projects.find((x) => x.kind === kind) ?? null;
+      const level = f.levels[kind];
+      let next: { level: number; costWon: number; weeks: number; firstPaymentWon: number; startDate: string; endDate: string } | null = null;
+      reason = null;
+      if (level < FACILITY.maxLevel && !p) {
+        const plan = planProject(kind, level + 1, meta.currentDate, inflation);
+        next = { level: level + 1, costWon: plan.costWon, weeks: FACILITY.weeks[level + 1]!, firstPaymentWon: plan.payments[0]!.amountWon, startDate: plan.start, endDate: plan.end };
+        try {
+          this.startTarget(meta, kind);
+        } catch (e) {
+          if (!(e instanceof GameError)) throw e;
+          reason = e.message;
+        }
+      } else reason = p ? '공사 중' : '최고 단계';
+      return {
+        kind,
+        label: k.label,
+        effect: k.effect,
+        needsApproval: k.needsApproval,
+        level,
+        maxLevel: FACILITY.maxLevel,
+        upkeepWon: Math.round(FACILITY.upkeepPerLevelWon * level * inflation),
+        next,
+        startReason: reason,
+        project: p ? { toLevel: p.toLevel, costWon: p.costWon, paidWon: p.costWon - unpaid(p), start: p.start, end: p.end, started: diffDays(meta.currentDate, p.start) >= 0, payments: p.payments.map((x) => ({ date: x.date, amountWon: x.amountWon, paid: x.paid })) } : null,
+      };
+    });
+    return {
+      date: meta.currentDate,
+      club: { name: club.name, capacity: club.stadiumCapacity },
+      cashWon: this.repo.cashBalance(club.id),
+      startCashWon: club.startCash,
+      committedWon: f.projects.reduce((a, p) => a + unpaid(p), 0),
+      startAp: FACILITY.startAp,
+      ticket: {
+        policy,
+        priceWon: Math.round(ATTENDANCE.ticketPriceWon * inflation * ATTENDANCE.policy[policy].price),
+        options: (Object.keys(ATTENDANCE.policy) as TicketPolicy[]).map((key) => ({ key, label: ATTENDANCE.policy[key].label, priceWon: Math.round(ATTENDANCE.ticketPriceWon * inflation * ATTENDANCE.policy[key].price), demand: ATTENDANCE.policy[key].demand })),
+      },
+      seasons,
+      facilities,
+    };
+  }
+}

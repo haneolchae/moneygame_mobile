@@ -13,7 +13,7 @@ import { CLOSE_RULES } from '../game/seasonClose';
 import { Dispatcher } from '../host/dispatcher';
 import { coreAverage } from '../engine/development';
 import { checkInvariants, injuryStats, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
-import type { AdvanceResult, DashboardView, DelegationPolicyView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView, TradeResultView, TradeView } from '../shared/protocol';
+import type { AdvanceResult, DashboardView, DelegationPolicyView, BusinessView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView, TradeResultView, TradeView } from '../shared/protocol';
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -130,6 +130,22 @@ async function main() {
       }
       console.log(JSON.stringify({ training: { direct, delegated } }));
     }
+    // 6a(D-141·D-142): 위임 구단주도 AI 구단과 같은 규칙(투자 뒤 현금 ≥ 시작 현금 × 0.9)으로 시설에 투자한다. 행동력 3은 게임 쪽이 차감한다.
+    {
+      let started = 0;
+      for (let guard = 0; guard < 2; guard++) {
+        const bv = await call<BusinessView>('business.view');
+        const pick = bv.facilities.filter((f) => f.next && !f.startReason).sort((a, b) => a.level - b.level)[0];
+        if (!pick || bv.cashWon - bv.committedWon - pick.next!.costWon < bv.startCashWon * 0.9) break;
+        try {
+          await call('business.startFacility', { kind: pick.kind });
+          started++;
+        } catch {
+          break; // 행동력 부족 등 규칙상 거부
+        }
+      }
+      console.log(JSON.stringify({ facilities: { started } }));
+    }
     // 5a·5b(D-132 ⑤·D-137 ③): 위임 구단주도 시즌마다 트레이드를 시도한다. 상대 선택·제안은 게임 명령으로만 하고
     // 규칙 판정(기간·자격·선수단·현금·AI 응답)은 게임 쪽이 한다. 역제안은 받아들인다. 계약 마지막 해 선수 1명은 요구 조건으로 연장을 시도한다.
     {
@@ -230,11 +246,25 @@ async function main() {
     if (cashRatio > 2.0) inv.push(`사전 등록 5b ① 위반: 현금 ${cashRatio}배 > 2.0`);
     if (s === seasons && (cashRatio < 0.8 || cashRatio > 1.8)) inv.push(`사전 등록 5b ① 위반: 마지막 시즌 현금 ${cashRatio}배(0.8~1.8)`);
     if (s === seasons && aiCashRatio > 2.0) inv.push(`사전 등록 5b ② 위반: AI 구단 현금 평균 ${aiCashRatio}배 > 2.0`);
+    // 6a 사전 등록 ②③(D-142): 리그 평균 점유율 55~85%, 구단당 입장수입 2026 기준 환산 100~200억
+    const att = repo5.getMeta().attendance?.[String(dash.season)] ?? {};
+    const caps = new Map(repo5.getClubs().map((c) => [String(c.id), c.stadiumCapacity]));
+    const attSum = Object.entries(att).reduce((a, [id, t]) => ({ total: a.total + t.total, seats: a.seats + t.games * (caps.get(id) ?? 0), ticket: a.ticket + t.ticketWon }), { total: 0, seats: 0, ticket: 0 });
+    const occupancy = attSum.seats > 0 ? +(attSum.total / attSum.seats).toFixed(3) : 0;
+    const infl = Object.entries(repo5.getMeta().inflationBp).filter(([y]) => Number(y) <= dash.season).reduce((a, [, bp]) => a * (1 + bp / 10_000), 1);
+    const ticketEok2026 = +(attSum.ticket / 10 / infl / 1e8).toFixed(1);
+    if (occupancy < 0.55 || occupancy > 0.85) inv.push(`사전 등록 6a ② 위반: 리그 평균 점유율 ${occupancy}`);
+    if (ticketEok2026 < 100 || ticketEok2026 > 200) inv.push(`사전 등록 6a ③ 위반: 구단당 입장수입(2026 기준) ${ticketEok2026}억`);
+    const facLevels = Object.values(repo5.getMeta().facilities ?? {}).map((f) => Object.values(f.levels).reduce((a, b) => a + b, 0));
     if (!tradeStats.some((t) => t.season === s && t.attempts > 0)) inv.push(`사전 등록 5b ③: 시즌 ${s} 트레이드 시도 없음`);
     rows.push({
       season: dash.season,
       cashRatio,
       aiCashRatio,
+      occupancy,
+      ticketEok2026,
+      facilityLevelAvg: facLevels.length ? +(facLevels.reduce((a, b) => a + b, 0) / facLevels.length).toFixed(1) : null,
+      userFacilityLevels: Object.values(repo5.getMeta().facilities?.['1']?.levels ?? {}).join('/'),
       trades: tradeStats.find((t) => t.season === s) ?? null,
       coreMean,
       coreP95,

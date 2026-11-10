@@ -30,7 +30,12 @@ export type LedgerCategory =
   | 'faCompensation'
   | 'releasedSalary'
   | 'staffSeverance'
-  | 'tradeCash';
+  | 'tradeCash'
+  | 'ticketRevenue'
+  | 'concessions'
+  | 'stadiumGateFee'
+  | 'facilityConstruction'
+  | 'facilityUpkeep';
 
 export const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   startCash: '기초 현금',
@@ -51,16 +56,21 @@ export const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   faCompensation: 'FA 보상금',
   releasedSalary: '방출 선수 잔여 연봉',
   tradeCash: '트레이드 현금',
+  ticketRevenue: '입장 수입',
+  concessions: '식음료(매점) 수입',
+  stadiumGateFee: '구장 관람료(입장수입 10%)',
+  facilityConstruction: '시설 공사비',
+  facilityUpkeep: '시설 유지비',
 };
 
 export const NOT_YET_IMPLEMENTED = [
-  '입장 수입·시즌권',
+  '시즌권·좌석 등급',
   '스폰서·광고',
   '굿즈 매출',
-  '식음료·임대',
+  '임대',
   '포스트시즌 배당금',
   '마케팅·이벤트 비용',
-  '시설 유지비·감가상각',
+  '시설 감가상각',
 ];
 
 /** 2026년 기준 금액 (17·21 문서, D-038). 직원 급여는 2c 조직 구현 전까지 임시 총액이다(ASSUMPTION). */

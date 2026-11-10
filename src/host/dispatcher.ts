@@ -104,6 +104,14 @@ export class Dispatcher {
         const p = payload as RequestMap['club.note']['payload'];
         return this.game().saveClubNote(p.clubId, p.text, p.rival, this.now()) as R;
       }
+      case 'business.view':
+        return this.game().businessView() as R;
+      case 'business.setTicketPolicy':
+        return this.game().setTicketPolicy((payload as RequestMap['business.setTicketPolicy']['payload']).policy) as R;
+      case 'business.startFacility':
+        return this.game().startFacility((payload as RequestMap['business.startFacility']['payload']).kind) as R;
+      case 'business.cancelFacility':
+        return this.game().cancelFacility((payload as RequestMap['business.cancelFacility']['payload']).kind) as R;
       case 'trade.view':
         return this.game().tradeView((payload as RequestMap['trade.view']['payload']).clubId) as R;
       case 'trade.preview': {

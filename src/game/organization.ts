@@ -25,6 +25,7 @@ import {
 import type { ClubId } from '../engine/types';
 import { GameError } from '../shared/protocol';
 import { stoveDates, type ActionSource, type Market } from './market';
+import { scoutingBoost } from '../engine/business';
 import { weekIdFor } from './week';
 import type { ApprovalRequest, DelegationPolicy, GameMeta, GameRepository, InboxMessage, WorkTask } from './ports';
 
@@ -102,7 +103,8 @@ export class Organization {
   }
 
   scoutingScale(meta: GameMeta): number {
-    return scoutingSdScale(this.staff(meta.userClubId));
+    // 6a 분석·스카우팅 사무실(D-141): 완공 단계당 추정 오차 −3%
+    return scoutingSdScale(this.staff(meta.userClubId)) * scoutingBoost(meta.facilities?.[String(meta.userClubId)]);
   }
 
   lookaheadDays(meta: GameMeta): number {

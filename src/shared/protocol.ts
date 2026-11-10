@@ -627,6 +627,36 @@ export interface RosterView {
   training: TrainingTableView;
 }
 
+// ───────── 6a 관중·티켓·시설 (13·14·16·D-141) ─────────
+
+export type TicketPolicyView = 'low' | 'normal' | 'high';
+export type FacilityKindView = 'stadium' | 'training' | 'rehab' | 'scouting';
+
+export interface BusinessView {
+  date: string;
+  club: { name: string; capacity: number };
+  cashWon: number;
+  startCashWon: number;
+  /** 진행 중 공사의 남은 지급 합계 */
+  committedWon: number;
+  startAp: number;
+  ticket: { policy: TicketPolicyView; priceWon: number; options: Array<{ key: TicketPolicyView; label: string; priceWon: number; demand: number }> };
+  seasons: Array<{ season: number; games: number; total: number; average: number; occupancy: number; sellouts: number; ticketWon: number; leagueOccupancy: number | null }>;
+  facilities: Array<{
+    kind: FacilityKindView;
+    label: string;
+    effect: string;
+    needsApproval: boolean;
+    level: number;
+    maxLevel: number;
+    upkeepWon: number;
+    next: { level: number; costWon: number; weeks: number; firstPaymentWon: number; startDate: string; endDate: string } | null;
+    /** 지금 착수할 수 없는 이유 */
+    startReason: string | null;
+    project: { toLevel: number; costWon: number; paidWon: number; start: string; end: string; started: boolean; payments: Array<{ date: string; amountWon: number; paid: boolean }> } | null;
+  }>;
+}
+
 // ───────── 5a 트레이드 (09·18b·D-131) ─────────
 
 /** cashWon > 0이면 우리가 상대에게, < 0이면 상대가 우리에게 낸다 */
@@ -869,6 +899,10 @@ export interface RequestMap {
   'player.trainStop': { payload: { playerId: number }; result: OfferResultView };
   'club.view': { payload: { clubId: number }; result: ClubView };
   'club.note': { payload: { clubId: number; text: string; rival: boolean }; result: ClubNoteView };
+  'business.view': { payload: undefined; result: BusinessView };
+  'business.setTicketPolicy': { payload: { policy: TicketPolicyView }; result: { message: string; view: BusinessView } };
+  'business.startFacility': { payload: { kind: FacilityKindView }; result: { message: string; view: BusinessView } };
+  'business.cancelFacility': { payload: { kind: FacilityKindView }; result: { message: string; view: BusinessView } };
   'trade.view': { payload: { clubId: number }; result: TradeView };
   'trade.preview': { payload: { clubId: number } & TradePackageView; result: TradePreviewView };
   'trade.propose': { payload: { clubId: number; commandId: string } & TradePackageView; result: TradeResultView };
@@ -935,6 +969,10 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'player.trainStop',
   'club.view',
   'club.note',
+  'business.view',
+  'business.setTicketPolicy',
+  'business.startFacility',
+  'business.cancelFacility',
   'trade.view',
   'trade.preview',
   'trade.propose',
