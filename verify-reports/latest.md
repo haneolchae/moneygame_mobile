@@ -1,6 +1,6 @@
-# 검증 리포트: 5b-2
+# 검증 리포트: 5b-3
 
-- 일시: 2026. 11. 10. 오후 11:12:11
+- 일시: 2026. 11. 10. 오후 11:42:24
 - 모드: 전체 (장기 실행 10시즌, 시드 verify-1)
 - 환경: Node 24.18.0, win32/x64
 - **종합 판정: 실패**
@@ -8,14 +8,14 @@
 | 단계 | 판정 | 시간(초) | 요약 |
 | --- | --- | --- | --- |
 | 실행 환경 | PASS | 0 | 준비됨 |
-| 타입 검사 | PASS | 1.6 | 오류 0건 |
-| 계층 경계 검사 | PASS | 1.1 | 계층 경계 검사 통과 (98개 파일) |
-| 자동 테스트 | PASS | 90.6 | 129/129개 통과 |
-| 빌드 | PASS | 1.2 | 완료 |
-| 실제 Electron 자체 점검 | PASS | 13.3 | 스토브리그 12주 1271ms, 시즌 720/720 6937ms, 화면 지연 10ms, 저장 285ms·불러오기 262ms, Steam mock |
-| 장기 실행 10시즌 (시드 verify-1) | FAIL | 239.7 | 10시즌, 규칙 위반 1건, 마지막 시즌 저장 2049ms·저장본 28.6MB, 불러오기 882ms, 현금 271억 → 581억 |
-| 문서 정합성 | WARN | 0.6 | 실패 0건, 경고 1건, 임시 가정 43건 |
-| 저장소 상태 | WARN | 0 | HEAD 35af180, 커밋되지 않은 변경 1개 |
+| 타입 검사 | PASS | 1.5 | 오류 0건 |
+| 계층 경계 검사 | PASS | 0.7 | 계층 경계 검사 통과 (98개 파일) |
+| 자동 테스트 | PASS | 192.5 | 129/129개 통과 |
+| 빌드 | PASS | 1.6 | 완료 |
+| 실제 Electron 자체 점검 | PASS | 23.8 | 스토브리그 12주 1720ms, 시즌 720/720 13783ms, 화면 지연 17ms, 저장 748ms·불러오기 640ms, Steam mock |
+| 장기 실행 10시즌 (시드 verify-1) | FAIL | 349.9 | 10시즌, 규칙 위반 0건, 마지막 시즌 저장 1830ms·저장본 28.6MB, 불러오기 761ms, 현금 271억 → 525억 |
+| 문서 정합성 | WARN | 0.4 | 실패 0건, 경고 2건, 임시 가정 43건 |
+| 저장소 상태 | WARN | 0 | HEAD a178b72, 커밋되지 않은 변경 1개 |
 
 ## 상세
 
@@ -25,32 +25,37 @@
 
 ### 장기 실행 10시즌 (시드 verify-1) (FAIL)
 
-- 2027시즌 시즌 진행 7.17s (경고 5s)
-- 2028시즌 시즌 진행 9.5s (경고 5s)
+- 2027시즌 시즌 진행 13.64s (경고 5s)
+- 2027시즌 선수 목록 정렬 257ms (경고 200ms)
+- 2028시즌 시즌 진행 14.33s (경고 5s)
+- 2028시즌 선수 목록 정렬 255ms (경고 200ms)
 - 2028시즌 타석당 홈런 0.0216: 시즌 목표 0.0236 대비 -8.5%
-- 2029시즌 시즌 진행 6.96s (경고 5s)
-- 2030시즌 시즌 진행 7.66s (경고 5s)
-- 2031시즌 시즌 진행 11.04s (경고 5s)
-- 2031시즌 선수 목록 정렬 325ms (경고 200ms)
-- 2032시즌 시즌 진행 7.36s (경고 5s)
-- 2033시즌 시즌 진행 7.46s (경고 5s)
-- 2034시즌 시즌 진행 16.44s (경고 5s)
-- 2034시즌 선수 목록 정렬 369ms (경고 200ms)
-- 2035시즌 시즌 진행 15.59s (경고 5s)
-- 2035시즌 선수 목록 정렬 367ms (경고 200ms)
+- 2029시즌 시즌 진행 15.73s (경고 5s)
+- 2029시즌 선수 목록 정렬 285ms (경고 200ms)
+- 2030시즌 시즌 진행 15.34s (경고 5s)
+- 2030시즌 선수 목록 정렬 307ms (경고 200ms)
+- 2031시즌 시즌 진행 14.45s (경고 5s)
+- 2031시즌 선수 목록 정렬 318ms (경고 200ms)
+- 2032시즌 시즌 진행 15.75s (경고 5s)
+- 2032시즌 선수 목록 정렬 331ms (경고 200ms)
+- 2033시즌 시즌 진행 15.66s (경고 5s)
+- 2033시즌 선수 목록 정렬 343ms (경고 200ms)
+- 2034시즌 시즌 진행 15.18s (경고 5s)
+- 2034시즌 선수 목록 정렬 381ms (경고 200ms)
+- 2035시즌 시즌 진행 16.85s (경고 5s)
+- 2035시즌 선수 목록 정렬 373ms (경고 200ms)
 - 2035시즌 경기당 득점 9.86: 시즌 목표 8.82 대비 11.8%
-- 2036시즌 규칙 위반 1건: 사전 등록 5b ① 위반: 마지막 시즌 현금 1.94배(0.8~1.8)
-- 2036시즌 시즌 진행 16.93s (경고 5s)
-- 2036시즌 선수 목록 정렬 404ms (경고 200ms)
-- 2036시즌 저장 2049ms (경고 2000ms)
+- 2036시즌 시즌 진행 16.4s (경고 5s)
+- 2036시즌 선수 목록 정렬 412ms (경고 200ms)
 
-로그: `verify-reports\logs\20261110-2306_5b-2\sim.log`
+로그: `verify-reports\logs\20261110-2332_5b-3\sim.log`
 
 ### 문서 정합성 (WARN)
 
+- [경고] 폐기된 D-073를 코드가 참조함 (src/ui/screens/Dashboard.tsx:1). 대체 결정 ID로 바꾸세요.
 - [경고] 실제 테스트 129개 > 문서 기록 124개. 이번 차수 결과가 06_progress.md에 아직 없을 수 있음
 
-로그: `verify-reports\logs\20261110-2306_5b-2\docs.log`
+로그: `verify-reports\logs\20261110-2332_5b-3\docs.log`
 
 ### 저장소 상태 (WARN)
 
@@ -93,15 +98,15 @@
 - `src/engine/config.ts:181` (D-120) ASSUMPTION(D-120): 개막 뒤 1군에서 말소한 선수는 10일 뒤 재등록(KBO 원문 확인 필요)
 - `src/engine/config.ts:183` (D-120) ASSUMPTION(D-120): 사용자 편성의 1군 포수 최소 인원(주전 + 백업)
 - `src/engine/config.ts:199` (D-126) ASSUMPTION(D-126): 출전 1회당 기본 부상 확률과 보정
-- `src/engine/config.ts:258` (D-131) ASSUMPTION(D-131): 한 거래 현금 한도
-- `src/engine/config.ts:260` (D-131) ASSUMPTION(D-131): 거래 기간 — 스토브리그 K+5부터, 시즌은 7/31까지 [KBO·확인 필요]
-- `src/engine/config.ts:322` (D-128) ASSUMPTION(D-128): 담당 코치 공석일 때 지도력
-- `src/engine/config.ts:324` (D-128) ASSUMPTION(D-128): 코치당 담당 한도 = loadBase + ⌊소통력 / loadPer⌋
-- `src/engine/config.ts:332` (D-128) ASSUMPTION(D-128): 육성팀 목표 선택 오차 σ = delegateNoiseBase + delegateNoiseSpan × (1 − 역량)
-- `src/engine/config.ts:335` (D-128) ASSUMPTION(D-128): AI 구단은 스프링캠프 시작에 정점 전 유망주 이만큼 계획
-- `src/engine/config.ts:341` (D-124) ASSUMPTION(D-124): 정점 전 연간 성장 = (잠재 − 현재) × growthShare × 계수
-- `src/engine/config.ts:346` (D-124) ASSUMPTION(D-124): 하락 = (declineBase + declinePerYear × 정점+2 이후 연수) × 노화 계수 × 능력 배수
-- `src/engine/config.ts:370` (D-120) ASSUMPTION(D-120): 시범경기 — 개막 16일 전 목요일~개막 4일 전 화요일, 월요일 휴식, 9회까지(연장 없음)
+- `src/engine/config.ts:259` (D-131) ASSUMPTION(D-131): 한 거래 현금 한도
+- `src/engine/config.ts:261` (D-131) ASSUMPTION(D-131): 거래 기간 — 스토브리그 K+5부터, 시즌은 7/31까지 [KBO·확인 필요]
+- `src/engine/config.ts:323` (D-128) ASSUMPTION(D-128): 담당 코치 공석일 때 지도력
+- `src/engine/config.ts:325` (D-128) ASSUMPTION(D-128): 코치당 담당 한도 = loadBase + ⌊소통력 / loadPer⌋
+- `src/engine/config.ts:333` (D-128) ASSUMPTION(D-128): 육성팀 목표 선택 오차 σ = delegateNoiseBase + delegateNoiseSpan × (1 − 역량)
+- `src/engine/config.ts:336` (D-128) ASSUMPTION(D-128): AI 구단은 스프링캠프 시작에 정점 전 유망주 이만큼 계획
+- `src/engine/config.ts:342` (D-124) ASSUMPTION(D-124): 정점 전 연간 성장 = (잠재 − 현재) × growthShare × 계수
+- `src/engine/config.ts:347` (D-124) ASSUMPTION(D-124): 하락 = (declineBase + declinePerYear × 정점+2 이후 연수) × 노화 계수 × 능력 배수
+- `src/engine/config.ts:371` (D-120) ASSUMPTION(D-120): 시범경기 — 개막 16일 전 목요일~개막 4일 전 화요일, 월요일 휴식, 9회까지(연장 없음)
 - `src/engine/contracts.ts:11` (D-075) FA 협상 설정 (ASSUMPTION, D-075)
 - `src/engine/finance.ts:66` (D-038) 2026년 기준 금액 (17·21 문서, D-038). 직원 급여는 2c 조직 구현 전까지 임시 총액이다(ASSUMPTION).
 - `src/engine/finance.ts:72` (D-112) broadcastRenewalBpAssumed: 1500, // ASSUMPTION(D-112): 관중 추세 모델 전까지 10~20%의 중간값
