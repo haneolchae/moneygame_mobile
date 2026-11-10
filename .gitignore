@@ -26,3 +26,6 @@ diamond_office_ui_assets_v1/
 
 # 작업 중 확인(dev) 리포트는 매번 덮어쓰는 임시 파일(D-143)
 verify-reports/latest-dev.md
+
+# 실제 앱 확인용 임시 데이터 폴더
+.ui-check-*/
