@@ -35,7 +35,8 @@ export type LedgerCategory =
   | 'concessions'
   | 'stadiumGateFee'
   | 'facilityConstruction'
-  | 'facilityUpkeep';
+  | 'facilityUpkeep'
+  | 'marketing';
 
 export const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   startCash: '기초 현금',
@@ -61,6 +62,7 @@ export const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   stadiumGateFee: '구장 관람료(입장수입 10%)',
   facilityConstruction: '시설 공사비',
   facilityUpkeep: '시설 유지비',
+  marketing: '마케팅·캠페인',
 };
 
 export const NOT_YET_IMPLEMENTED = [
@@ -69,7 +71,6 @@ export const NOT_YET_IMPLEMENTED = [
   '굿즈 매출',
   '임대',
   '포스트시즌 배당금',
-  '마케팅·이벤트 비용',
   '시설 감가상각',
 ];
 

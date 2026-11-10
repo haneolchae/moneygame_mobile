@@ -36,7 +36,7 @@ import { Growth } from './growth';
 import { TrainingOps } from './training';
 import { TradeOps } from './trade';
 import { BusinessOps } from './business';
-import type { FacilityKind, TicketPolicy } from '../engine/business';
+import type { CampaignKind, FacilityKind, TicketPolicy } from '../engine/business';
 import { HealthOps } from './health';
 import { DEV_LABEL, devSnapshot, VELOCITY } from '../engine/development';
 import { Postseason, POSTSEASON_MAX_INNINGS, SERIES_LABEL } from './postseason';
@@ -555,6 +555,11 @@ export class GameService {
       gamesPlayed += g;
       const after = this.meta();
       onProgress?.({ date: after.currentDate, daysProcessed, gamesPlayed });
+      // 진행 중에 해임·파산이 확정되면 그날에서 멈추고 이유를 돌려준다(다음 진행 요청은 GAME_OVER로 거부)
+      if (after.gameOver) {
+        stoppedReason = `${after.gameOver.kind === 'dismissed' ? '해임' : '파산'}: ${after.gameOver.reason}`;
+        break;
+      }
       if (before.mode !== after.mode) {
         stoppedReason = after.mode === 'stove' ? `${before.season} 시즌 종료 — 스토브리그 시작` : '스토브리그 종료 — 시즌 모드 시작';
         break;
@@ -1548,6 +1553,12 @@ export class GameService {
   startFacility(kind: FacilityKind): { message: string; view: BusinessView } {
     const meta = this.meta();
     const message = this.business.start(meta, weekIdFor(meta.currentDate), kind);
+    return { message, view: this.businessView() };
+  }
+
+  startCampaign(kind: CampaignKind): { message: string; view: BusinessView } {
+    const meta = this.meta();
+    const message = this.business.startCampaign(meta, weekIdFor(meta.currentDate), kind);
     return { message, view: this.businessView() };
   }
 

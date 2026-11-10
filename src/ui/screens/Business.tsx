@@ -42,7 +42,7 @@ export function Business({ nav }: { nav: Nav }) {
       <h1>
         사업·시설 <span className="muted small">{v.club.name} · 좌석 {v.club.capacity.toLocaleString('ko-KR')}석</span>
       </h1>
-      <div className="kpis" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      <div className="kpis" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
         <div className="kpi">
           <Icon name="do-roster" size={24} />
           <span className="label">{cur ? `${cur.season} 평균 관중` : '평균 관중'}</span>
@@ -58,7 +58,11 @@ export function Business({ nav }: { nav: Nav }) {
           <span className="value">{cur ? won(cur.ticketWon) : '—'}</span>
         </div>
         <div className="kpi">
-          <span className="label">현금 (남은 공사 지급 {won(v.committedWon)})</span>
+          <span className="label">팬 만족도 (0~100){v.fans.backlash ? ' · 팬 반발' : ''}</span>
+          <span className="value" style={{ color: v.fans.backlash ? 'var(--do-danger)' : undefined }}>{v.fans.satisfaction.toFixed(1)}</span>
+        </div>
+        <div className="kpi">
+          <span className="label">현금 (남은 공사 지급 {v.committedWon > 0 ? won(v.committedWon) : '없음'})</span>
           <span className="value">{won(v.cashWon)}</span>
         </div>
       </div>
@@ -69,6 +73,44 @@ export function Business({ nav }: { nav: Nav }) {
           {result.text}
         </p>
       )}
+
+      {v.fans.backlash && (
+        <p className="reason" role="alert">
+          <Icon name="do-warning" size={16} /> 팬 반발 상태입니다(관중 −20%).{v.fans.dismissDate ? ` ${dateKo(v.fans.dismissDate)}까지 만족도 ${v.fans.recoverAt} 이상으로 회복하지 못하면 해임됩니다.` : ''}
+        </p>
+      )}
+
+      <section className="panel">
+        <div className="panel-head">
+          <h2>마케팅 캠페인</h2>
+          <span className="meta">착수 행동력 {v.campaignAp} · 비용은 착수 때 지급 · 종류마다 1건 · 합계 상한 수요 +8%·만족도 목표 +8</span>
+        </div>
+        <div className="panel-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 8 }}>
+          {v.campaigns.map((c) => (
+            <div key={c.kind} className="approval-row" style={{ flexWrap: 'wrap' }}>
+              <div className="txt">
+                <strong>
+                  {c.label} {c.active && <span className="badge rec">진행 중 ~{dateKo(c.active.end)}</span>}
+                </strong>
+                <div className="muted small">
+                  {c.weeks}주 · {won(c.costWon)}
+                  {c.demandPct > 0 ? ` · 관중 수요 +${c.demandPct}%` : ''}
+                  {c.satisfaction > 0 ? ` · 만족도 목표 +${c.satisfaction}` : ''}
+                </div>
+                {!c.active && c.startReason && <div className="small reason">불가: {c.startReason}</div>}
+              </div>
+              {!c.active && (
+                <button disabled={busy || !!c.startReason} onClick={() => void run(() => api('business.startCampaign', { kind: c.kind }))}>
+                  실행 (행동력 {v.campaignAp})
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="panel-body muted small">
+          팬 만족도는 시즌 중 매주 월요일 성적·충성도·캠페인으로 정한 목표 쪽으로 조금씩 움직이고, 관중 수요에 ±15%까지 반영됩니다. 캠페인이 끝나면 효과도 사라집니다.
+        </div>
+      </section>
 
       <div className="columns even">
         <section className="panel">
@@ -175,7 +217,7 @@ export function Business({ nav }: { nav: Nav }) {
                 )}
               </div>
             ))}
-            <p className="muted small">시즌권·좌석 증설·시설 노후도·마케팅·스폰서·굿즈는 다음 차수에서 추가됩니다.</p>
+            <p className="muted small">시즌권·좌석 증설·시설 노후도·스폰서·굿즈는 다음 차수에서 추가됩니다.</p>
           </div>
         </section>
       </div>

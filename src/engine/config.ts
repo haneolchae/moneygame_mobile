@@ -253,6 +253,35 @@ export const ATTENDANCE = {
   },
 } as const;
 
+/** 6b 팬 만족도·캠페인(D-147 초기안, 팬 반발 해임은 D-043). 비용은 2026 기준(물가 연동) */
+export const MARKETING = {
+  startSatisfaction: 50,
+  loyaltyBonus: { 낮음: -5, 보통: 0, 높음: 5, '매우 높음': 10 } as Record<string, number>,
+  /** 목표 = 50 + pctSlope × (승률 − 0.5) + 충성도 + 캠페인, 매주 차이의 weeklyMove만큼 이동 */
+  pctSlope: 100,
+  targetMin: 5,
+  targetMax: 95,
+  weeklyMove: 0.1,
+  /** 관중 수요 × (1 + demandSlope × (만족도 − 50) / 50) */
+  demandSlope: 0.15,
+  backlashBelow: 20,
+  backlashDemand: 0.8,
+  recoverAt: 25,
+  dismissWeeks: 8,
+  campaignAp: 2,
+  maxDemandBoost: 0.08,
+  maxSatisfactionBoost: 8,
+  campaigns: {
+    family: { label: '가족 프로모션', weeks: 4, costWon: 300_000_000, demand: 0.04, satisfaction: 0 },
+    local: { label: '지역 행사', weeks: 4, costWon: 200_000_000, demand: 0, satisfaction: 4 },
+    online: { label: '온라인 콘텐츠', weeks: 8, costWon: 200_000_000, demand: 0.02, satisfaction: 2 },
+    fanEvent: { label: '선수 팬 행사', weeks: 2, costWon: 150_000_000, demand: 0, satisfaction: 5 },
+  },
+  /** AI 구단이 실행하는 캠페인과 현금 하한(시작 현금 배수) */
+  aiKinds: ['family', 'online'] as readonly string[],
+  aiCashFloor: 0.9,
+} as const;
+
 /** 6a 시설 투자(D-141: 큰 투자 방향은 사용자 확정 D-135, 수치 초기안). 금액은 2026 기준(물가 연동) */
 export const FACILITY = {
   maxLevel: 5,

@@ -1,6 +1,6 @@
 // 6a 관중·티켓·시설(13·14·16 문서, D-141). 순수 규칙만 둔다: 점유율, 입장·매점 수입, 시설 공사비·기간·지급 일정·효과.
 import { addDays, type GameDate } from './calendar';
-import { ATTENDANCE as A, FACILITY as F } from './config';
+import { ATTENDANCE as A, FACILITY as F, MARKETING as M } from './config';
 import { stableNormal } from './rng';
 import type { ClubProfile } from './types';
 
@@ -40,14 +40,14 @@ export interface AttendanceInput {
   priorPct: number;
   policy: TicketPolicy;
   stadiumLevel: number;
+  /** 6b: 팬 만족도(없으면 50)와 진행 캠페인 수요 보정(0~0.08) */
+  satisfaction?: number;
+  campaignDemand?: number;
 }
 
 /** 점유율(0.2~1.0). 같은 경기는 항상 같은 값(경기 ID 고정 편차) */
 export function occupancy(i: AttendanceInput): number {
-  const played = i.wins + i.losses;
-  const cur = played > 0 ? i.wins / played : i.priorPct;
-  const w = Math.min(1, played / A.blendGames);
-  const pct = cur * w + i.priorPct * (1 - w);
+  const pct = blendedPct(i.wins, i.losses, i.priorPct);
   const perf = 1 + (A.loyaltySensitivity[i.home.loyalty] ?? 0.5) * (pct - 0.5) * 2;
   const v =
     A.baseOccupancy *
@@ -58,6 +58,8 @@ export function occupancy(i: AttendanceInput): number {
     (1 + A.opponentSlope * (i.away.marketSize - 1)) *
     A.policy[i.policy].demand *
     (1 + F.stadiumDemandPerLevel * (i.stadiumLevel - 1)) *
+    fanDemand(i.satisfaction ?? M.startSatisfaction) *
+    (1 + Math.min(M.maxDemandBoost, i.campaignDemand ?? 0)) *
     (1 + Math.max(-2, Math.min(2, stableNormal(i.seed, 'attendance', i.fixtureId))) * (A.noise / 2));
   return Math.max(A.minOccupancy, Math.min(1, v));
 }
@@ -77,6 +79,55 @@ export function gate(i: AttendanceInput, inflation: number): GateResult {
   const perHead = Math.round(A.concessionPerHeadWon * inflation * (1 + F.stadiumConcessionPerLevel * (i.stadiumLevel - 1)));
   const concessionWon = Math.round((attendance * perHead * A.concessionShareBp) / 10_000);
   return { attendance, ticketWon, concessionWon, gateFeeWon: Math.round((ticketWon * A.gateFeeBp) / 10_000) };
+}
+
+// ───────── 6b 팬 만족도·캠페인 (D-147) ─────────
+
+export type CampaignKind = keyof typeof M.campaigns;
+export const CAMPAIGN_KINDS = Object.keys(M.campaigns) as CampaignKind[];
+
+export interface Campaign {
+  kind: CampaignKind;
+  start: GameDate;
+  /** 이날까지 효과(포함) */
+  end: GameDate;
+  costWon: number;
+}
+
+export interface FanState {
+  satisfaction: number;
+  /** 팬 반발(20 미만)이 시작된 날. 25 이상으로 회복하면 지운다 */
+  lowSince?: GameDate;
+}
+
+/** 만족도의 관중 수요 배수: ±15%, 팬 반발 상태는 ×0.8 */
+export function fanDemand(satisfaction: number): number {
+  if (satisfaction < M.backlashBelow) return M.backlashDemand;
+  return 1 + (M.demandSlope * (satisfaction - 50)) / 50;
+}
+
+/** 진행 캠페인의 합계 효과(상한 적용) */
+export function campaignBoost(active: readonly Campaign[]): { demand: number; satisfaction: number } {
+  return {
+    demand: Math.min(M.maxDemandBoost, active.reduce((a, c) => a + M.campaigns[c.kind].demand, 0)),
+    satisfaction: Math.min(M.maxSatisfactionBoost, active.reduce((a, c) => a + M.campaigns[c.kind].satisfaction, 0)),
+  };
+}
+
+/** 주간 만족도 갱신: 목표 쪽으로 차이의 10% 이동(소수 1자리) */
+export function nextSatisfaction(current: number, pct: number, loyalty: string, boost: number): number {
+  const target = Math.max(M.targetMin, Math.min(M.targetMax, 50 + M.pctSlope * (pct - 0.5) + (M.loyaltyBonus[loyalty] ?? 0) + boost));
+  return Math.round((current + (target - current) * M.weeklyMove) * 10) / 10;
+}
+
+export const startSatisfaction = (loyalty: string) => M.startSatisfaction + (M.loyaltyBonus[loyalty] ?? 0);
+
+/** 시즌 초 혼합 승률(관중 모델과 같은 규칙) */
+export function blendedPct(wins: number, losses: number, priorPct: number): number {
+  const played = wins + losses;
+  const cur = played > 0 ? wins / played : priorPct;
+  const w = Math.min(1, played / A.blendGames);
+  return cur * w + priorPct * (1 - w);
 }
 
 /** 새 공사: 승인이 필요하면 4주 뒤 착공. 지급은 착공·중간·완공 */

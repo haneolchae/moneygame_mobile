@@ -1,9 +1,9 @@
 // 6a 관중·티켓·시설(D-141·D-142): 점유율 범위·가격 정책, 착수 비용(행동력 3)·검증 실패 무비용, 지급 합계 = 공사비,
 // 완공 뒤에만 효과, 홈경기 관중 ≤ 좌석 수와 입장수입 장부, 가격 정책이 다음 홈경기 가격에 반영
 import { describe, expect, it } from 'vitest';
-import { gate, occupancy, planProject, type AttendanceInput } from '../src/engine/business';
+import { campaignBoost, fanDemand, gate, nextSatisfaction, occupancy, planProject, type AttendanceInput } from '../src/engine/business';
 import { CLUB_PROFILES } from '../src/engine/clubs';
-import { ATTENDANCE, FACILITY } from '../src/engine/config';
+import { ATTENDANCE, FACILITY, MARKETING } from '../src/engine/config';
 import type { Dispatcher } from '../src/host/dispatcher';
 import { checkBusiness } from '../src/host/invariants';
 import { call, cleanup, makeDispatcher, tempDir } from './helpers';
@@ -95,6 +95,67 @@ describe('관중·티켓·시설 (6a)', () => {
       expect(s.leagueOccupancy).not.toBeNull();
       expect(Math.abs(s.leagueOccupancy! - s.occupancy)).toBeGreaterThan(0.0001);
       expect(checkBusiness(repo)).toEqual([]);
+    } finally {
+      d.close();
+      cleanup(dir);
+    }
+  });
+});
+
+describe('팬 만족도·캠페인 (6b)', () => {
+  it('만족도 수요 배수·주간 이동·캠페인 합계 상한', () => {
+    expect(fanDemand(50)).toBe(1);
+    expect(fanDemand(100)).toBeCloseTo(1 + MARKETING.demandSlope, 9);
+    expect(fanDemand(19.9)).toBe(MARKETING.backlashDemand);
+    expect(nextSatisfaction(50, 0.6, '보통', 0)).toBe(51); // 목표 60으로 차이의 10%
+    expect(nextSatisfaction(50, 0.0, '보통', 0)).toBeGreaterThanOrEqual(0);
+    const all = (['family', 'local', 'online', 'fanEvent'] as const).map((kind) => ({ kind, start: '2027-04-01', end: '2027-04-30', costWon: 1 }));
+    expect(campaignBoost(all)).toEqual({ demand: 0.06, satisfaction: MARKETING.maxSatisfactionBoost });
+  });
+
+  it('캠페인 착수 비용·중복 거부, AI 캠페인, 팬 반발 경고·회복·해임', async () => {
+    const dir = tempDir();
+    const d = makeDispatcher(dir);
+    try {
+      await call(d, 'game.new', { clubId: 1, saveName: 't', seed: 'fans-6b' });
+      const repo = d.saves.repository();
+      await until(d, '2027-04-05'); // 월요일: 주 단위 진행이 월요일 처리(주간 팬 갱신)부터 시작
+      const ap = () => call(d, 'game.dashboard').then((x) => x.owner.apRemaining);
+      const v0 = await call(d, 'business.view');
+      expect(Object.values(repo.getMeta().fans!)).toHaveLength(10);
+      expect(checkBusiness(repo)).toEqual([]);
+      // AI 구단은 시즌 첫 월요일에 캠페인을 실행한다. 우리 구단은 자동 실행 없음
+      const aiRuns = Object.entries(repo.getMeta().campaigns!).filter(([id, list]) => id !== '1' && list.map((c) => c.kind).sort().join() === 'family,online');
+      expect(aiRuns.length).toBeGreaterThan(0); // 현금 여유(시작 현금 × 0.9 이상)가 있는 구단만
+      expect(repo.getMeta().campaigns!['1'] ?? []).toHaveLength(0);
+
+      const [ap0, cash0] = [await ap(), repo.cashBalance(1)];
+      const cost = v0.campaigns.find((c) => c.kind === 'family')!.costWon;
+      const r = await call(d, 'business.startCampaign', { kind: 'family' });
+      expect(await ap()).toBe(ap0 - MARKETING.campaignAp);
+      expect(repo.cashBalance(1)).toBe(cash0 - cost);
+      expect(r.view.campaigns.find((c) => c.kind === 'family')!.active).not.toBeNull();
+      expect((await d.respond('business.startCampaign', { kind: 'family' })).ok).toBe(false);
+      expect(await ap()).toBe(ap0 - MARKETING.campaignAp);
+      expect(repo.cashBalance(1)).toBe(cash0 - cost);
+
+      // 팬 반발: 20 미만이면 경고와 시작일 기록, 25 이상 회복하면 해제, 8주 미회복이면 해임
+      const setFan = (f: { satisfaction: number; lowSince?: string }) => repo.updateMeta({ fans: { ...repo.getMeta().fans!, '1': f } });
+      setFan({ satisfaction: 8 });
+      await call(d, 'game.advance', { mode: 'week' });
+      const low = repo.getMeta().fans!['1']!;
+      expect(low.satisfaction).toBeLessThan(MARKETING.backlashBelow);
+      expect(low.lowSince).toBeDefined();
+      expect((await call(d, 'business.view')).fans).toMatchObject({ backlash: true });
+      setFan({ satisfaction: 60, lowSince: low.lowSince! });
+      await call(d, 'game.advance', { mode: 'week' });
+      expect(repo.getMeta().fans!['1']!.lowSince).toBeUndefined();
+      expect(repo.getMeta().gameOver).toBeUndefined();
+      setFan({ satisfaction: 5, lowSince: '2027-02-01' });
+      const end = await call(d, 'game.advance', { mode: 'week' });
+      expect(end.stoppedReason).toContain('해임'); // 그날에서 멈추고 이유를 알린다
+      expect(repo.getMeta().gameOver).toMatchObject({ kind: 'dismissed' });
+      expect((await d.respond('game.advance', { mode: 'week' })).ok).toBe(false);
     } finally {
       d.close();
       cleanup(dir);

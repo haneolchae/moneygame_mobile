@@ -1,8 +1,8 @@
 // 6a 관중·티켓·시설 투자(13·14·16 문서, D-141): 홈경기 관중과 입장·매점 수입, 구장 관람료, 가격 정책,
 // 시설 공사(착수·지급·완공·취소)와 유지비, AI 구단 투자, 시설 효과. 모든 구단이 같은 규칙을 쓴다.
 import { addDays, diffDays, weekday, type GameDate } from '../engine/calendar';
-import { ATTENDANCE, FACILITY } from '../engine/config';
-import { FACILITY_KINDS, gate, newFacilities, planProject, rehabBoost, scoutingBoost, trainingBoost, unpaid, type ClubFacilities, type FacilityKind, type FacilityProject, type TicketPolicy } from '../engine/business';
+import { ATTENDANCE, FACILITY, MARKETING } from '../engine/config';
+import { blendedPct, CAMPAIGN_KINDS, campaignBoost, FACILITY_KINDS, gate, newFacilities, nextSatisfaction, planProject, rehabBoost, scoutingBoost, startSatisfaction, trainingBoost, unpaid, type Campaign, type CampaignKind, type ClubFacilities, type FacilityKind, type FacilityProject, type FanState, type TicketPolicy } from '../engine/business';
 import { inflate, type LedgerEntry } from '../engine/finance';
 import type { GameResult } from '../engine/gamesim';
 import { EOK } from '../engine/money';
@@ -42,6 +42,91 @@ export class BusinessOps {
   rehabBoost = (clubId: ClubId) => rehabBoost(this.repo.getMeta().facilities?.[String(clubId)]);
   scoutingBoost = (clubId: ClubId) => scoutingBoost(this.repo.getMeta().facilities?.[String(clubId)]);
 
+  // ───────── 6b 팬 만족도·캠페인 (D-147) ─────────
+
+  fanOf(meta: GameMeta, clubId: ClubId): FanState {
+    return meta.fans?.[String(clubId)] ?? { satisfaction: startSatisfaction(this.clubs.get(clubId)!.loyalty) };
+  }
+
+  /** 그날 효과가 있는 캠페인 */
+  activeCampaigns(meta: GameMeta, clubId: ClubId, date: GameDate): Campaign[] {
+    return (meta.campaigns?.[String(clubId)] ?? []).filter((c) => diffDays(date, c.start) >= 0 && diffDays(date, c.end) <= 0);
+  }
+
+  private newCampaign(meta: GameMeta, kind: CampaignKind, date: GameDate): Campaign {
+    const def = MARKETING.campaigns[kind];
+    return { kind, start: date, end: addDays(date, def.weeks * 7 - 1), costWon: Math.round((def.costWon * this.inflation(meta)) / 1_000_000) * 1_000_000 };
+  }
+
+  /** 매주 월요일(시즌 중): 모든 구단 만족도 갱신, 끝난 캠페인 정리, AI 캠페인, 우리 구단 팬 반발·해임 판정 */
+  private weeklyFans(meta: GameMeta, date: GameDate): { ledger: LedgerEntry[]; inbox: InboxMessage[] } {
+    const ledger: LedgerEntry[] = [];
+    const inbox: InboxMessage[] = [];
+    const season = meta.attendance?.[String(meta.season)] ?? {};
+    const prior = this.priorPct(meta.season);
+    const fans: Record<string, FanState> = {};
+    const campaigns: Record<string, Campaign[]> = {};
+    let gameOver: GameMeta['gameOver'] | undefined;
+    for (const club of this.clubs.values()) {
+      const id = String(club.id);
+      const mine = club.id === meta.userClubId;
+      let list = (meta.campaigns?.[id] ?? []).filter((c) => diffDays(date, c.end) <= 0);
+      // AI 구단: 진행 캠페인이 없고 현금 여유가 있으면 가족 프로모션·온라인 콘텐츠(D-147 (5))
+      if (!mine && list.length === 0 && this.repo.cashBalance(club.id) >= club.startCash * MARKETING.aiCashFloor) {
+        list = MARKETING.aiKinds.map((k) => this.newCampaign(meta, k as CampaignKind, date));
+        for (const c of list) ledger.push({ clubId: club.id, date, category: 'marketing', amount: -c.costWon, memo: MARKETING.campaigns[c.kind].label });
+      }
+      campaigns[id] = list;
+      const t = season[id];
+      const pct = blendedPct(t?.w ?? 0, t?.l ?? 0, prior.get(club.id) ?? 0.5);
+      const cur = this.fanOf(meta, club.id);
+      const active = list.filter((c) => diffDays(date, c.start) >= 0);
+      const next: FanState = { satisfaction: nextSatisfaction(cur.satisfaction, pct, club.loyalty, campaignBoost(active).satisfaction), ...(cur.lowSince ? { lowSince: cur.lowSince } : {}) };
+      if (mine && !meta.gameOver) {
+        if (next.satisfaction < MARKETING.backlashBelow && !next.lowSince) {
+          next.lowSince = date;
+          inbox.push({ date, kind: 'task', sender: '홍보팀', title: `팬 반발: 만족도 ${next.satisfaction}`, body: `팬 만족도가 ${MARKETING.backlashBelow} 아래로 떨어져 팬 반발 상태입니다. 관중이 20% 줄고, ${MARKETING.dismissWeeks}주 안에 ${MARKETING.recoverAt} 이상으로 회복하지 못하면 해임됩니다. 성적을 올리거나 [사업·시설]에서 캠페인을 실행하세요.` });
+        } else if (next.lowSince && next.satisfaction >= MARKETING.recoverAt) {
+          delete next.lowSince;
+          inbox.push({ date, kind: 'report', sender: '홍보팀', title: `팬 반발 해소: 만족도 ${next.satisfaction}`, body: '팬 만족도가 회복돼 해임 위험이 사라졌습니다.' });
+        } else if (next.lowSince && diffDays(date, next.lowSince) >= MARKETING.dismissWeeks * 7) {
+          gameOver = { kind: 'dismissed', date, reason: `팬 만족도가 ${MARKETING.dismissWeeks}주 동안 ${MARKETING.recoverAt} 이상으로 회복되지 않아 모기업이 경영 책임을 물었습니다.` };
+          inbox.push({ date, kind: 'task', sender: '모기업', title: '해임 통보', body: `${gameOver.reason}\n재임 기록은 명예의 전당에 남습니다.` });
+        }
+      } else if (!mine) delete next.lowSince;
+      fans[id] = next;
+    }
+    this.repo.updateMeta({ fans, campaigns, ...(gameOver ? { gameOver } : {}) });
+    return { ledger, inbox };
+  }
+
+  /** 캠페인 착수 검증(무료) */
+  campaignTarget(meta: GameMeta, kind: CampaignKind): Campaign {
+    if (!CAMPAIGN_KINDS.includes(kind)) throw new GameError('INVALID', '없는 캠페인입니다.');
+    if (meta.gameOver) throw new GameError('GAME_OVER', '종료된 게임입니다.');
+    if ((meta.campaigns?.[String(meta.userClubId)] ?? []).some((c) => c.kind === kind && diffDays(meta.currentDate, c.end) <= 0)) throw new GameError('DUPLICATE', '같은 캠페인이 이미 진행 중입니다.');
+    const c = this.newCampaign(meta, kind, meta.currentDate);
+    if (this.repo.cashBalance(meta.userClubId) < c.costWon) throw new GameError('CASH_SHORT', `현금이 부족합니다. 캠페인 비용 ${won(c.costWon)}.`);
+    return c;
+  }
+
+  /** 캠페인 착수: 행동력 2, 비용은 바로 지급 */
+  startCampaign(meta: GameMeta, weekId: string, kind: CampaignKind): string {
+    const c = this.campaignTarget(meta, kind);
+    return this.repo.transaction(() => {
+      try {
+        this.repo.spendAp(weekId, MARKETING.campaignAp);
+      } catch {
+        throw new GameError('AP_SHORT', `이번 주 행동력이 부족합니다(캠페인 행동력 ${MARKETING.campaignAp}).`);
+      }
+      const cur = this.repo.getMeta();
+      const id = String(meta.userClubId);
+      this.repo.updateMeta({ campaigns: { ...(cur.campaigns ?? {}), [id]: [...(cur.campaigns?.[id] ?? []).filter((x) => diffDays(meta.currentDate, x.end) <= 0), c] } });
+      this.repo.addLedger([{ clubId: meta.userClubId, date: meta.currentDate, category: 'marketing', amount: -c.costWon, memo: MARKETING.campaigns[kind].label }]);
+      return `${MARKETING.campaigns[kind].label} 캠페인을 시작했습니다. 비용 ${won(c.costWon)}, ${md(c.start)}~${md(c.end)}.`;
+    });
+  }
+
   private priorPct(season: number): Map<ClubId, number> {
     if (this.priorCache?.season !== season) {
       const pct = new Map<ClubId, number>();
@@ -67,7 +152,7 @@ export class BusinessOps {
       const away = this.clubs.get(r.away)!;
       const t = totals(r.home);
       const g = gate(
-        { seed: meta.seed, fixtureId: r.fixtureId, home, away, weekday: weekday(date), wins: t.w, losses: t.l, priorPct: prior.get(r.home) ?? 0.5, policy: r.home === meta.userClubId ? (meta.ticketPolicy ?? 'normal') : 'normal', stadiumLevel: meta.facilities?.[String(r.home)]?.levels.stadium ?? 1 },
+        { seed: meta.seed, fixtureId: r.fixtureId, home, away, weekday: weekday(date), wins: t.w, losses: t.l, priorPct: prior.get(r.home) ?? 0.5, policy: r.home === meta.userClubId ? (meta.ticketPolicy ?? 'normal') : 'normal', stadiumLevel: meta.facilities?.[String(r.home)]?.levels.stadium ?? 1, satisfaction: this.fanOf(meta, r.home).satisfaction, campaignDemand: campaignBoost(this.activeCampaigns(meta, r.home, date)).demand },
         inflation,
       );
       t.games += 1;
@@ -128,6 +213,11 @@ export class BusinessOps {
       all[String(club.id)] = f;
     }
     if (changed) this.repo.updateMeta({ facilities: all });
+    if (meta.mode === 'season' && weekday(date) === 1) {
+      const w = this.weeklyFans(meta, date);
+      ledger.push(...w.ledger);
+      inbox.push(...w.inbox);
+    }
     return { ledger, inbox };
   }
 
@@ -248,6 +338,23 @@ export class BusinessOps {
       },
       seasons,
       facilities,
+      fans: (() => {
+        const fan = this.fanOf(meta, club.id);
+        return { satisfaction: fan.satisfaction, backlash: fan.satisfaction < MARKETING.backlashBelow, lowSince: fan.lowSince ?? null, dismissDate: fan.lowSince ? addDays(fan.lowSince, MARKETING.dismissWeeks * 7) : null, recoverAt: MARKETING.recoverAt };
+      })(),
+      campaignAp: MARKETING.campaignAp,
+      campaigns: CAMPAIGN_KINDS.map((kind) => {
+        const def = MARKETING.campaigns[kind];
+        const active = (meta.campaigns?.[String(club.id)] ?? []).find((c) => c.kind === kind && diffDays(meta.currentDate, c.end) <= 0) ?? null;
+        let startReason: string | null = null;
+        try {
+          this.campaignTarget(meta, kind);
+        } catch (e) {
+          if (!(e instanceof GameError)) throw e;
+          startReason = e.message;
+        }
+        return { kind, label: def.label, weeks: def.weeks, costWon: Math.round((def.costWon * inflation) / 1_000_000) * 1_000_000, demandPct: Math.round(def.demand * 100), satisfaction: def.satisfaction, active: active ? { start: active.start, end: active.end } : null, startReason };
+      }),
     };
   }
 }

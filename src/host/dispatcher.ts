@@ -110,6 +110,8 @@ export class Dispatcher {
         return this.game().setTicketPolicy((payload as RequestMap['business.setTicketPolicy']['payload']).policy) as R;
       case 'business.startFacility':
         return this.game().startFacility((payload as RequestMap['business.startFacility']['payload']).kind) as R;
+      case 'business.startCampaign':
+        return this.game().startCampaign((payload as RequestMap['business.startCampaign']['payload']).kind) as R;
       case 'business.cancelFacility':
         return this.game().cancelFacility((payload as RequestMap['business.cancelFacility']['payload']).kind) as R;
       case 'trade.view':

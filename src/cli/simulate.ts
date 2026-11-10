@@ -146,6 +146,13 @@ async function main() {
       }
       console.log(JSON.stringify({ facilities: { started } }));
     }
+    // 6b(D-147): 다음 주(새 행동력)에 캠페인 1건을 실행한다. 규칙상 거부는 건너뛴다. 트레이드 시도도 이 주의 행동력으로 한다.
+    await advance('week');
+    try {
+      await call('business.startCampaign', { kind: 'online' });
+    } catch {
+      // 행동력·현금 부족, 종료된 게임 등
+    }
     // 5a·5b(D-132 ⑤·D-137 ③): 위임 구단주도 시즌마다 트레이드를 시도한다. 상대 선택·제안은 게임 명령으로만 하고
     // 규칙 판정(기간·자격·선수단·현금·AI 응답)은 게임 쪽이 한다. 역제안은 받아들인다. 계약 마지막 해 선수 1명은 요구 조건으로 연장을 시도한다.
     {
@@ -257,6 +264,10 @@ async function main() {
     const ticketEok2026 = +(attSum.ticket / 10 / infl / 1e8).toFixed(1);
     if (occupancy < 0.55 || occupancy > 0.85) inv.push(`사전 등록 6a ② 위반: 리그 평균 점유율 ${occupancy}`);
     if (ticketEok2026 < 100 || ticketEok2026 > 200) inv.push(`사전 등록 6a ③ 위반: 구단당 입장수입(2026 기준) ${ticketEok2026}억`);
+    // 6b 사전 등록 ②(D-148): 시즌 종료 시 리그 평균 만족도 40~60
+    const fanVals = Object.values(repo5.getMeta().fans ?? {}).map((f) => f.satisfaction);
+    const fanAvg = fanVals.length ? +(fanVals.reduce((a, b) => a + b, 0) / fanVals.length).toFixed(1) : null;
+    if (fanAvg !== null && (fanAvg < 40 || fanAvg > 60)) inv.push(`사전 등록 6b ② 위반: 리그 평균 만족도 ${fanAvg}`);
     const facLevels = Object.values(repo5.getMeta().facilities ?? {}).map((f) => Object.values(f.levels).reduce((a, b) => a + b, 0));
     if (!tradeStats.some((t) => t.season === s && t.attempts > 0)) inv.push(`사전 등록 5b ③: 시즌 ${s} 트레이드 시도 없음`);
     rows.push({
@@ -265,6 +276,8 @@ async function main() {
       aiCashRatio,
       occupancy,
       ticketEok2026,
+      fanAvg,
+      userFan: repo5.getMeta().fans?.['1']?.satisfaction ?? null,
       facilityLevelAvg: facLevels.length ? +(facLevels.reduce((a, b) => a + b, 0) / facLevels.length).toFixed(1) : null,
       userFacilityLevels: Object.values(repo5.getMeta().facilities?.['1']?.levels ?? {}).join('/'),
       trades: tradeStats.find((t) => t.season === s) ?? null,

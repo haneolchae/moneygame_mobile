@@ -2,7 +2,7 @@ import type { ScoutingSnapshot } from '../engine/scouting';
 // 게임 진행 계층이 저장 계층에 요구하는 기능. SQLite 구현은 persistence에 있다.
 // 이 인터페이스 덕분에 게임 진행 로직은 저장 방식(SQLite 드라이버 등)을 모른다.
 import type { GameDate } from '../engine/calendar';
-import type { ClubFacilities, TicketPolicy } from '../engine/business';
+import type { Campaign, ClubFacilities, FanState, TicketPolicy } from '../engine/business';
 import type { ContractOffer, FaGrade } from '../engine/contracts';
 import type { LedgerCategory, LedgerEntry } from '../engine/finance';
 import type { GameResult } from '../engine/gamesim';
@@ -84,6 +84,9 @@ export interface GameMeta {
   ticketPolicy?: TicketPolicy;
   /** 구단 시설 단계·공사: 구단 ID → 시설 */
   facilities?: Record<string, ClubFacilities>;
+  /** 6b 팬 만족도·진행 캠페인(D-147): 구단 ID → 값 */
+  fans?: Record<string, FanState>;
+  campaigns?: Record<string, Campaign[]>;
   /** D-136 계약 세션: 선수 ID → 이번 주 세션(주·제안 횟수) */
   contractSessions?: Record<string, { weekId: string; count: number }>;
 }

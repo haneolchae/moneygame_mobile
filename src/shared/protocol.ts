@@ -631,6 +631,7 @@ export interface RosterView {
 
 export type TicketPolicyView = 'low' | 'normal' | 'high';
 export type FacilityKindView = 'stadium' | 'training' | 'rehab' | 'scouting';
+export type CampaignKindView = 'family' | 'local' | 'online' | 'fanEvent';
 
 export interface BusinessView {
   date: string;
@@ -642,6 +643,10 @@ export interface BusinessView {
   startAp: number;
   ticket: { policy: TicketPolicyView; priceWon: number; options: Array<{ key: TicketPolicyView; label: string; priceWon: number; demand: number }> };
   seasons: Array<{ season: number; games: number; total: number; average: number; occupancy: number; sellouts: number; ticketWon: number; leagueOccupancy: number | null }>;
+  /** 6b 팬 만족도(0~100). 20 미만은 팬 반발, dismissDate까지 recoverAt 이상으로 회복하지 못하면 해임 */
+  fans: { satisfaction: number; backlash: boolean; lowSince: string | null; dismissDate: string | null; recoverAt: number };
+  campaignAp: number;
+  campaigns: Array<{ kind: CampaignKindView; label: string; weeks: number; costWon: number; demandPct: number; satisfaction: number; active: { start: string; end: string } | null; startReason: string | null }>;
   facilities: Array<{
     kind: FacilityKindView;
     label: string;
@@ -902,6 +907,7 @@ export interface RequestMap {
   'business.view': { payload: undefined; result: BusinessView };
   'business.setTicketPolicy': { payload: { policy: TicketPolicyView }; result: { message: string; view: BusinessView } };
   'business.startFacility': { payload: { kind: FacilityKindView }; result: { message: string; view: BusinessView } };
+  'business.startCampaign': { payload: { kind: CampaignKindView }; result: { message: string; view: BusinessView } };
   'business.cancelFacility': { payload: { kind: FacilityKindView }; result: { message: string; view: BusinessView } };
   'trade.view': { payload: { clubId: number }; result: TradeView };
   'trade.preview': { payload: { clubId: number } & TradePackageView; result: TradePreviewView };
@@ -972,6 +978,7 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'business.view',
   'business.setTicketPolicy',
   'business.startFacility',
+  'business.startCampaign',
   'business.cancelFacility',
   'trade.view',
   'trade.preview',

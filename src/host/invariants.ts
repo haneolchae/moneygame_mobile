@@ -243,6 +243,12 @@ export function checkBusiness(repo: GameRepository): string[] {
       if (t.sellouts > t.games) errors.push(`매진 수 오류: ${season} 구단 ${id}`);
     }
   }
+  // 6b 사전 등록 ①(D-148): 만족도 0~100, 종류별 진행 캠페인 1건 이하
+  for (const [id, fan] of Object.entries(meta.fans ?? {})) if (!(fan.satisfaction >= 0 && fan.satisfaction <= 100)) errors.push(`팬 만족도 범위 오류: 구단 ${id} ${fan.satisfaction}`);
+  for (const [id, list] of Object.entries(meta.campaigns ?? {})) {
+    const live = list.filter((c) => c.end >= meta.currentDate).map((c) => c.kind);
+    if (new Set(live).size !== live.length) errors.push(`캠페인 중복: 구단 ${id}`);
+  }
   for (const [id, f] of Object.entries(meta.facilities ?? {})) {
     for (const kind of FACILITY_KINDS) {
       const level = f.levels[kind];
