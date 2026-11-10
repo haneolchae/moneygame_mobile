@@ -30,7 +30,7 @@ function Abilities({ s }: { s: StaffView }) {
 function WpBar({ used, total }: { used: number; total: number }) {
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 100;
   return (
-    <span style={{ display: 'inline-block', width: 90, height: 8, background: '#e4dfcf', borderRadius: 4, verticalAlign: 'middle', marginRight: 6 }}>
+    <span style={{ display: 'inline-block', width: 90, height: 8, background: '#30445a', borderRadius: 4, verticalAlign: 'middle', marginRight: 6 }}>
       <span style={{ display: 'block', width: `${pct}%`, height: 8, borderRadius: 4, background: pct >= 100 ? 'var(--error)' : 'var(--green-2)' }} />
     </span>
   );

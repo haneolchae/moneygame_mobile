@@ -131,7 +131,7 @@ export function Players({ nav }: { nav: Nav }) {
           </thead>
           <tbody>
             {visible.map((p) => (
-              <tr key={p.id} id={`player-row-${p.id}`} tabIndex={0} className="clickable" onClick={() => open(p.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(p.id); } }}>
+              <tr key={p.id} id={`player-row-${p.id}`} tabIndex={0} className={`clickable ${query.scope !== 'mine' && p.club?.id === nav.dashboard?.userClub.id ? 'mine' : ''}`} onClick={() => open(p.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(p.id); } }}>
                 <td className="sticky">
                   {p.watched ? "★ " : ""}{p.name} {p.healthStatus && <span className="badge req">{p.healthStatus}</span>} {p.franchise && <span className="badge star">간판</span>} {p.faEligible && <span className="badge fa">FA</span>}
                 </td>

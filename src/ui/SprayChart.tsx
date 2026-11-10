@@ -48,7 +48,7 @@ export function SprayChart({ spray }: { spray: SprayView }) {
             const rate = z && n > 0 ? z.h / n : null;
             const enough = n >= MIN_BALLS_FOR_RATE;
             const alpha = metric === 'balls' ? (n / maxN) * 0.85 : rate !== null && enough ? Math.min(1, rate / 0.6) * 0.85 : 0;
-            const fill = metric === 'rate' && n > 0 && !enough ? 'rgba(107,114,128,0.15)' : `rgba(42,107,75,${alpha.toFixed(3)})`;
+            const fill = metric === 'rate' && n > 0 && !enough ? 'rgba(156,178,201,0.12)' : `rgba(103,231,205,${alpha.toFixed(3)})`;
             const [a0, a1] = angleOf(dir);
             const mid = (a0 + a1) / 2;
             const rText = d.r0 === 0 ? 56 : (d.r0 + d.r1) / 2;
@@ -56,11 +56,11 @@ export function SprayChart({ spray }: { spray: SprayView }) {
             const text = n === 0 ? '' : metric === 'balls' ? String(n) : enough ? rate3(rate) : '';
             return (
               <g key={`${dir}-${d.key}`}>
-                <path d={cellPath(dir, d.r0, d.r1)} fill={fill} stroke="#e3ddcc" strokeWidth={1}>
+                <path d={cellPath(dir, d.r0, d.r1)} fill={fill} stroke="#30455c" strokeWidth={1}>
                   <title>{`${DIR_LABELS[dir - 1]} · ${d.label}: 타구 ${n}${z ? ` · 안타 ${z.h}(장타 ${z.xbh}) · 안타율 ${rate3(rate)}` : ''}`}</title>
                 </path>
                 {text && (
-                  <text x={tx} y={ty} fontSize={d.key === 'WL' ? 8 : 9} textAnchor="middle" dominantBaseline="middle" fill={alpha > 0.5 ? '#fff' : '#1f2937'} pointerEvents="none">
+                  <text x={tx} y={ty} fontSize={d.key === 'WL' ? 8 : 9} textAnchor="middle" dominantBaseline="middle" fill={alpha > 0.5 ? '#062a28' : '#dbe8f3'} pointerEvents="none">
                     {text}
                   </text>
                 )}

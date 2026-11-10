@@ -5,7 +5,9 @@ import { api, ApiError, onProgress } from './api';
 import { ApprovalPopup } from './ApprovalPopup';
 import { Emblem } from './Emblem';
 import { dateKo } from './format';
+import monogram from './assets/diamond-office/diamond_monogram.svg';
 import { Icon } from './icons';
+import { PrimaryNav } from './PrimaryNav';
 import { leaveGuard } from './playerFocus';
 import { BoxScore } from './screens/BoxScore';
 import { Dashboard } from './screens/Dashboard';
@@ -63,20 +65,21 @@ export interface Nav {
   notify: (msg: string, kind?: 'info' | 'error') => void;
 }
 
+// 주 메뉴(경로·순서는 기존과 같음). 아이콘은 Diamond Office 키트(D-140), 같은 의미가 없으면 기존 아이콘
 const MENU: Array<{ route: Route; label: string; icon: string }> = [
-  { route: { name: 'dashboard' }, label: '구단 현황', icon: 'home' },
-  { route: { name: 'inbox' }, label: '받은 편지함', icon: 'mail' },
-  { route: { name: 'players' }, label: '선수단', icon: 'users' },
-  { route: { name: 'roster' }, label: '선수단 운영', icon: 'ball' },
-  { route: { name: 'market' }, label: '계약·이적', icon: 'handshake' },
-  { route: { name: 'org' }, label: '조직·위임', icon: 'org' },
-  { route: { name: 'draft' }, label: '신인 드래프트', icon: 'star' },
-  { route: { name: 'schedule' }, label: '일정', icon: 'calendar' },
-  { route: { name: 'standings' }, label: '리그 순위', icon: 'chart' },
-  { route: { name: 'compare' }, label: '선수 비교', icon: 'file' },
-  { route: { name: 'team' }, label: '팀 기록', icon: 'ball' },
-  { route: { name: 'hof' }, label: '명예의 전당', icon: 'trophy' },
-  { route: { name: 'finance' }, label: '재정', icon: 'coins' },
+  { route: { name: 'dashboard' }, label: '구단 현황', icon: 'do-home' },
+  { route: { name: 'inbox' }, label: '받은 편지함', icon: 'do-bell' },
+  { route: { name: 'players' }, label: '선수단', icon: 'do-roster' },
+  { route: { name: 'roster' }, label: '선수단 운영', icon: 'do-edit' },
+  { route: { name: 'market' }, label: '계약·이적', icon: 'do-contract' },
+  { route: { name: 'org' }, label: '조직·위임', icon: 'do-operations' },
+  { route: { name: 'draft' }, label: '신인 드래프트', icon: 'do-scout' },
+  { route: { name: 'schedule' }, label: '일정', icon: 'do-calendar' },
+  { route: { name: 'standings' }, label: '리그 순위', icon: 'do-game' },
+  { route: { name: 'compare' }, label: '선수 비교', icon: 'do-compare' },
+  { route: { name: 'team' }, label: '팀 기록', icon: 'do-development' },
+  { route: { name: 'hof' }, label: '명예의 전당', icon: 'do-star' },
+  { route: { name: 'finance' }, label: '재정', icon: 'do-finance' },
   { route: { name: 'saves' }, label: '저장·불러오기', icon: 'save' },
 ];
 
@@ -180,9 +183,16 @@ export function App() {
     <div className="shell">
       <header className="topbar">
         <div className="brand">
-          <Icon name="ball" size={28} />
+          <img src={monogram} alt="" />
           프런트 오피스
           <span className="sub">프로야구 구단 경영 시뮬레이션</span>
+        </div>
+        <div className="club-chip">
+          <Emblem club={d.userClub} size={34} />
+          <div>
+            <strong>{d.userClub.name}</strong>
+            <span>{d.phaseLabel}</span>
+          </div>
         </div>
         <div className="spacer" />
         <div className="ap" title="이번 주 남은 행동력">
@@ -218,34 +228,24 @@ export function App() {
           )}
         </div>
       </header>
-      <nav className="sidebar">
-        <div className="club-card">
-          <Emblem club={d.userClub} size={54} />
-          <div>
-            <strong>{d.userClub.name}</strong>
-            <span>{d.phaseLabel}</span>
-          </div>
-        </div>
-        {[MENU[0]!, { route: { name: 'club', clubId: d.userClub.id } as Route, label: '구단 정보', icon: 'trophy' }, ...MENU.slice(1)].map((m) => (
-          <button key={m.label} className={`nav ${route.name === m.route.name && (route.name !== 'club' || (m.route.name === 'club' && route.clubId === m.route.clubId)) ? 'active' : ''}`} onClick={() => go(m.route)}>
-            <Icon name={m.icon} size={22} />
-            {m.label}
-            {m.route.name === 'inbox' && d.unreadInbox > 0 && <span className="badge-count">{d.unreadInbox}</span>}
-            {m.route.name === 'org' && d.pendingApprovals > 0 && <span className="badge-count">{d.pendingApprovals}</span>}
-          </button>
-        ))}
-        <div className="platform">
-          Steam: {status?.platform.steam.mode === 'real' ? '연결됨' : '모의'}
-          <br />
-          {status?.platform.steam.detail}
-        </div>
-      </nav>
+      <PrimaryNav
+        items={[MENU[0]!, { route: { name: 'club', clubId: d.userClub.id } as Route, label: '구단 정보', icon: 'do-baseball' }, ...MENU.slice(1)].map((m) => ({
+          key: m.label,
+          label: m.label,
+          icon: m.icon,
+          active: route.name === m.route.name && (route.name !== 'club' || (m.route.name === 'club' && route.clubId === m.route.clubId)),
+          badge: m.route.name === 'inbox' ? d.unreadInbox : m.route.name === 'org' ? d.pendingApprovals : 0,
+          onSelect: () => go(m.route),
+        }))}
+        platform={status?.platform.steam.mode === 'real' ? '연결됨' : '모의'}
+        platformDetail={status?.platform.steam.detail ?? ''}
+      />
       <main className="content" key={refreshKey}>
         {d.gameOver && (
           <div className="panel" style={{ borderColor: 'var(--error)', marginBottom: 14 }}>
             <div className="panel-head" style={{ background: 'var(--error)' }}>
               <h2>{d.gameOver.kind === 'dismissed' ? '해임되었습니다' : '구단이 파산했습니다'}</h2>
-              <span className="meta" style={{ color: '#fff' }}>{d.gameOver.date}</span>
+              <span className="meta" style={{ color: 'var(--text)' }}>{d.gameOver.date}</span>
             </div>
             <div className="panel-body">
               {d.gameOver.reason} 재임 기록은 [명예의 전당]에서 볼 수 있습니다. 새 게임으로 다시 시작할 수 있습니다(다른 구단 영입 제안은 다음 단계).

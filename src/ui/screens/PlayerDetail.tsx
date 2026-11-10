@@ -1,3 +1,4 @@
+import silhouette from '../assets/diamond-office/player_silhouette.svg';
 import { PlayerAbilities } from '../PlayerAbilities';
 import { leaveGuard, playerFocus } from '../playerFocus';
 import { PlayerActionsPanel } from '../PlayerActionsPanel';
@@ -197,6 +198,10 @@ export function PlayerDetail({ nav, playerId, list, back }: { nav: Nav; playerId
       <button disabled={saving} onClick={() => { const r = toggleCompare(playerId); setInCompare(compareList.ids.includes(playerId)); if (r === 'full') notify(`비교는 최대 ${COMPARE_MAX}명까지입니다.`, 'error'); }}>{inCompare ? '비교에서 빼기' : '비교에 추가'}</button>
       {compareList.ids.length > 0 && <button disabled={saving} onClick={() => void leaveTo({ name: 'compare' })}>비교 보기 ({compareList.ids.length})</button>}
     </div>
+    {/* 선수 머리(D-140 PlayerHero): 초상 미확정 → 키트 실루엣. 수치는 기존 공개 값만 */}
+    <section className="player-hero">
+    <img className="portrait" src={silhouette} alt="" />
+    <div className="hero-body">
     <h1>{p.name} <span className="muted">{p.club ? <span className="clickable" title="구단 정보" onClick={() => void leaveTo({ name: 'club', clubId: p.club!.id })}>{p.club.name}</span> : 'FA'} · {POSITION_LABELS[p.position] ?? p.position} · {p.level}</span></h1>
     <div className="cards">
       <div className="card"><div className="label">나이·생년월일</div><div className="value">{p.age}세</div>{dateKo(p.birthDate)}</div>
@@ -204,6 +209,8 @@ export function PlayerDetail({ nav, playerId, list, back }: { nav: Nav; playerId
       <div className="card"><div className="label">경력</div><div className="value">프로 {p.proSeasons}년차</div></div>
       <div className="card"><div className="label">연봉</div><div className="value">{won(p.salaryWon)}</div></div>
     </div>
+    </div>
+    </section>
     {error && <p role="alert">저장·처리 실패: {error}</p>}
     <PlayerActionsPanel playerId={playerId} playerName={p.name} nav={nav} beforeAct={save} onChanged={reload} />
     <div className="seg" role="tablist" aria-label="선수 상세">

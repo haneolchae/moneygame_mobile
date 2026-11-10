@@ -1,9 +1,10 @@
-// 구단 현황 (레퍼런스 화면 구성, D-073): 핵심 지표 줄 · 다음 경기(또는 스토브리그 일정) · 주요 선수 · 리그 순위 · 확인할 업무
+// 구단 현황 (화면 방향 D-140 Diamond Office): 핵심 지표 줄 · 다음 경기(또는 스토브리그 일정) · 주요 선수 · 리그 순위 · 확인할 업무
 import type { DashboardView, TaskView } from '../../shared/protocol';
 import type { Nav } from '../App';
 import { Emblem } from '../Emblem';
 import { dateKo, int, POSITION_LABELS, rate3, shortDate, won } from '../format';
 import { Icon } from '../icons';
+import { NextGameCard } from '../NextGameCard';
 import { PostseasonBracket } from '../PostseasonBracket';
 
 const TASK_ICON: Record<string, string> = { inbox: 'mail', players: 'users', finance: 'coins', schedule: 'calendar', standings: 'chart', market: 'handshake', org: 'org', draft: 'star', roster: 'ball' };
@@ -44,64 +45,6 @@ function Kpis({ d }: { d: DashboardView }) {
   );
 }
 
-function NextGame({ d, nav }: { d: DashboardView; nav: Nav }) {
-  const g = d.nextGame;
-  if (!g) {
-    return (
-      <section className="panel">
-        <div className="panel-head">
-          <h2>다음 경기</h2>
-          <span className="meta">개막 {dateKo(d.openingDay)}</span>
-        </div>
-        <div className="panel-body muted">예정된 경기가 없습니다.</div>
-      </section>
-    );
-  }
-  const f = g.fixture;
-  const home = f.home.id === d.userClub.id;
-  return (
-    <section className="panel">
-      <div className="panel-head">
-        <h2>다음 경기</h2>
-        <span className="meta">
-          {d.phase === 'preseason' ? '정규시즌 개막전' : '정규시즌'} | {dateKo(f.date)} | {f.home.name} 홈 ({f.home.shortName === d.userClub.shortName ? '우리 구장' : '원정'})
-        </span>
-      </div>
-      <div className="matchup">
-        <div className="team">
-          <Emblem club={f.away} size={78} />
-          <div>
-            <strong>{f.away.name}</strong>
-            <span className="muted">({g.awayRecord || '첫 경기'})</span>
-          </div>
-        </div>
-        <div className="vs">VS</div>
-        <div className="team away">
-          <Emblem club={f.home} size={78} />
-          <div>
-            <strong>{f.home.name}</strong>
-            <span className="muted">({g.homeRecord || '첫 경기'})</span>
-          </div>
-        </div>
-      </div>
-      <div className="starters">
-        {[g.awayStarter, g.homeStarter].map((s, i) => (
-          <div key={i} className="starter" onClick={() => s && nav.go({ name: 'player', playerId: s.id, back: { name: 'dashboard' } })} style={{ cursor: s ? 'pointer' : 'default' }}>
-            <div className="portrait">
-              <Icon name="users" size={30} />
-            </div>
-            <div>
-              <span className="tag">예상 선발</span> <strong>{s?.name ?? '미정'}</strong> <span className="muted">({s?.throws})</span>
-              <div className="muted small">{s?.line}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="panel-body muted small">{home ? '홈 경기' : '원정 경기'} · 예상 선발은 로테이션 기준이며 경기 당일 바뀔 수 있습니다.</div>
-    </section>
-  );
-}
-
 function StoveWeek({ d }: { d: DashboardView }) {
   return (
     <section className="panel">
@@ -139,7 +82,7 @@ export function Dashboard({ nav }: { nav: Nav }) {
       <div className="columns">
         <div>
           {d.postseason && <PostseasonBracket ps={d.postseason} userClubId={d.userClub.id} />}
-          {d.phase === 'stove' ? <StoveWeek d={d} /> : <NextGame d={d} nav={nav} />}
+          {d.phase === 'stove' ? <StoveWeek d={d} /> : <NextGameCard d={d} nav={nav} back={{ name: 'dashboard' }} />}
           <section className="panel">
             <div className="panel-head">
               <h2>주요 선수단 현황</h2>

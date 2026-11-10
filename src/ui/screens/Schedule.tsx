@@ -1,8 +1,11 @@
+// 일정(D-140 Diamond Office 배치): 왼쪽 월·우리 구단 필터와 경기일별 일정/결과, 오른쪽 다음 경기 카드와 리그 주요 일정.
+// 조회만 한다. 완료 경기만 박스스코어로 들어가고, 무승부·연장·포스트시즌 표시는 기존 응답 그대로 쓴다.
 import { useEffect, useState } from 'react';
 import type { CalendarEventView, FixtureView } from '../../shared/protocol';
 import type { Nav } from '../App';
 import { api } from '../api';
 import { dateKo } from '../format';
+import { NextGameCard } from '../NextGameCard';
 
 const MONTHS = ['03', '04', '05', '06', '07', '08', '09', '10', '11'];
 
@@ -11,6 +14,7 @@ export function Schedule({ nav }: { nav: Nav }) {
   const [onlyMine, setOnlyMine] = useState(true);
   const [month, setMonth] = useState(d.date.slice(5, 7) >= '03' && d.date.slice(5, 7) <= '11' ? d.date.slice(5, 7) : '03');
   const [rows, setRows] = useState<FixtureView[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [events, setEvents] = useState<CalendarEventView[]>([]);
   const year = d.openingDay.slice(0, 4);
 
@@ -19,64 +23,105 @@ export function Schedule({ nav }: { nav: Nav }) {
   }, [d.date, year]);
 
   useEffect(() => {
+    setLoaded(false);
     api('game.schedule', { clubId: onlyMine ? d.userClub.id : undefined, month: `${year}-${month}` })
       .then(setRows)
-      .catch((e: Error) => nav.notify(e.message, 'error'));
+      .catch((e: Error) => nav.notify(e.message, 'error'))
+      .finally(() => setLoaded(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onlyMine, month, year, d.userClub.id]);
 
   const byDate = new Map<string, FixtureView[]>();
   for (const f of rows) byDate.set(f.date, [...(byDate.get(f.date) ?? []), f]);
+  const mine = (f: FixtureView) => f.home.id === d.userClub.id || f.away.id === d.userClub.id;
 
   return (
     <div className="page">
-      <h1>일정</h1>
-      <section className="panel">
-        <div className="panel-head">
-          <h2>리그 주요 일정</h2>
-          <span className="meta">{d.phaseLabel}</span>
-        </div>
-        <div className="panel-body">
-          <ul className="timeline">
-            {events.map((e) => (
-              <li key={e.date + e.kind}>
-                <span className="when">{dateKo(e.date)}</span>
-                <span>
-                  <strong>{e.title}</strong> <span className="muted small">{e.body}</span>
-                </span>
-              </li>
-            ))}
-            {events.length === 0 && <li className="muted">남은 리그 일정이 없습니다.</li>}
-          </ul>
-        </div>
-      </section>
-      <h2 style={{ margin: '18px 0 10px' }}>{year} 경기 일정·결과</h2>
-      <div className="toolbar">
-        <div className="seg">
-          {MONTHS.map((m) => (
-            <button key={m} className={month === m ? 'active' : ''} onClick={() => setMonth(m)}>{Number(m)}월</button>
-          ))}
-        </div>
-        <label><input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} /> 우리 구단 경기만</label>
-      </div>
-      {[...byDate.entries()].map(([date, list]) => (
-        <section key={date} className="panel compact">
-          <h3>{dateKo(date)}</h3>
-          <table className="grid">
-            <tbody>
-              {list.map((f) => (
-                <tr key={f.fixtureId} className={`${f.played ? 'clickable' : ''} ${f.home.id === d.userClub.id || f.away.id === d.userClub.id ? 'mine' : ''}`} onClick={() => f.played && nav.go({ name: 'boxScore', fixtureId: f.fixtureId })}>
-                  <td className="right">{f.away.name}</td>
-                  <td className="center score">{f.played ? `${f.awayRuns} : ${f.homeRuns}` : 'vs'}</td>
-                  <td>{f.home.name} <span className="muted small">(홈)</span></td>
-                  <td className="muted small">{f.stageLabel && <span className="badge star">{f.stageLabel}</span>} {f.played && f.innings && f.innings > 9 ? `연장 ${f.innings}회` : ''}{f.played && f.homeRuns === f.awayRuns ? ' 무승부' : ''}</td>
-                </tr>
+      <h1>
+        일정 <span className="muted small">{d.phaseLabel}</span>
+      </h1>
+      <div className="columns">
+        <div>
+          <div className="toolbar">
+            <div className="seg" role="group" aria-label="월">
+              {MONTHS.map((m) => (
+                <button key={m} className={month === m ? 'active' : ''} aria-pressed={month === m} onClick={() => setMonth(m)}>
+                  {Number(m)}월
+                </button>
               ))}
-            </tbody>
-          </table>
-        </section>
-      ))}
-      {rows.length === 0 && <p className="muted">이 달에는 경기가 없습니다.</p>}
+            </div>
+            <label>
+              <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} /> 우리 구단 경기만
+            </label>
+          </div>
+          <section className="panel">
+            <div className="panel-head">
+              <h2>
+                {year}년 {Number(month)}월 경기 일정·결과
+              </h2>
+              <span className="meta">완료 경기를 누르면 박스스코어</span>
+            </div>
+            <div className="panel-body">
+              {[...byDate.entries()].map(([date, list]) => (
+                <div key={date} style={{ marginBottom: 12 }}>
+                  <h3>{dateKo(date)}</h3>
+                  <table className="grid">
+                    <tbody>
+                      {list.map((f) => (
+                        <tr
+                          key={f.fixtureId}
+                          className={`${f.played ? 'clickable' : ''} ${!onlyMine && mine(f) ? 'mine' : ''}`}
+                          tabIndex={f.played ? 0 : undefined}
+                          onClick={() => f.played && nav.go({ name: 'boxScore', fixtureId: f.fixtureId })}
+                          onKeyDown={(e) => {
+                            if (f.played && (e.key === 'Enter' || e.key === ' ')) {
+                              e.preventDefault();
+                              nav.go({ name: 'boxScore', fixtureId: f.fixtureId });
+                            }
+                          }}
+                        >
+                          <td className="right">{f.away.name}</td>
+                          <td className="center score">{f.played ? `${f.awayRuns} : ${f.homeRuns}` : 'vs'}</td>
+                          <td>
+                            {f.home.name} <span className="muted small">(홈)</span>
+                          </td>
+                          <td className="muted small">
+                            {f.stageLabel && <span className="badge star">{f.stageLabel}</span>} {f.played ? (f.innings && f.innings > 9 ? `연장 ${f.innings}회` : '') : <span className="badge">예정</span>}
+                            {f.played && f.homeRuns === f.awayRuns ? ' 무승부' : ''}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+              {loaded && rows.length === 0 && <p className="muted">이 달에는 경기가 없습니다.</p>}
+            </div>
+          </section>
+        </div>
+        <div>
+          {d.phase !== 'stove' && <NextGameCard d={d} nav={nav} back={{ name: 'schedule' }} />}
+          <section className="panel">
+            <div className="panel-head">
+              <h2>리그 주요 일정</h2>
+              <span className="meta">{d.phaseLabel}</span>
+            </div>
+            <div className="panel-body">
+              <ul className="timeline">
+                {events.map((e) => (
+                  <li key={e.date + e.kind}>
+                    <span className="when">{dateKo(e.date)}</span>
+                    <span>
+                      <strong>{e.title}</strong> <span className="muted small">{e.body}</span>
+                    </span>
+                  </li>
+                ))}
+                {events.length === 0 && <li className="muted">남은 리그 일정이 없습니다.</li>}
+              </ul>
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }
