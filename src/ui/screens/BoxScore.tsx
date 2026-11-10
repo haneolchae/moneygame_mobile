@@ -49,7 +49,7 @@ export function BoxScore({ nav, fixtureId }: { nav: Nav; fixtureId: number }) {
               <thead><tr><th>선수</th><th title="이 경기 수비 위치가 아니라 선수의 주 포지션">주 포지션</th><th className="num">타석</th><th className="num">타수</th><th className="num">득점</th><th className="num">안타</th><th className="num">홈런</th><th className="num">타점</th><th className="num">볼넷</th><th className="num">삼진</th></tr></thead>
               <tbody>
                 {b.batting[s.key].map((l) => (
-                  <tr key={l.playerId} className="clickable" onClick={() => nav.go({ name: 'player', playerId: l.playerId })}>
+                  <tr key={l.playerId} className="clickable" onClick={() => nav.go({ name: 'player', playerId: l.playerId, back: { name: 'boxScore', fixtureId } })}>
                     <td>{l.name}</td><td>{POSITION_LABELS[l.position] ?? l.position}</td>
                     <td className="num">{l.PA}</td><td className="num">{l.AB}</td><td className="num">{l.R}</td><td className="num">{l.H}</td><td className="num">{l.HR}</td><td className="num">{l.RBI}</td><td className="num">{l.BB}</td><td className="num">{l.SO}</td>
                   </tr>
@@ -61,7 +61,7 @@ export function BoxScore({ nav, fixtureId }: { nav: Nav; fixtureId: number }) {
               <thead><tr><th>선수</th><th /><th className="num">이닝</th><th className="num">피안타</th><th className="num">실점</th><th className="num">자책</th><th className="num">볼넷</th><th className="num">삼진</th><th className="num">피홈런</th><th className="num">투구수</th></tr></thead>
               <tbody>
                 {b.pitching[s.key].map((l) => (
-                  <tr key={l.playerId} className="clickable" onClick={() => nav.go({ name: 'player', playerId: l.playerId })}>
+                  <tr key={l.playerId} className="clickable" onClick={() => nav.go({ name: 'player', playerId: l.playerId, back: { name: 'boxScore', fixtureId } })}>
                     <td>{l.name}</td><td>{l.decision === 'W' ? '승' : l.decision === 'L' ? '패' : l.decision === 'S' ? '세' : ''}</td>
                     <td className="num">{l.IP}</td><td className="num">{l.H}</td><td className="num">{l.R}</td><td className="num">{l.ER}</td><td className="num">{l.BB}</td><td className="num">{l.K}</td><td className="num">{l.HR}</td><td className="num">{l.pitches}</td>
                   </tr>

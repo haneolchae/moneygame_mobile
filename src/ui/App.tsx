@@ -6,6 +6,7 @@ import { ApprovalPopup } from './ApprovalPopup';
 import { Emblem } from './Emblem';
 import { dateKo } from './format';
 import { Icon } from './icons';
+import { leaveGuard } from './playerFocus';
 import { BoxScore } from './screens/BoxScore';
 import { Dashboard } from './screens/Dashboard';
 import { Draft } from './screens/Draft';
@@ -29,7 +30,8 @@ export type Route =
   | { name: 'dashboard' }
   | { name: 'inbox' }
   | { name: 'players' }
-  | { name: 'player'; playerId: number }
+  /** list: 진입 목록의 선수 순서(이전·다음), back: 닫으면 돌아갈 화면 */
+  | { name: 'player'; playerId: number; list?: number[]; back?: Route }
   | { name: 'schedule' }
   | { name: 'boxScore'; fixtureId: number }
   | { name: 'standings' }
@@ -96,8 +98,19 @@ export function App() {
     setRefreshKey((k) => k + 1);
   };
 
+  /** 화면 이동 전 이탈 확인(선수 상세의 미저장 메모 저장). 저장에 실패하면 이동하지 않는다. */
+  const canLeave = async () => {
+    if (!leaveGuard.run) return true;
+    const ok = await leaveGuard.run();
+    if (!ok) notify('메모를 저장하지 못해 이동하지 않았습니다. 다시 시도하거나 메모를 지우세요.', 'error');
+    return ok;
+  };
+  const go = (r: Route) => {
+    void canLeave().then((ok) => ok && setRoute(r));
+  };
+
   const nav: Nav = {
-    go: setRoute,
+    go,
     dashboard,
     setDashboard: applyDashboard,
     refresh: async () => applyDashboard(await api('game.dashboard')),
@@ -107,6 +120,7 @@ export function App() {
   };
 
   const advance = async (mode: 'day' | 'week' | 'untilSeasonEnd') => {
+    if (!(await canLeave())) return;
     setBusy(mode === 'day' ? '하루 진행 중' : mode === 'week' ? '한 주 진행 중' : '시즌 진행 중');
     setProgress(null);
     try {
@@ -171,7 +185,7 @@ export function App() {
           {dateKo(d.date)}
         </div>
         <div className="actions">
-          <button disabled={!!busy} className={d.unsavedDays > 0 ? 'warn' : ''} onClick={() => setRoute({ name: 'saves' })}>
+          <button disabled={!!busy} className={d.unsavedDays > 0 ? 'warn' : ''} onClick={() => go({ name: 'saves' })}>
             저장{d.unsavedDays > 0 ? ` (수동 저장 후 ${d.unsavedDays}일)` : ''}
           </button>
           {d.phase === 'seasonComplete' ? (
@@ -202,7 +216,7 @@ export function App() {
           </div>
         </div>
         {MENU.map((m) => (
-          <button key={m.label} className={`nav ${route.name === m.route.name ? 'active' : ''}`} onClick={() => setRoute(m.route)}>
+          <button key={m.label} className={`nav ${route.name === m.route.name ? 'active' : ''}`} onClick={() => go(m.route)}>
             <Icon name={m.icon} size={22} />
             {m.label}
             {m.route.name === 'inbox' && d.unreadInbox > 0 && <span className="badge-count">{d.unreadInbox}</span>}
@@ -230,7 +244,7 @@ export function App() {
         {route.name === 'dashboard' && <Dashboard nav={nav} />}
         {route.name === 'inbox' && <Inbox nav={nav} />}
         {route.name === 'players' && <Players nav={nav} />}
-        {route.name === 'player' && <PlayerDetail nav={nav} playerId={route.playerId} />}
+        {route.name === 'player' && <PlayerDetail nav={nav} playerId={route.playerId} list={route.list} back={route.back} />}
         {route.name === 'schedule' && <Schedule nav={nav} />}
         {route.name === 'boxScore' && <BoxScore nav={nav} fixtureId={route.fixtureId} />}
         {route.name === 'standings' && <Standings nav={nav} />}

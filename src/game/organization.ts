@@ -34,6 +34,9 @@ const round1m = (n: number) => Math.max(0, Math.round(n / 1_000_000) * 1_000_000
 /** ASSUMPTION(D-076): 행동력 비용. 직접 채용 2는 03 문서, 해고 1은 초기안 */
 export const ORG_AP = { hire: 2, fire: 1 } as const;
 
+/** 구단주 직접 행동이 쓰는 담당 팀 처리량: 기본 처리량의 50%(올림) */
+export const directWpCost = (fullCost: number) => Math.ceil(fullCost / 2);
+
 /** 위임 가능한 팀(이번 단계). 나머지 팀은 해당 기능 단계에서 연다. */
 export const DELEGABLE_TEAMS: readonly TeamKey[] = ['ops', 'admin'];
 
@@ -117,7 +120,7 @@ export class Organization {
   charge(meta: GameMeta, source: ActionSource, team: TeamKey, fullCost: number): void {
     if (source.kind !== 'direct') return;
     this.ensureWeek(meta, source.weekId);
-    this.repo.spendWp(source.weekId, team, Math.ceil(fullCost / 2), true);
+    this.repo.spendWp(source.weekId, team, directWpCost(fullCost), true);
   }
 
   private wpLeft(weekId: string, team: TeamKey): number {
@@ -243,10 +246,24 @@ export class Organization {
     return this.repo.getTasks({ status: ['queued', 'waiting'], targetId, kind })[0];
   }
 
-  delegateFa(meta: GameMeta, playerId: number, maxTotal?: number, maxYears?: number) {
+  /** FA 위임 대상 검증(실행·조회 공용, D-118): 운영팀 위임 모드 + 신청·승인된 FA */
+  faDelegationTarget(meta: GameMeta, playerId: number) {
     const pol = this.requireDelegable('ops');
     const e = this.repo.getFa(Number(meta.kDate.slice(0, 4))).find((x) => x.playerId === playerId);
     if (!e || !['applied', 'approved'].includes(e.status)) throw new GameError('NOT_AVAILABLE', '협상할 수 있는 FA 선수가 아닙니다.');
+    return pol;
+  }
+
+  /** 연봉 협상 위임 대상 검증(한 선수): 운영팀 위임 모드 + 협상 중 + 진행 중 위임 없음 */
+  salaryDelegationTarget(meta: GameMeta, playerId: number) {
+    this.requireDelegable('ops');
+    const t = this.repo.getSalaryTalks(Number(meta.kDate.slice(0, 4))).find((x) => x.clubId === meta.userClubId && x.status === 'open' && x.playerId === playerId);
+    if (!t) throw new GameError('NOT_AVAILABLE', '협상 중인 연봉 대상이 아닙니다.');
+    if (this.activeTask(playerId, 'salary')) throw new GameError('DUPLICATE', '이미 운영팀이 연봉 협상을 진행 중입니다.');
+  }
+
+  delegateFa(meta: GameMeta, playerId: number, maxTotal?: number, maxYears?: number) {
+    const pol = this.faDelegationTarget(meta, playerId);
     const params = { maxTotal: maxTotal ?? pol.faMaxTotal, maxYears: maxYears ?? pol.faMaxYears, round: 0, lastWeek: '', lastRatio: 0, counter: null as ContractOffer | null };
     if (params.maxTotal <= 0 || params.maxYears < 1) throw new GameError('INVALID', '한도를 확인하세요.');
     // 이미 진행 중인 위임(담당 팀 자체 안건 포함)이 있으면 한도만 바꾼다.

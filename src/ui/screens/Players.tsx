@@ -1,5 +1,5 @@
 import { ratingText } from '../PlayerAbilities';
-import { playerFocus } from '../playerFocus';
+import { playerFocus, playersMemory } from '../playerFocus';
 import { useEffect, useMemo, useState } from 'react';
 import type { PlayerListItem, PlayerQuery } from '../../shared/protocol';
 import type { Nav } from '../App';
@@ -42,11 +42,15 @@ const PITCHER_COLUMNS: Column[] = [
 ];
 
 export function Players({ nav }: { nav: Nav }) {
-  const [query, setQuery] = useState<PlayerQuery>({ scope: 'mine', group: 'hitters', level: 'all', sortKey: 'OPS', sortDesc: true });
+  const [query, setQuery] = useState<PlayerQuery>(playersMemory.query);
   const [rows, setRows] = useState<PlayerListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const [watchedOnly, setWatchedOnly] = useState(false);
+  const [watchedOnly, setWatchedOnly] = useState(playersMemory.watchedOnly);
+  useEffect(() => {
+    playersMemory.query = query;
+    playersMemory.watchedOnly = watchedOnly;
+  }, [query, watchedOnly]);
   const clubs = useMemo(() => nav.dashboard?.standings.map((s) => s.club).sort((a, b) => a.id - b.id) ?? [], [nav.dashboard]);
 
   useEffect(() => {
@@ -72,6 +76,9 @@ export function Players({ nav }: { nav: Nav }) {
     const row = document.getElementById(`player-row-${playerFocus.id}`);
     if (row) { row.focus(); playerFocus.id = null; }
   }, [rows, loading]);
+  // 상세의 이전·다음은 지금 보이는 목록 순서를 따른다(검색·정렬·관심 필터 반영).
+  const visible = rows.filter((p) => !watchedOnly || p.watched);
+  const open = (id: number) => nav.go({ name: 'player', playerId: id, list: visible.map((p) => p.id), back: { name: 'players' } });
   const sortBy = (key: string) => setQuery((q) => ({ ...q, sortKey: key, sortDesc: q.sortKey === key ? !q.sortDesc : key !== 'name' && key !== 'ERA' && key !== 'age' }));
   const arrow = (key: string) => (query.sortKey === key ? (query.sortDesc ? ' ▼' : ' ▲') : '');
 
@@ -123,8 +130,8 @@ export function Players({ nav }: { nav: Nav }) {
             </tr>
           </thead>
           <tbody>
-            {rows.filter(p => !watchedOnly || p.watched).map((p) => (
-              <tr key={p.id} id={`player-row-${p.id}`} tabIndex={0} className="clickable" onClick={() => nav.go({ name: 'player', playerId: p.id })} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); nav.go({ name: 'player', playerId: p.id }); } }}>
+            {visible.map((p) => (
+              <tr key={p.id} id={`player-row-${p.id}`} tabIndex={0} className="clickable" onClick={() => open(p.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(p.id); } }}>
                 <td className="sticky">
                   {p.watched ? "★ " : ""}{p.name} {p.franchise && <span className="badge star">간판</span>} {p.faEligible && <span className="badge fa">FA</span>}
                 </td>

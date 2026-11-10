@@ -152,8 +152,9 @@ describe('스토브리그 선수 시장', () => {
     await weeks(d, 2);
     const v = await call(d, 'market.view');
     const target = v.fa.find((f) => f.statusKey === 'approved')!;
-    for (let i = 0; i < v.apRemaining; i++) await call(d, 'market.faOffer', { playerId: target.playerId, years: 1, salaryWon: 30_000_000, bonusWon: 0 });
-    const r = await d.respond('market.faOffer', { playerId: target.playerId, years: 1, salaryWon: 30_000_000, bonusWon: 0 });
+    // 같은 날 같은 조건 재제안은 무비용 거부(D-118)이므로 매번 조건을 바꿔 행동력을 소진한다.
+    for (let i = 0; i < v.apRemaining; i++) await call(d, 'market.faOffer', { playerId: target.playerId, years: 1, salaryWon: 30_000_000 + i * 1_000_000, bonusWon: 0 });
+    const r = await d.respond('market.faOffer', { playerId: target.playerId, years: 1, salaryWon: 20_000_000 + 30_000_000 + v.apRemaining * 1_000_000, bonusWon: 0 });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('AP_SHORT');
     d.close();

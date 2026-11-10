@@ -266,9 +266,15 @@ export class SeasonClose {
     if (Object.keys(update).length) this.repo.updateMeta(update);
   }
 
-  persuade(meta: GameMeta, weekId: string, playerId: number) {
+  /** 은퇴 설득 대상(실행·조회 공용, D-118): 설득 기한이 남은 은퇴 고민 선수 */
+  persuadeTarget(meta: GameMeta, playerId: number) {
     const x = (meta.retirementPending ?? []).find((y) => y.playerId === playerId);
     if (!x) throw new GameError('NOT_AVAILABLE', '은퇴를 고민하는 선수가 아닙니다.');
+    return x;
+  }
+
+  persuade(meta: GameMeta, weekId: string, playerId: number) {
+    this.persuadeTarget(meta, playerId);
     const p = this.repo.getPlayer(playerId)!;
     return this.repo.transaction(() => {
       try {

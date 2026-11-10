@@ -528,6 +528,46 @@ export interface OfferResultView {
   counter?: ContractOfferView;
 }
 
+// ───────── 선수 상세 행동 영역 (3d, 18a·D-118) ─────────
+
+export type PlayerActionKey = 'faOffer' | 'faDelegate' | 'salaryOffer' | 'salaryDelegate' | 'foreignOffer' | 'release' | 'persuade';
+
+/** 선수 상세에 보여줄 행동 하나. 가능 여부·비용·불가 사유는 게임 로직이 실행 명령과 같은 검증으로 계산한다. */
+export interface PlayerActionView {
+  key: PlayerActionKey;
+  group: '계약·이적' | '면담' | '선수 정리';
+  label: string;
+  enabled: boolean;
+  /** 지금 실행할 수 없는 이유와 해제 조건 */
+  reason: string | null;
+  apCost: number;
+  /** 실행 주체·처리량 안내 (예: '운영팀 처리량 5') */
+  executor: string;
+  /** 구단 지출 안내(계약금·보상금·잔여 연봉 등). 없으면 null */
+  costNote: string | null;
+  primary: boolean;
+}
+
+export interface PlayerActionsView {
+  playerId: number;
+  date: string;
+  apRemaining: number;
+  cashWon: number;
+  /** 실제 데이터가 있는 상태만 (FA 협상 가능, 연봉 협상 대상, 은퇴 고민, 위임 진행 중 등) */
+  badges: string[];
+  actions: PlayerActionView[];
+  fa: FaRowView | null;
+  salary: SalaryTalkView | null;
+  foreign: ForeignPlayerView | null;
+  release: { salaryWon: number; contractYears: number; remainingWon: number; rosterCount: number; rosterMax: number; note: string | null } | null;
+  persuade: { reason: string; deadline: string } | null;
+  ops: { mode: DelegationModeView; faMaxTotal: number; faMaxYears: number };
+  /** 이 선수의 진행 중 위임 업무 */
+  tasks: Array<{ taskId: number; kind: 'fa' | 'salary'; status: string; note: string }>;
+  /** 우리 구단의 최근 제안 기록(직접·위임) */
+  history: Array<{ date: string; kind: string; status: string; text: string }>;
+}
+
 export type PlayerScope = 'mine' | 'all' | number;
 
 export interface PlayerQuery {
@@ -647,6 +687,7 @@ export interface RequestMap {
   'game.player': { payload: { playerId: number }; result: PlayerDetailView };
   'player.note': { payload: { playerId: number; text: string; watched: boolean }; result: PlayerNoteView };
   'player.scout': { payload: { playerId: number }; result: PlayerDetailView };
+  'player.actions': { payload: { playerId: number }; result: PlayerActionsView };
   'game.standings': { payload: void; result: StandingView[] };
   'game.schedule': { payload: { clubId?: number; month?: string }; result: FixtureView[] };
   'game.boxScore': { payload: { fixtureId: number }; result: BoxScoreView };
@@ -696,6 +737,7 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'game.player',
   'player.note',
   'player.scout',
+  'player.actions',
   'game.standings',
   'game.schedule',
   'game.boxScore',

@@ -176,7 +176,8 @@ export interface OfferRow {
   id: number;
   playerId: PlayerId;
   clubId: ClubId;
-  kind: 'fa' | 'foreign';
+  /** salary·foreign은 구단 직접·위임 제안 기록(3d, D-118). 같은 날 같은 조건 재제안 차단과 결과 이력에 쓴다. */
+  kind: 'fa' | 'foreign' | 'salary';
   date: GameDate;
   offer: ContractOffer;
   status: OfferStatus;

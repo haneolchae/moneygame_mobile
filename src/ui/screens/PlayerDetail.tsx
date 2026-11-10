@@ -1,8 +1,9 @@
 import { PlayerAbilities } from '../PlayerAbilities';
-import { playerFocus } from '../playerFocus';
+import { leaveGuard, playerFocus } from '../playerFocus';
+import { PlayerActionsPanel } from '../PlayerActionsPanel';
 import { useEffect, useRef, useState } from 'react';
 import type { FieldingLineView, PlayerDetailView, PlayerRecordView, StatValue } from '../../shared/protocol';
-import type { Nav } from '../App';
+import type { Nav, Route } from '../App';
 import { api } from '../api';
 import { SprayChart } from '../SprayChart';
 import { dateKo, fixed2, gradeLabel, innings, int, NON_SCALE_RATINGS, pct, POSITION_LABELS, RATING_LABELS, rate3, won } from '../format';
@@ -93,7 +94,8 @@ function RecordTable({ r }: { r: PlayerRecordView }) {
 }
 
 const TABS = ['개요', '능력치', '시즌 기록', '계약·이력', '메모'] as const;
-export function PlayerDetail({ nav, playerId }: { nav: Nav; playerId: number }) {
+const BACK_LABEL: Partial<Record<Route['name'], string>> = { players: '선수단', market: '계약·이적', dashboard: '구단 현황', boxScore: '박스스코어', draft: '신인 드래프트', team: '팀 기록' };
+export function PlayerDetail({ nav, playerId, list, back }: { nav: Nav; playerId: number; list?: number[]; back?: Route }) {
   const [p, setP] = useState<PlayerDetailView | null>(null);
   const [tab, setTab] = useState(0);
   const [text, setText] = useState('');
@@ -102,21 +104,51 @@ export function PlayerDetail({ nav, playerId }: { nav: Nav; playerId: number }) 
   const [error, setError] = useState('');
   const closeButton = useRef<HTMLButtonElement>(null);
   const notify = nav.notify;
+  // 화면 이탈 확인에 쓰는 최신 메모 상태(렌더 사이 비동기 저장에서도 같은 값을 본다)
+  const latest = useRef({ text: '', watched: false, savedText: '', savedWatched: false });
+  latest.current.text = text;
+  latest.current.watched = watched;
   useEffect(() => {
     let alive = true;
     setP(null); setError('');
-    api('game.player', { playerId }).then(v => { if (alive) { setP(v); setText(v.note.text); setWatched(v.note.watched); closeButton.current?.focus(); } }).catch((e: Error) => { if (alive) { setError(e.message); notify(e.message, 'error'); } });
+    api('game.player', { playerId }).then(v => { if (alive) { setP(v); setText(v.note.text); setWatched(v.note.watched); latest.current = { text: v.note.text, watched: v.note.watched, savedText: v.note.text, savedWatched: v.note.watched }; closeButton.current?.focus(); } }).catch((e: Error) => { if (alive) { setError(e.message); notify(e.message, 'error'); } });
     return () => { alive = false; };
   }, [playerId, notify]);
   async function save(): Promise<boolean> {
-    if (!p || saving) return false;
-    if (text === p.note.text && watched === p.note.watched) return true;
+    const cur = latest.current;
+    if (cur.text === cur.savedText && cur.watched === cur.savedWatched) return true;
+    if (saving) return false;
     setSaving(true); setError('');
-    try { const note = await api('player.note', { playerId, text, watched }); setP(old => old ? { ...old, note, watched: note.watched } : old); return true; }
+    try {
+      const note = await api('player.note', { playerId, text: cur.text, watched: cur.watched });
+      latest.current.savedText = note.text; latest.current.savedWatched = note.watched;
+      setP(old => old ? { ...old, note, watched: note.watched } : old);
+      return true;
+    }
     catch (e) { setError((e as Error).message); return false; }
     finally { setSaving(false); }
   }
-  async function leave(id: number | null) { if (await save()) { if (id === null) playerFocus.id = playerId; nav.go(id === null ? { name: 'players' } : { name: 'player', playerId: id }); } }
+  // 메뉴 이동·날짜 진행·저장 화면 이동 전에 미저장 메모를 저장한다(18a 4장).
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  useEffect(() => {
+    const run = () => saveRef.current();
+    leaveGuard.run = run;
+    return () => { if (leaveGuard.run === run) leaveGuard.run = null; };
+  }, []);
+  const order = list && list.includes(playerId) ? list : null;
+  const previousId = order ? (order[order.indexOf(playerId) - 1] ?? null) : (p?.previousId ?? null);
+  const nextId = order ? (order[order.indexOf(playerId) + 1] ?? null) : (p?.nextId ?? null);
+  async function leave(id: number | null) {
+    if (!(await save())) return;
+    if (id === null) playerFocus.id = playerId;
+    nav.go(id === null ? (back ?? { name: 'players' }) : { name: 'player', playerId: id, list, back });
+  }
+  async function reload() {
+    const v = await api('game.player', { playerId });
+    setP(v);
+    await nav.sync();
+  }
   async function scout() {
     if (!await save()) return;
     setSaving(true); setError('');
@@ -133,12 +165,13 @@ export function PlayerDetail({ nav, playerId }: { nav: Nav; playerId: number }) 
   const dirty = text !== p.note.text || watched !== p.note.watched;
   return <div className="page">
     <div className="toolbar">
-      <button ref={closeButton} onClick={() => void leave(null)} disabled={saving}>닫기 · 선수단</button>
-      <button disabled={saving || p.previousId === null} onClick={() => void leave(p.previousId)}>이전 선수</button>
-      <button disabled={saving || p.nextId === null} onClick={() => void leave(p.nextId)}>다음 선수</button>
+      <button ref={closeButton} onClick={() => void leave(null)} disabled={saving}>닫기 · {BACK_LABEL[(back ?? { name: 'players' }).name] ?? '이전 화면'}</button>
+      <button disabled={saving || previousId === null} onClick={() => void leave(previousId)}>이전 선수</button>
+      <button disabled={saving || nextId === null} onClick={() => void leave(nextId)}>다음 선수</button>
+      {order && <span className="muted small">목록 {order.indexOf(playerId) + 1}/{order.length}</span>}
       <label><input type="checkbox" checked={watched} disabled={saving} onChange={async e => {
         const next = e.target.checked; setWatched(next); setSaving(true); setError('');
-        try { const note = await api('player.note', { playerId, text, watched: next }); setP(old => old ? { ...old, note, watched: next } : old); }
+        try { const note = await api('player.note', { playerId, text, watched: next }); latest.current.savedText = note.text; latest.current.savedWatched = note.watched; setP(old => old ? { ...old, note, watched: next } : old); }
         catch (e) { setWatched(p.note.watched); setError((e as Error).message); }
         finally { setSaving(false); }
       }} /> 관심 등록</label>
@@ -151,6 +184,7 @@ export function PlayerDetail({ nav, playerId }: { nav: Nav; playerId: number }) 
       <div className="card"><div className="label">연봉</div><div className="value">{won(p.salaryWon)}</div></div>
     </div>
     {error && <p role="alert">저장·처리 실패: {error}</p>}
+    <PlayerActionsPanel playerId={playerId} playerName={p.name} nav={nav} beforeAct={save} onChanged={reload} />
     <div className="seg" role="tablist" aria-label="선수 상세">
       {TABS.map((label,i) => <button key={label} id={'player-tab-'+i} role="tab" aria-selected={tab===i} aria-controls={'player-panel-'+i} tabIndex={tab===i ? 0 : -1} className={tab===i ? 'active' : ''} onClick={() => setTab(i)} onKeyDown={e => {
         const next = e.key === 'ArrowRight' ? (i+1)%TABS.length : e.key === 'ArrowLeft' ? (i+TABS.length-1)%TABS.length : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length-1 : null;

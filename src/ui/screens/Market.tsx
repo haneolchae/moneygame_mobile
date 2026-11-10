@@ -11,7 +11,7 @@ const EOK = 100_000_000;
 const usd = (n: number) => `${Math.round(n / 10_000).toLocaleString('ko-KR')}만 달러`;
 const toEok = (n: number) => +(n / EOK).toFixed(2);
 
-function OfferForm({ row, onDone, nav }: { row: FaRowView; onDone: (r: OfferResultView) => void; nav: Nav }) {
+export function OfferForm({ row, onDone, nav }: { row: FaRowView; onDone: (r: OfferResultView) => void; nav: Nav }) {
   const base = row.myOffer?.status === 'countered' ? row.myOffer.offer : row.demand;
   const [years, setYears] = useState(row.demand.years);
   const [salary, setSalary] = useState(toEok(base.salaryWon));
@@ -19,6 +19,7 @@ function OfferForm({ row, onDone, nav }: { row: FaRowView; onDone: (r: OfferResu
   const [sending, setSending] = useState(false);
   const total = years * salary * EOK + bonus * EOK;
   const submit = async () => {
+    if (sending) return;
     setSending(true);
     try {
       onDone(await api('market.faOffer', { playerId: row.playerId, years, salaryWon: Math.round(salary * EOK), bonusWon: Math.round(bonus * EOK) }));
@@ -62,14 +63,19 @@ function OfferForm({ row, onDone, nav }: { row: FaRowView; onDone: (r: OfferResu
 }
 
 /** 운영팀 위임: 총액·기간 한도를 정해 맡긴다. 행동력은 쓰지 않고 운영팀 처리량을 쓴다. */
-function DelegateForm({ row, ops, onDone, nav }: { row: FaRowView; ops: MarketView['ops']; onDone: (r: OfferResultView) => void; nav: Nav }) {
+export function DelegateForm({ row, ops, onDone, nav }: { row: FaRowView; ops: MarketView['ops']; onDone: (r: OfferResultView) => void; nav: Nav }) {
   const [maxTotal, setMaxTotal] = useState(toEok(Math.min(ops.faMaxTotal, Math.round(row.demand.totalWon * 1.15))));
   const [maxYears, setMaxYears] = useState(Math.min(ops.faMaxYears, Math.max(row.demand.years, 1)));
+  const [sending, setSending] = useState(false);
   const submit = async () => {
+    if (sending) return;
+    setSending(true);
     try {
       onDone(await api('org.delegateFa', { playerId: row.playerId, maxTotalWon: Math.round(maxTotal * EOK), maxYears }));
     } catch (e) {
       nav.notify(e instanceof ApiError ? e.message : String(e), 'error');
+    } finally {
+      setSending(false);
     }
   };
   return (
@@ -89,7 +95,7 @@ function DelegateForm({ row, ops, onDone, nav }: { row: FaRowView; ops: MarketVi
           ))}
         </select>
       </label>
-      <button className="primary" onClick={submit}>
+      <button className="primary" disabled={sending} onClick={submit}>
         맡기기 (행동력 없음)
       </button>
     </div>
@@ -98,8 +104,14 @@ function DelegateForm({ row, ops, onDone, nav }: { row: FaRowView; ops: MarketVi
 
 const MODE_LABEL: Record<string, string> = { direct: '직접 운영', approve: '제안 후 승인', auto: '완전 위임' };
 
+/** 선수 상세에 들어갔다 돌아오면 보던 탭을 복원한다(3d). */
+const marketMemory: { tab: Tab } = { tab: 'fa' };
+
 export function Market({ nav }: { nav: Nav }) {
-  const [tab, setTab] = useState<Tab>('fa');
+  const [tab, setTab] = useState<Tab>(marketMemory.tab);
+  useEffect(() => {
+    marketMemory.tab = tab;
+  }, [tab]);
   const [v, setV] = useState<MarketView | null>(null);
   const [editing, setEditing] = useState<number | null>(null);
   const [delegating, setDelegating] = useState<number | null>(null);
@@ -217,7 +229,7 @@ export function Market({ nav }: { nav: Nav }) {
                   <Fragment key={f.playerId}>
                     <tr className={f.franchise ? 'mine' : ''}>
                       <td>
-                        <span className="clickable" onClick={() => nav.go({ name: 'player', playerId: f.playerId })}>
+                        <span className="clickable" onClick={() => nav.go({ name: 'player', playerId: f.playerId, back: { name: 'market' } })}>
                           {f.name}
                         </span>{' '}
                         {f.franchise && <span className="badge star">간판</span>}

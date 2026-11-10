@@ -86,7 +86,7 @@ function NextGame({ d, nav }: { d: DashboardView; nav: Nav }) {
       </div>
       <div className="starters">
         {[g.awayStarter, g.homeStarter].map((s, i) => (
-          <div key={i} className="starter" onClick={() => s && nav.go({ name: 'player', playerId: s.id })} style={{ cursor: s ? 'pointer' : 'default' }}>
+          <div key={i} className="starter" onClick={() => s && nav.go({ name: 'player', playerId: s.id, back: { name: 'dashboard' } })} style={{ cursor: s ? 'pointer' : 'default' }}>
             <div className="portrait">
               <Icon name="users" size={30} />
             </div>
@@ -160,7 +160,7 @@ export function Dashboard({ nav }: { nav: Nav }) {
               </thead>
               <tbody>
                 {d.keyPlayers.map((p) => (
-                  <tr key={p.id} className="clickable" onClick={() => nav.go({ name: 'player', playerId: p.id })}>
+                  <tr key={p.id} className="clickable" onClick={() => nav.go({ name: 'player', playerId: p.id, back: { name: 'dashboard' } })}>
                     <td>
                       <strong>{p.name}</strong>
                     </td>

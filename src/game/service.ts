@@ -17,7 +17,7 @@ import { PROBABILITY_CONFIG } from '../engine/probabilityConfig';
 import { generateSchedule, seasonKeyDates, validateSchedule } from '../engine/schedule';
 import { battingRates, fipConstant, formatInnings, pitchingRates, type BattingTotals, type PitchingTotals } from '../engine/stats';
 import { computeStandings } from '../engine/standings';
-import { ABILITY_LABEL, teamCapacity, teamDef, TEAMS, type StaffMember, type TeamKey } from '../engine/staff';
+import { ABILITY_LABEL, TASK_WP, teamCapacity, teamDef, TEAMS, type StaffMember, type TeamKey } from '../engine/staff';
 import { seasonModeStart, stoveEvents } from '../engine/stove';
 import type { ClubId, ClubProfile, PlayerTruth } from '../engine/types';
 import { clubHistory } from '../engine/data/history';
@@ -31,7 +31,7 @@ import { fieldingLine, Records } from './records';
 import { Draft, draftDate, isSenior } from './draft';
 import { CLOSE_RULES, SeasonClose } from './seasonClose';
 import { Postseason, POSTSEASON_MAX_INNINGS, SERIES_LABEL } from './postseason';
-import { DELEGABLE_TEAMS, ORG_AP, Organization } from './organization';
+import { DELEGABLE_TEAMS, directWpCost, ORG_AP, Organization } from './organization';
 import { weekIdFor } from './week';
 import {
   GameError,
@@ -50,6 +50,8 @@ import {
   type FixtureView,
   type InboxItemView,
   type NextGameView,
+  type PlayerActionsView,
+  type PlayerActionView,
   type PlayerDetailView,
   type PlayerListItem,
   type PlayerQuery,
@@ -1220,6 +1222,177 @@ export class GameService {
 
   reject(approvalId: number): OfferResultView {
     return this.org.reject(this.meta(), approvalId);
+  }
+
+  /**
+   * 선수 상세 행동 영역(3d, 18a·D-118). 조회만 하며 상태·난수를 바꾸지 않는다.
+   * 가능 여부와 불가 사유는 실행 명령과 같은 대상 검증 함수(Market·Organization·SeasonClose)로 계산한다.
+   * 영구적으로 맞지 않는 행동(타 구단 선수의 연봉 협상 등)은 목록에서 빼고, 일시 제한은 이유와 함께 비활성으로 보낸다.
+   */
+  playerActions(playerId: number): PlayerActionsView {
+    const meta = this.meta();
+    const p = this.repo.getPlayer(playerId);
+    if (!p) throw new GameError('PLAYER_NOT_FOUND', '선수를 찾을 수 없습니다.');
+    const mv = this.marketView();
+    const own = p.clubId === meta.userClubId;
+    const reasonOf = (check: () => unknown): string | null => {
+      try {
+        check();
+        return null;
+      } catch (e) {
+        if (e instanceof GameError) return e.message;
+        throw e;
+      }
+    };
+    const apReason = (ap: number) => (mv.apRemaining < ap ? `행동력 ${ap} 필요 (이번 주 남은 행동력 ${mv.apRemaining})` : null);
+    const won = (n: number) => `${(n / EOK).toFixed(2).replace(/\.?0+$/, '')}억`;
+    const actions: PlayerActionView[] = [];
+    const add = (a: Omit<PlayerActionView, 'enabled' | 'primary'>) => actions.push({ ...a, enabled: a.reason === null, primary: false });
+    const badges: string[] = [];
+    const tasks = this.repo
+      .getTasks({ status: ['queued', 'waiting'], targetId: playerId })
+      .filter((t): t is typeof t & { kind: 'fa' | 'salary' } => t.kind === 'fa' || t.kind === 'salary')
+      .map((t) => ({ taskId: t.id, kind: t.kind, status: TASK_STATUS_LABEL[t.status] ?? t.status, note: t.note }));
+    const modeLabel = { direct: '직접 운영', approve: '제안 후 승인', auto: '완전 위임' }[mv.ops.mode];
+
+    const fa = p.retired ? null : (mv.fa.find((f) => f.playerId === playerId && (f.statusKey === 'applied' || f.statusKey === 'approved')) ?? null);
+    if (fa) {
+      badges.push(fa.status);
+      add({
+        key: 'faOffer',
+        group: '계약·이적',
+        label: fa.originClub.id === meta.userClubId ? 'FA 잔류 협상' : 'FA 영입 제안',
+        reason: reasonOf(() => this.market.faTarget(meta, playerId)) ?? apReason(1) ?? (mv.cashWon < fa.compensationWon ? `현금 부족: 보상금 ${won(fa.compensationWon)} 필요` : null),
+        apCost: 1,
+        executor: `구단주 직접 · 운영팀 처리량 ${directWpCost(TASK_WP.faRound)}`,
+        costNote: `계약금(입력값)${fa.compensationWon > 0 ? ` + 보상금 ${won(fa.compensationWon)}` : ''} 계약 시 즉시 지급, 연봉은 계약 기간 동안 지급`,
+      });
+      add({
+        key: 'faDelegate',
+        group: '계약·이적',
+        label: tasks.some((t) => t.kind === 'fa') ? '위임 한도 변경' : '운영팀에 맡기기',
+        reason: reasonOf(() => this.org.faDelegationTarget(meta, playerId)),
+        apCost: 0,
+        executor: `운영팀 ${modeLabel} · 1회 협상 처리량 ${TASK_WP.faRound}`,
+        costNote: '정책의 총액·기간·현금 하한 안에서만 제안',
+      });
+    }
+
+    const salary = own ? (mv.salaryTalks.find((t) => t.playerId === playerId) ?? null) : null;
+    if (salary && salary.status === '협상 중') {
+      badges.push('연봉 협상 대상');
+      add({
+        key: 'salaryOffer',
+        group: '계약·이적',
+        label: '연봉 제시',
+        reason: reasonOf(() => this.market.salaryTarget(meta, playerId)) ?? apReason(1),
+        apCost: 1,
+        executor: `구단주 직접 · 운영팀 처리량 ${directWpCost(TASK_WP.salaryTalk)}`,
+        costNote: '합의하면 다음 시즌 연봉이 바뀜',
+      });
+      add({
+        key: 'salaryDelegate',
+        group: '계약·이적',
+        label: '연봉 협상 맡기기',
+        reason: reasonOf(() => this.org.salaryDelegationTarget(meta, playerId)),
+        apCost: 0,
+        executor: `운영팀 ${modeLabel} · 1회 제시 처리량 ${TASK_WP.salaryTalk}`,
+        costNote: '정책의 연봉 협상 한도 안에서 매주 제시',
+      });
+    }
+
+    const foreignCandidate = !p.retired && p.origin !== 'domestic' && (own ? p.contractYears === 0 : p.clubId === null);
+    const foreign = foreignCandidate ? (mv.foreign.mine.find((f) => f.playerId === playerId) ?? mv.foreign.pool.find((f) => f.playerId === playerId) ?? null) : null;
+    if (foreignCandidate) {
+      badges.push(own ? '외국인 계약 만료' : '해외 영입 후보');
+      const ruleReason = reasonOf(() => {
+        const t = this.market.foreignTarget(meta, playerId);
+        const errors = this.market.foreignRuleErrors(meta, t.p, t.renewal, t.demandUsd);
+        if (errors.length) throw new GameError('FOREIGN_RULE', errors.join(' '));
+      });
+      add({
+        key: 'foreignOffer',
+        group: '계약·이적',
+        label: own ? '외국인 재계약' : '외국인 영입 제안',
+        reason: ruleReason ?? apReason(1),
+        apCost: 1,
+        executor: `구단주 직접 · 운영팀 처리량 ${directWpCost(TASK_WP.foreignContract)} (외국인 위임은 아직 없음)`,
+        costNote: '1년 계약, 연봉은 달러 환산으로 지급',
+      });
+    }
+
+    const pending = (meta.retirementPending ?? []).find((x) => x.playerId === playerId) ?? null;
+    if (pending) {
+      badges.push(`은퇴 고민 (설득 기한 ${pending.deadline.slice(5).replace('-', '/')})`);
+      add({
+        key: 'persuade',
+        group: '면담',
+        label: '은퇴 설득 면담',
+        reason: reasonOf(() => this.seasonClose.persuadeTarget(meta, playerId)) ?? apReason(CLOSE_RULES.persuadeAp),
+        apCost: CLOSE_RULES.persuadeAp,
+        executor: '구단주 면담 · 즉시',
+        costNote: null,
+      });
+    }
+
+    let release: PlayerActionsView['release'] = null;
+    if (own && !p.retired) {
+      const remainingWon = p.salary * p.contractYears;
+      release = {
+        salaryWon: p.salary,
+        contractYears: p.contractYears,
+        remainingWon,
+        rosterCount: mv.rosterCount,
+        rosterMax: mv.rosterMax,
+        note: meta.mode === 'stove' ? null : '시즌 중 방출은 현재 단순 방출입니다(웨이버 절차는 아직 구현되지 않음).',
+      };
+      add({
+        key: 'release',
+        group: '선수 정리',
+        label: '방출',
+        reason: reasonOf(() => this.market.releaseTarget(meta, playerId)),
+        apCost: 0,
+        executor: '구단주 직접 · 즉시',
+        costNote: remainingWon > 0 ? `남은 계약 ${p.contractYears}년치 연봉 ${won(remainingWon)}을 원래 일정대로 계속 지급` : '남은 보장 연봉 없음',
+      });
+    }
+    if (tasks.length) badges.push('위임 진행 중');
+
+    // 주요 행동: 기한이 있는 설득 → 계약 협상 순. 방출은 추천하지 않는다(18a 4장).
+    const order: PlayerActionView['key'][] = ['persuade', 'faOffer', 'salaryOffer', 'foreignOffer'];
+    const primary = order.map((k) => actions.find((a) => a.key === k && a.enabled)).find(Boolean);
+    if (primary) primary.primary = true;
+
+    const usd = (wonAmount: number) => `${Math.round(wonToUsd(wonAmount) / 10_000)}만 달러`;
+    const kindLabel: Record<string, string> = { fa: 'FA', salary: '연봉', foreign: '외국인' };
+    const statusLabel: Record<string, string> = { accepted: '합의', rejected: '거절', countered: '역제안', withdrawn: '철회', pending: '대기', expired: '만료' };
+    const history = this.repo
+      .getOffers({ playerId, clubId: meta.userClubId })
+      .slice(-6)
+      .reverse()
+      .map((o) => ({
+        date: o.date,
+        kind: kindLabel[o.kind] ?? o.kind,
+        status: statusLabel[o.status] ?? o.status,
+        text: `${o.kind === 'fa' ? `${o.offer.years}년 연봉 ${won(o.offer.salary)}·계약금 ${won(o.offer.bonus)}` : o.kind === 'foreign' ? usd(o.offer.salary) : `연봉 ${won(o.offer.salary)}`}${o.response ? ` — ${o.response}` : ''}`,
+      }));
+
+    return {
+      playerId,
+      date: meta.currentDate,
+      apRemaining: mv.apRemaining,
+      cashWon: mv.cashWon,
+      badges,
+      actions,
+      fa,
+      salary,
+      foreign,
+      release,
+      persuade: pending ? { reason: pending.reason, deadline: pending.deadline } : null,
+      ops: mv.ops,
+      tasks,
+      history,
+    };
   }
 
   private battingSummary(t: BattingTotals | undefined) {

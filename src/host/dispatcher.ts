@@ -98,6 +98,8 @@ export class Dispatcher {
       }
       case 'player.scout':
         return this.game().scoutPlayer((payload as RequestMap['player.scout']['payload']).playerId) as R;
+      case 'player.actions':
+        return this.game().playerActions((payload as RequestMap['player.actions']['payload']).playerId) as R;
       case 'game.standings':
         return this.game().standings() as R;
       case 'game.schedule': {

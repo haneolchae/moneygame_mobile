@@ -31,7 +31,7 @@ import type { ClubId, ClubProfile, PlayerTruth } from '../engine/types';
 import { Rng } from '../engine/rng';
 import { assignActiveRoster, generateDomesticFreePool, overall } from '../engine/worldgen';
 import { GameError } from '../shared/protocol';
-import type { FaEntry, GameMeta, GameRepository, InboxMessage, SalaryTalk } from './ports';
+import type { FaEntry, GameMeta, GameRepository, InboxMessage, OfferRow, SalaryTalk } from './ports';
 
 const won = (n: number) => `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억`;
 const describe = (o: ContractOffer) => `${o.years}년 총액 ${won(offerTotal(o))} (계약금 ${won(o.bonus)}, 연봉 ${won(o.salary)})`;
@@ -557,11 +557,65 @@ export class Market {
     }
   }
 
-  faOffer(meta: GameMeta, source: ActionSource, playerId: number, offer: ContractOffer) {
-    if (offer.years < 1 || offer.years > 6 || offer.salary < 30_000_000 || offer.bonus < 0) throw new GameError('INVALID_OFFER', '기간은 1~6년, 연봉은 3,000만 원 이상이어야 합니다.');
+  // ───────── 대상 검증: 실행 명령과 선수 행동 조회(player.actions)가 같은 함수를 쓴다(D-118) ─────────
+
+  /** FA 제안 대상: 승인된 FA이고 시장이 열려 있어야 한다. */
+  faTarget(meta: GameMeta, playerId: number): FaEntry {
     const e = this.repo.getFa(this.offseason(meta)).find((x) => x.playerId === playerId);
     if (!e || e.status !== 'approved') throw new GameError('NOT_AVAILABLE', '지금 협상할 수 있는 FA 선수가 아닙니다.');
-    if (!this.marketOpen(meta)) throw new GameError('MARKET_CLOSED', 'FA 시장이 아직 열리지 않았습니다.');
+    if (!this.marketOpen(meta)) throw new GameError('MARKET_CLOSED', `FA 시장이 아직 열리지 않았습니다. (${stoveDates(meta.kDate).faMarketOpen.slice(5).replace('-', '/')} 개장)`);
+    return e;
+  }
+
+  /** 연봉 협상 대상: 우리 구단의 협상 중인 보류 선수 */
+  salaryTarget(meta: GameMeta, playerId: number): SalaryTalk {
+    const t = this.repo.getSalaryTalks(this.offseason(meta)).find((x) => x.playerId === playerId && x.clubId === meta.userClubId);
+    if (!t || t.status !== 'open') throw new GameError('NOT_AVAILABLE', '협상 중인 연봉 대상이 아닙니다.');
+    return t;
+  }
+
+  /** 외국인 계약 대상: 우리 계약 만료 외국인(재계약) 또는 해외 풀 선수(신규), 스토브리그에만 */
+  foreignTarget(meta: GameMeta, playerId: number): { p: PlayerTruth; renewal: boolean; demandUsd: number } {
+    const p = this.players().find((x) => x.id === playerId);
+    if (!p || p.origin === 'domestic') throw new GameError('NOT_AVAILABLE', '외국인 선수가 아닙니다.');
+    if (meta.mode !== 'stove') throw new GameError('NOT_AVAILABLE', '외국인 계약은 스토브리그에 합니다. (시즌 중 교체는 다음 단계)');
+    const renewal = p.clubId === meta.userClubId;
+    if (renewal && p.contractYears !== 0) throw new GameError('NOT_AVAILABLE', '이미 계약 중인 선수입니다.');
+    if (!renewal && p.clubId !== null) throw new GameError('NOT_AVAILABLE', '다른 구단 소속 선수입니다.');
+    return { p, renewal, demandUsd: renewal ? foreignRenewalDemandUsd(p) : wonToUsd(p.salary) };
+  }
+
+  /** 외국인 보유·금액 규정 위반 사유(없으면 빈 배열) */
+  foreignRuleErrors(meta: GameMeta, p: PlayerTruth, renewal: boolean, salaryUsd: number): string[] {
+    const roster = this.foreignOf(meta.userClubId);
+    const after = renewal ? roster : [...roster, p];
+    return this.foreignCheck(after, new Map([[p.id, { salaryUsd, isNew: !renewal, renewals: renewal ? p.career.foreignRenewals + 1 : 0 }]]));
+  }
+
+  /** 방출 대상: 우리 선수이고 FA 시장에 나가 있지 않아야 한다. */
+  releaseTarget(meta: GameMeta, playerId: number): PlayerTruth {
+    const p = this.players().find((x) => x.id === playerId);
+    if (!p || p.clubId !== meta.userClubId) throw new GameError('NOT_AVAILABLE', '우리 구단 선수가 아닙니다.');
+    const e = this.repo.getFa(this.offseason(meta)).find((x) => x.playerId === playerId);
+    if (e && (e.status === 'applied' || e.status === 'approved')) throw new GameError('NOT_AVAILABLE', 'FA 시장에 나간 선수는 방출할 수 없습니다.');
+    return p;
+  }
+
+  /**
+   * 같은 날 같은 선수에게 같은 조건을 다시 보내면 비용 없이 거부한다(D-118).
+   * 같은 날의 같은 조건은 결과가 시드로 정해져 있어 다시 보내도 행동력만 쓰기 때문이다.
+   */
+  assertNewOffer(meta: GameMeta, playerId: number, kind: OfferRow['kind'], offer: ContractOffer): void {
+    const same = this.repo
+      .getOffers({ playerId, clubId: meta.userClubId, kind })
+      .some((o) => o.date === meta.currentDate && o.offer.years === offer.years && o.offer.salary === offer.salary && o.offer.bonus === offer.bonus);
+    if (same) throw new GameError('DUPLICATE_OFFER', '오늘 같은 조건으로 이미 제안했습니다. 조건을 바꾸거나 다음 날 다시 제안하세요. (행동력은 쓰지 않았습니다)');
+  }
+
+  faOffer(meta: GameMeta, source: ActionSource, playerId: number, offer: ContractOffer) {
+    if (offer.years < 1 || offer.years > 6 || offer.salary < 30_000_000 || offer.bonus < 0) throw new GameError('INVALID_OFFER', '기간은 1~6년, 연봉은 3,000만 원 이상이어야 합니다.');
+    const e = this.faTarget(meta, playerId);
+    if (source.kind === 'direct') this.assertNewOffer(meta, playerId, 'fa', offer);
     const comp = e.originClub === meta.userClubId ? 0 : compensationFor(e.grade ?? 'C', e.priorSalary);
     const cash = this.repo.cashBalance(meta.userClubId);
     if (cash < offer.bonus + comp) throw new GameError('CASH_SHORT', `현금이 부족합니다. 계약금 ${won(offer.bonus)}${comp ? ` + 보상금 ${won(comp)}` : ''}이 필요합니다.`);
@@ -590,15 +644,15 @@ export class Market {
   }
 
   salaryOffer(meta: GameMeta, source: ActionSource, playerId: number, amount: number) {
-    const talks = this.repo.getSalaryTalks(this.offseason(meta));
-    const t = talks.find((x) => x.playerId === playerId && x.clubId === meta.userClubId);
-    if (!t || t.status !== 'open') throw new GameError('NOT_AVAILABLE', '협상 중인 연봉 대상이 아닙니다.');
+    const t = this.salaryTarget(meta, playerId);
     if (amount < 30_000_000) throw new GameError('INVALID_OFFER', '최저 연봉(3,000만 원) 이상이어야 합니다.');
+    const record: ContractOffer = { years: 1, salary: round1m(amount), bonus: 0 };
+    if (source.kind === 'direct') this.assertNewOffer(meta, playerId, 'salary', record);
     const p = this.players().find((x) => x.id === playerId)!;
     return this.repo.transaction(() => {
       this.pay(source, TASK_WP.salaryTalk);
       this.takeOver(meta, source, playerId);
-      t.offer = round1m(amount);
+      t.offer = record.salary;
       if (salaryAccepts(meta.seed, p, t.offer, t.demand)) {
         t.status = 'agreed';
         t.final = t.offer;
@@ -606,41 +660,40 @@ export class Market {
         p.contractYears = 1;
         this.repo.savePlayers([p]);
         this.repo.saveSalaryTalks([t]);
-        return { result: 'accept' as const, message: `${p.name} 선수와 ${won(t.offer)}에 합의했습니다.` };
+        const message = `${p.name} 선수와 ${won(t.offer)}에 합의했습니다.`;
+        this.repo.insertOffer({ playerId, clubId: meta.userClubId, kind: 'salary', date: meta.currentDate, offer: record, status: 'accepted', response: message });
+        return { result: 'accept' as const, message };
       }
       this.repo.saveSalaryTalks([t]);
-      return { result: 'reject' as const, message: `${p.name} 선수가 아직 만족하지 않습니다. (요구액 ${won(t.demand)})` };
+      const message = `${p.name} 선수가 아직 만족하지 않습니다. (요구액 ${won(t.demand)})`;
+      this.repo.insertOffer({ playerId, clubId: meta.userClubId, kind: 'salary', date: meta.currentDate, offer: record, status: 'rejected', response: message });
+      return { result: 'reject' as const, message };
     });
   }
 
   foreignOffer(meta: GameMeta, source: ActionSource, playerId: number, salaryUsd: number) {
-    const p = this.players().find((x) => x.id === playerId);
-    if (!p || p.origin === 'domestic') throw new GameError('NOT_AVAILABLE', '외국인 선수가 아닙니다.');
-    if (meta.mode !== 'stove') throw new GameError('NOT_AVAILABLE', '외국인 계약은 스토브리그에 합니다. (시즌 중 교체는 다음 단계)');
-    const renewal = p.clubId === meta.userClubId;
-    if (renewal && p.contractYears !== 0) throw new GameError('NOT_AVAILABLE', '이미 계약 중인 선수입니다.');
-    if (!renewal && p.clubId !== null) throw new GameError('NOT_AVAILABLE', '다른 구단 소속 선수입니다.');
-    const demand = renewal ? foreignRenewalDemandUsd(p) : wonToUsd(p.salary);
-    const roster = this.foreignOf(meta.userClubId);
-    const after = renewal ? roster : [...roster, p];
-    const errors = this.foreignCheck(after, new Map([[p.id, { salaryUsd, isNew: !renewal, renewals: renewal ? p.career.foreignRenewals + 1 : 0 }]]));
+    const { p, renewal, demandUsd: demand } = this.foreignTarget(meta, playerId);
+    const errors = this.foreignRuleErrors(meta, p, renewal, salaryUsd);
     if (errors.length) throw new GameError('FOREIGN_RULE', errors.join(' '));
+    const record: ContractOffer = { years: 1, salary: usdToWon(salaryUsd), bonus: 0 };
+    if (source.kind === 'direct') this.assertNewOffer(meta, playerId, 'foreign', record);
     return this.repo.transaction(() => {
       this.pay(source, TASK_WP.foreignContract);
       if (salaryUsd >= demand) {
         this.signForeign(meta.userClubId, p, salaryUsd, renewal);
-        this.repo.addInbox([{ date: meta.currentDate, kind: 'news', sender: 'KBO 소식', title: `${this.club(meta.userClubId).shortName}, ${p.name} ${renewal ? '재계약' : '영입'}`, body: `${p.name} 선수와 ${Math.round(salaryUsd / 10_000)}만 달러에 계약했습니다.` }]);
-        return { result: 'accept' as const, message: `${p.name} 선수와 ${Math.round(salaryUsd / 10_000)}만 달러에 계약했습니다.` };
+        const message = `${p.name} 선수와 ${Math.round(salaryUsd / 10_000)}만 달러에 계약했습니다.`;
+        this.repo.addInbox([{ date: meta.currentDate, kind: 'news', sender: 'KBO 소식', title: `${this.club(meta.userClubId).shortName}, ${p.name} ${renewal ? '재계약' : '영입'}`, body: message }]);
+        this.repo.insertOffer({ playerId, clubId: meta.userClubId, kind: 'foreign', date: meta.currentDate, offer: record, status: 'accepted', response: message });
+        return { result: 'accept' as const, message };
       }
-      return { result: 'reject' as const, message: `${p.name} 선수 측은 ${Math.round(demand / 10_000)}만 달러를 원합니다.` };
+      const message = `${p.name} 선수 측은 ${Math.round(demand / 10_000)}만 달러를 원합니다.`;
+      this.repo.insertOffer({ playerId, clubId: meta.userClubId, kind: 'foreign', date: meta.currentDate, offer: record, status: 'rejected', response: message });
+      return { result: 'reject' as const, message };
     });
   }
 
   releasePlayer(meta: GameMeta, playerId: number) {
-    const p = this.players().find((x) => x.id === playerId);
-    if (!p || p.clubId !== meta.userClubId) throw new GameError('NOT_AVAILABLE', '우리 구단 선수가 아닙니다.');
-    const e = this.repo.getFa(this.offseason(meta)).find((x) => x.playerId === playerId);
-    if (e && (e.status === 'applied' || e.status === 'approved')) throw new GameError('NOT_AVAILABLE', 'FA 시장에 나간 선수는 방출할 수 없습니다.');
+    const p = this.releaseTarget(meta, playerId);
     return this.repo.transaction(() => {
       const msg = this.release(meta, meta.currentDate, p, '방출');
       const talks = this.repo.getSalaryTalks(this.offseason(meta)).filter((t) => t.playerId === playerId);
