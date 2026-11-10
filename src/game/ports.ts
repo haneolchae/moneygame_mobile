@@ -4,6 +4,7 @@ import type { ScoutingSnapshot } from '../engine/scouting';
 import type { GameDate } from '../engine/calendar';
 import type { Campaign, ClubFacilities, FanState, TicketPolicy } from '../engine/business';
 import type { SponsorContract, SponsorOffer } from '../engine/sponsors';
+import type { MerchState } from '../engine/merch';
 import type { ContractOffer, FaGrade } from '../engine/contracts';
 import type { LedgerCategory, LedgerEntry } from '../engine/finance';
 import type { GameResult } from '../engine/gamesim';
@@ -93,6 +94,8 @@ export interface GameMeta {
   sponsorOffers?: SponsorOffer[];
   campaignCounts?: Record<string, Record<string, number>>;
   sponsorTotals?: Record<string, Record<string, number>>;
+  /** 6d 굿즈(D-153): 구단 ID → 제작업체·재고·발주·판매 집계 */
+  merch?: Record<string, MerchState>;
   /** D-136 계약 세션: 선수 ID → 이번 주 세션(주·제안 횟수) */
   contractSessions?: Record<string, { weekId: string; count: number }>;
 }
@@ -455,6 +458,8 @@ export interface GameRepository {
   updateApproval(id: number, status: ApprovalRequest['status']): void;
   initialize(world: InitialWorld): void;
   getMeta(): GameMeta;
+  /** 메타 한 항목만 읽는다(전체 해석 없이). 자주 부르는 조회에 쓴다 */
+  getMetaValue<T>(key: string): T | undefined;
   getClubs(): ClubProfile[];
   getPlayers(): PlayerTruth[];
   getActivePlayers(clubIds: ClubId[]): PlayerTruth[];

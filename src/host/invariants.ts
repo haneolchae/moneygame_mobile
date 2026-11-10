@@ -249,6 +249,17 @@ export function checkBusiness(repo: GameRepository): string[] {
     const live = list.filter((c) => c.end >= meta.currentDate).map((c) => c.kind);
     if (new Set(live).size !== live.length) errors.push(`캠페인 중복: 구단 ${id}`);
   }
+  // 6d 사전 등록 ①(D-154): 재고·입고 예정 수량 0 이상, 누적 판매 ≤ 누적 입고
+  for (const [id, m] of Object.entries(meta.merch ?? {})) {
+    for (const [sku, st] of Object.entries(m.stock)) {
+      if (!(st.qty >= 0)) errors.push(`굿즈 재고 음수: 구단 ${id} ${sku} ${st.qty}`);
+      const sold = Object.values(m.totals).reduce((a, t) => a + (t[sku as keyof typeof t]?.sold ?? 0), 0);
+      const received = Object.values(m.totals).reduce((a, t) => a + (t[sku as keyof typeof t]?.received ?? 0), 0);
+      if (sold > received) errors.push(`굿즈 판매가 입고보다 많음: 구단 ${id} ${sku} ${sold} > ${received}`);
+      if (received - sold !== st.qty) errors.push(`굿즈 재고 불일치: 구단 ${id} ${sku} 입고 ${received} − 판매 ${sold} ≠ 재고 ${st.qty}`);
+    }
+    if (m.orders.some((o) => !(o.qty > 0))) errors.push(`굿즈 발주 수량 오류: 구단 ${id}`);
+  }
   // 6c 사전 등록 ①(D-150): 구단당 메인 1·서브 3 이하, 업종 중복 없음, 계약 시즌은 현재 또는 다음 시즌
   for (const [id, list] of Object.entries(meta.sponsors ?? {})) {
     for (const season of new Set(list.map((c) => c.season))) {

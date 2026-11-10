@@ -253,6 +253,39 @@ export const ATTENDANCE = {
   },
 } as const;
 
+/** 6d 굿즈(D-153 초기안). 금액은 2026 기준(물가 연동) */
+export const MERCH = {
+  skus: {
+    uniform: { label: '유니폼', priceWon: 99_000, buyRate: 0.008 },
+    cap: { label: '모자', priceWon: 35_000, buyRate: 0.015 },
+    cheer: { label: '응원 용품', priceWon: 12_000, buyRate: 0.03 },
+  },
+  vendors: {
+    budget: { label: '저가 대량 제작사', costRate: 0.4, demand: 0.85, uniformDemand: 0.85, leadDays: 21, minOrder: { uniform: 500, cap: 1000, cheer: 2000 } },
+    standard: { label: '국내 전문 제작사', costRate: 0.55, demand: 1.0, uniformDemand: 1.0, leadDays: 14, minOrder: { uniform: 100, cap: 200, cheer: 500 } },
+    brand: { label: '스포츠 브랜드 공식 파트너', costRate: 0.65, demand: 1.0, uniformDemand: 1.3, leadDays: 14, minOrder: { uniform: 100, cap: 200, cheer: 500 } },
+  },
+  /** 브랜드 파트너 후원금(계약 때) × 인지도 배수 */
+  partnerFeeWon: 300_000_000,
+  partnerTier: { 상: 1.2, 중: 1.0, 하: 0.8 } as Record<string, number>,
+  vendorAp: 2,
+  /** 경기 없는 시즌 날 온라인 판매 = 직전 홈경기 수요 × 이 값 */
+  onlineShare: 0.2,
+  demandSlope: 0.15,
+  backlashDemand: 0.7,
+  noise: 0.1,
+  /** 자동 재주문: 목표 재고 주수(기본·범위), 최근 판매 주수, 개막 전 첫 발주(일) */
+  targetWeeksDefault: 4,
+  targetWeeksMin: 2,
+  targetWeeksMax: 8,
+  recentWeeks: 4,
+  firstOrderDaysBeforeOpening: 21,
+  /** 첫 발주용 주간 수요 추정: 좌석 수 × 이 점유율 × 주 3경기 × (1 + 온라인) */
+  baselineOccupancy: 0.7,
+  baselineGamesPerWeek: 3,
+  maxManualOrder: 50_000,
+} as const;
+
 /**
  * 6c 스폰서(D-149 초기안). ASSUMPTION(D-149): 금액 규모(mainBaseWon·subBaseWon)는 사용자 결정 대기인 임시값이다.
  * 금액은 2026 기준(물가 연동).
@@ -301,25 +334,7 @@ export const SPONSOR = {
   defaultShare: 0.9,
   aiIncentiveWeight: 0.4,
   signAp: 2,
-  /** 후보: 가상 일반 기업 8 + 23 문서 브랜드 일부 8 */
-  candidates: [
-    { brand: '한빛은행', industry: '금융', tier: '상' },
-    { brand: '새솔통신', industry: '통신', tier: '상' },
-    { brand: '다온식품', industry: '식품', tier: '중' },
-    { brand: '가람자동차', industry: '자동차', tier: '상' },
-    { brand: '누리보험', industry: '보험', tier: '중' },
-    { brand: '바른유통', industry: '유통', tier: '중' },
-    { brand: '하늘항공', industry: '항공', tier: '중' },
-    { brand: '미르게임즈', industry: '게임', tier: '하' },
-    { brand: '나이크', industry: '스포츠 의류', tier: '상' },
-    { brand: '아이도스', industry: '스포츠 의류', tier: '상' },
-    { brand: '뉴밸런스', industry: '스포츠 의류', tier: '상' },
-    { brand: '휠러', industry: '스포츠 의류', tier: '중' },
-    { brand: 'HON', industry: '러닝', tier: '상' },
-    { brand: '노스페이즈', industry: '아웃도어', tier: '상' },
-    { brand: '뉴이어', industry: '모자', tier: '상' },
-    { brand: '미주노', industry: '야구 용품', tier: '상' },
-  ] as ReadonlyArray<{ brand: string; industry: string; tier: '상' | '중' | '하' }>,
+  /** 후보 브랜드는 리스트 파일 src/engine/data/brands.json에서 읽는다(D-152) */
 } as const;
 
 /** 6b 팬 만족도·캠페인(D-147 초기안, 팬 반발 해임은 D-043). 비용은 2026 기준(물가 연동) */

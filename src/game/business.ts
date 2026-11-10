@@ -16,6 +16,8 @@ const emptyTotals = (): AttendanceTotals => ({ games: 0, total: 0, max: 0, sello
 
 export class BusinessOps {
   private priorCache: { season: number; pct: Map<ClubId, number> } | null = null;
+  /** 그날 정규시즌 홈경기 관중(구단별). 굿즈 수요가 같은 날 읽는다(6d) */
+  gateToday = new Map<ClubId, number>();
 
   constructor(
     private readonly repo: GameRepository,
@@ -35,12 +37,18 @@ export class BusinessOps {
   private saveFacilities(clubId: ClubId, f: ClubFacilities) {
     const cur = this.repo.getMeta();
     this.repo.updateMeta({ facilities: { ...(cur.facilities ?? {}), [String(clubId)]: f } });
+    this.facilityCache = null;
   }
 
   // 시설 효과(완공 단계만)
-  trainingBoost = (clubId: ClubId) => trainingBoost(this.repo.getMeta().facilities?.[String(clubId)]);
-  rehabBoost = (clubId: ClubId) => rehabBoost(this.repo.getMeta().facilities?.[String(clubId)]);
-  scoutingBoost = (clubId: ClubId) => scoutingBoost(this.repo.getMeta().facilities?.[String(clubId)]);
+  // 시설 효과는 선수마다 조회되므로 시설 항목만 읽어 기억해 둔다(메타 전체 해석 방지). 시설을 저장하거나 하루가 시작되면 버린다.
+  private facilityCache: Record<string, ClubFacilities> | null = null;
+  private facilities(): Record<string, ClubFacilities> {
+    return (this.facilityCache ??= this.repo.getMetaValue<Record<string, ClubFacilities>>('facilities') ?? {});
+  }
+  trainingBoost = (clubId: ClubId) => trainingBoost(this.facilities()[String(clubId)]);
+  rehabBoost = (clubId: ClubId) => rehabBoost(this.facilities()[String(clubId)]);
+  scoutingBoost = (clubId: ClubId) => scoutingBoost(this.facilities()[String(clubId)]);
 
   // ───────── 6b 팬 만족도·캠페인 (D-147) ─────────
 
@@ -145,6 +153,7 @@ export class BusinessOps {
 
   /** 그날 정규시즌 홈경기의 관중·입장수입·매점·관람료. 집계(meta.attendance)와 승패를 갱신하고 장부 항목을 돌려준다 */
   onGames(meta: GameMeta, date: GameDate, fixtures: Fixture[], results: GameResult[]): LedgerEntry[] {
+    this.gateToday = new Map();
     const regular = new Set(fixtures.filter((f) => !f.stage || f.stage === 'regular').map((f) => f.id));
     const games = results.filter((r) => regular.has(r.fixtureId));
     if (games.length === 0) return [];
@@ -162,6 +171,7 @@ export class BusinessOps {
         { seed: meta.seed, fixtureId: r.fixtureId, home, away, weekday: weekday(date), wins: t.w, losses: t.l, priorPct: prior.get(r.home) ?? 0.5, policy: r.home === meta.userClubId ? (meta.ticketPolicy ?? 'normal') : 'normal', stadiumLevel: meta.facilities?.[String(r.home)]?.levels.stadium ?? 1, satisfaction: this.fanOf(meta, r.home).satisfaction, campaignDemand: campaignBoost(this.activeCampaigns(meta, r.home, date)).demand },
         inflation,
       );
+      this.gateToday.set(r.home, (this.gateToday.get(r.home) ?? 0) + g.attendance);
       t.games += 1;
       t.total += g.attendance;
       t.max = Math.max(t.max, g.attendance);
@@ -185,6 +195,7 @@ export class BusinessOps {
     const ledger: LedgerEntry[] = [];
     const inbox: InboxMessage[] = [];
     const inflation = this.inflation(meta);
+    this.facilityCache = null;
     const monthEnd = addDays(date, 1).slice(8, 10) === '01';
     const all: Record<string, ClubFacilities> = {};
     let changed = false;
@@ -220,6 +231,7 @@ export class BusinessOps {
       all[String(club.id)] = f;
     }
     if (changed) this.repo.updateMeta({ facilities: all });
+    this.facilityCache = null;
     if (meta.mode === 'season' && weekday(date) === 1) {
       const w = this.weeklyFans(meta, date);
       ledger.push(...w.ledger);

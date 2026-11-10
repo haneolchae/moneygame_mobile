@@ -660,6 +660,23 @@ export interface BusinessView {
   /** 6b 팬 만족도(0~100). 20 미만은 팬 반발, dismissDate까지 recoverAt 이상으로 회복하지 못하면 해임 */
   fans: { satisfaction: number; backlash: boolean; lowSince: string | null; dismissDate: string | null; recoverAt: number };
   campaignAp: number;
+  /** 6d 굿즈: 제작업체, 상품군별 재고·발주·판매, 자동 재주문 정책 */
+  merch: {
+    vendor: string;
+    vendorSeason: number;
+    nextVendor: string | null;
+    vendorAp: number;
+    vendorOpen: boolean;
+    vendorOptions: Array<{ kind: 'budget' | 'standard' | 'brand'; brandId: string | null; label: string; costPct: number; demandNote: string; leadWeeks: number; feeWon: number; reason: string | null }>;
+    auto: boolean;
+    autoAvailable: boolean;
+    targetWeeks: number;
+    targetWeeksRange: [number, number];
+    canOrder: boolean;
+    skus: Array<{ sku: 'uniform' | 'cap' | 'cheer'; label: string; priceWon: number; unitCostWon: number; minOrder: number; stock: number; avgCostWon: number; onOrder: number; nextArrival: string | null; sold: number; revenueWon: number; cogsWon: number; lastWeekSold: number }>;
+    inventoryWon: number;
+    season: number;
+  };
   /** 6c 스폰서: 계약과 이번 스토브리그 제안 */
   sponsors: {
     signAp: number;
@@ -931,6 +948,9 @@ export interface RequestMap {
   'business.startFacility': { payload: { kind: FacilityKindView }; result: { message: string; view: BusinessView } };
   'business.startCampaign': { payload: { kind: CampaignKindView }; result: { message: string; view: BusinessView } };
   'business.signSponsor': { payload: { offerId: string }; result: { message: string; view: BusinessView } };
+  'business.chooseVendor': { payload: { kind: 'budget' | 'standard' | 'brand'; brandId?: string }; result: { message: string; view: BusinessView } };
+  'business.orderMerch': { payload: { sku: 'uniform' | 'cap' | 'cheer'; qty: number }; result: { message: string; view: BusinessView } };
+  'business.setMerchPolicy': { payload: { auto: boolean; targetWeeks: number }; result: { message: string; view: BusinessView } };
   'business.cancelFacility': { payload: { kind: FacilityKindView }; result: { message: string; view: BusinessView } };
   'trade.view': { payload: { clubId: number }; result: TradeView };
   'trade.preview': { payload: { clubId: number } & TradePackageView; result: TradePreviewView };
@@ -1003,6 +1023,9 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'business.startFacility',
   'business.startCampaign',
   'business.signSponsor',
+  'business.chooseVendor',
+  'business.orderMerch',
+  'business.setMerchPolicy',
   'business.cancelFacility',
   'trade.view',
   'trade.preview',

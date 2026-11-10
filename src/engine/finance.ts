@@ -37,7 +37,10 @@ export type LedgerCategory =
   | 'facilityConstruction'
   | 'facilityUpkeep'
   | 'marketing'
-  | 'sponsorship';
+  | 'sponsorship'
+  | 'merchSales'
+  | 'merchOrder'
+  | 'merchPartner';
 
 export const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   startCash: '기초 현금',
@@ -65,12 +68,14 @@ export const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   facilityUpkeep: '시설 유지비',
   marketing: '마케팅·캠페인',
   sponsorship: '스폰서 수입',
+  merchSales: '굿즈 판매',
+  merchOrder: '굿즈 발주(재고 취득)',
+  merchPartner: '제작 파트너 후원금',
 };
 
 export const NOT_YET_IMPLEMENTED = [
   '시즌권·좌석 등급',
   '구장 광고·명명권 재협상',
-  '굿즈 매출',
   '임대',
   '포스트시즌 배당금',
   '시설 감가상각',

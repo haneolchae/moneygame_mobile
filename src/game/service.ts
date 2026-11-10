@@ -37,6 +37,8 @@ import { TrainingOps } from './training';
 import { TradeOps } from './trade';
 import { BusinessOps } from './business';
 import { SponsorOps } from './sponsors';
+import { MerchOps } from './merch';
+import type { Sku, VendorKind } from '../engine/merch';
 import type { CampaignKind, FacilityKind, TicketPolicy } from '../engine/business';
 import { HealthOps } from './health';
 import { DEV_LABEL, devSnapshot, VELOCITY } from '../engine/development';
@@ -257,6 +259,7 @@ export class GameService {
   readonly trades: TradeOps;
   readonly business: BusinessOps;
   readonly sponsors: SponsorOps;
+  readonly merch: MerchOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -314,6 +317,7 @@ export class GameService {
     this.health = new HealthOps(repo, this.rosterOps, (id) => Math.min(1, this.org.medicalQuality(id) + this.business.rehabBoost(id)));
     this.training = new TrainingOps(repo, this.org, (id) => this.business.trainingBoost(id));
     this.sponsors = new SponsorOps(repo, this.clubMap, this.org, this.business);
+    this.merch = new MerchOps(repo, this.clubMap, this.org, this.business);
     this.trades = new TradeOps(repo, this.org, this.rosterOps, (id) => this.standings().find((s) => s.club.id === id)?.rank ?? null);
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
@@ -438,6 +442,10 @@ export class GameService {
     const sp = this.sponsors.onDay(this.meta(), date);
     ledger.push(...sp.ledger);
     inbox.push(...sp.inbox);
+    // 6d(D-153): 굿즈 입고·판매(홈경기·온라인)·자동 재주문
+    const mc = this.merch.onDay(this.meta(), date);
+    ledger.push(...mc.ledger);
+    inbox.push(...mc.inbox);
     for (const club of this.clubMap.values()) {
       ledger.push(
         ...scheduledEntries({
@@ -1552,7 +1560,23 @@ export class GameService {
 
   businessView(): BusinessView {
     const meta = this.meta();
-    return { ...this.business.view(meta), sponsors: this.sponsors.view(meta) };
+    return { ...this.business.view(meta), sponsors: this.sponsors.view(meta), merch: this.merch.view(meta) };
+  }
+
+  chooseVendor(kind: VendorKind, brandId?: string): { message: string; view: BusinessView } {
+    const meta = this.meta();
+    const message = this.merch.chooseVendor(meta, weekIdFor(meta.currentDate), kind, brandId);
+    return { message, view: this.businessView() };
+  }
+
+  orderMerch(sku: Sku, qty: number): { message: string; view: BusinessView } {
+    const message = this.merch.order(this.meta(), sku, Number(qty));
+    return { message, view: this.businessView() };
+  }
+
+  setMerchPolicy(auto: boolean, targetWeeks: number): { message: string; view: BusinessView } {
+    const message = this.merch.setPolicy(this.meta(), auto, Number(targetWeeks));
+    return { message, view: this.businessView() };
   }
 
   signSponsor(offerId: string): { message: string; view: BusinessView } {

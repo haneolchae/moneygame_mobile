@@ -263,7 +263,8 @@ async function main() {
     const cashRatio = +(dash.cashWon / userStart).toFixed(2);
     const aiClubs = repo5.getClubs().filter((c) => c.id !== 1 && c.parentSupport > 0);
     const aiCashRatio = +(aiClubs.reduce((a, c) => a + repo5.cashBalance(c.id) / c.startCash, 0) / aiClubs.length).toFixed(2);
-    if (cashRatio > 2.0) inv.push(`사전 등록 5b ① 위반: 현금 ${cashRatio}배 > 2.0`);
+    // D-151: 재무 현금 기준 전체는 마일스톤(10시즌 이상)에서만 판정한다
+    if (seasons >= 10 && cashRatio > 2.0) inv.push(`사전 등록 5b ① 위반: 현금 ${cashRatio}배 > 2.0`);
     // 10시즌 측정 기준(D-137 ① 마지막 시즌·②)은 10시즌 이상 실행(최종 마일스톤)에서만 판정한다(D-143·D-146). 그 전에는 '10시즌 기준 보류'.
     const milestone = seasons >= 10;
     if (milestone && s === seasons && (cashRatio < 0.8 || cashRatio > 1.8)) inv.push(`사전 등록 5b ① 위반: 마지막 시즌 현금 ${cashRatio}배(0.8~1.8)`);
@@ -277,6 +278,14 @@ async function main() {
     const ticketEok2026 = +(attSum.ticket / 10 / infl / 1e8).toFixed(1);
     if (occupancy < 0.55 || occupancy > 0.85) inv.push(`사전 등록 6a ② 위반: 리그 평균 점유율 ${occupancy}`);
     if (ticketEok2026 < 100 || ticketEok2026 > 200) inv.push(`사전 등록 6a ③ 위반: 구단당 입장수입(2026 기준) ${ticketEok2026}억`);
+    // 6d 사전 등록 ②③(D-154): 구단당 굿즈 매출 2026 기준 10~60억, 매출총이익률 25~65%, 정규시즌 종료 재고 ≤ 시즌 판매의 50%
+    const mt = Object.values(repo5.getMeta().merch ?? {}).reduce((a, m) => { const t = m.totals[String(dash.season)]; for (const k of ['uniform', 'cap', 'cheer'] as const) { a.rev += t?.[k].revenueWon ?? 0; a.cogs += t?.[k].cogsWon ?? 0; a.sold += t?.[k].sold ?? 0; a.stock += m.stock[k].qty; } return a; }, { rev: 0, cogs: 0, sold: 0, stock: 0 });
+    const merchEok2026 = +(mt.rev / 10 / infl / 1e8).toFixed(1);
+    const merchMargin = mt.rev > 0 ? +(1 - mt.cogs / mt.rev).toFixed(3) : 0;
+    const merchStockRatio = mt.sold > 0 ? +(mt.stock / mt.sold).toFixed(3) : 9;
+    if (merchEok2026 < 10 || merchEok2026 > 60) inv.push(`사전 등록 6d ② 위반: 구단당 굿즈 매출(2026 기준) ${merchEok2026}억`);
+    if (merchMargin < 0.25 || merchMargin > 0.65) inv.push(`사전 등록 6d ② 위반: 매출총이익률 ${merchMargin}`);
+    if (merchStockRatio > 0.5) inv.push(`사전 등록 6d ③ 위반: 시즌 종료 재고 / 판매 ${merchStockRatio}`);
     // 6c 사전 등록 ②(D-150): 정산이 끝난 시즌(직전 시즌)의 구단당 스폰서 순수입 리그 평균 2026 기준 20~70억. 현재 시즌 정산은 포스트시즌 뒤라 다음 행에서 판정한다
     const spPrev = Object.values(repo5.getMeta().sponsorTotals?.[String(dash.season - 1)] ?? {});
     const sponsorEok2026 = spPrev.length && s > 1 ? +(spPrev.reduce((a, b) => a + b, 0) / 10 / (infl / (1 + (repo5.getMeta().inflationBp[String(dash.season)] ?? 0) / 10_000)) / 1e8).toFixed(1) : null;
@@ -295,6 +304,9 @@ async function main() {
       ticketEok2026,
       fanAvg,
       sponsorEok2026,
+      merchEok2026,
+      merchMargin,
+      merchStockRatio,
       userFan: repo5.getMeta().fans?.['1']?.satisfaction ?? null,
       facilityLevelAvg: facLevels.length ? +(facLevels.reduce((a, b) => a + b, 0) / facLevels.length).toFixed(1) : null,
       userFacilityLevels: Object.values(repo5.getMeta().facilities?.['1']?.levels ?? {}).join('/'),

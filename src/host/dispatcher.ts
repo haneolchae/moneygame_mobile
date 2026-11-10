@@ -114,6 +114,18 @@ export class Dispatcher {
         return this.game().startCampaign((payload as RequestMap['business.startCampaign']['payload']).kind) as R;
       case 'business.signSponsor':
         return this.game().signSponsor((payload as RequestMap['business.signSponsor']['payload']).offerId) as R;
+      case 'business.chooseVendor': {
+        const p = payload as RequestMap['business.chooseVendor']['payload'];
+        return this.game().chooseVendor(p.kind, p.brandId) as R;
+      }
+      case 'business.orderMerch': {
+        const p = payload as RequestMap['business.orderMerch']['payload'];
+        return this.game().orderMerch(p.sku, p.qty) as R;
+      }
+      case 'business.setMerchPolicy': {
+        const p = payload as RequestMap['business.setMerchPolicy']['payload'];
+        return this.game().setMerchPolicy(p.auto, p.targetWeeks) as R;
+      }
       case 'business.cancelFacility':
         return this.game().cancelFacility((payload as RequestMap['business.cancelFacility']['payload']).kind) as R;
       case 'trade.view':

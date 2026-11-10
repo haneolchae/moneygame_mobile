@@ -12,6 +12,7 @@ export function Business({ nav }: { nav: Nav }) {
   const [v, setV] = useState<BusinessView | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState<FacilityKindView | null>(null);
+  const [qty, setQty] = useState<Record<string, number>>({});
   const [result, setResult] = useState<{ text: string; kind: 'ok' | 'error' } | null>(null);
 
   useEffect(() => {
@@ -187,6 +188,89 @@ export function Business({ nav }: { nav: Nav }) {
         <div className="panel-body muted small">보장액은 체결 때 받고, 인센티브와 의무 미달 반환은 시즌 마감 때 정산합니다.</div>
       </section>
 
+      <section className="panel">
+        <div className="panel-head">
+          <h2>굿즈</h2>
+          <span className="meta">
+            {v.merch.vendorSeason} 제작업체: {v.merch.vendor}
+            {v.merch.nextVendor ? ` · 다음 시즌: ${v.merch.nextVendor}` : ''} · 재고 자산 {won(v.merch.inventoryWon)}
+          </span>
+        </div>
+        <table className="grid">
+          <thead>
+            <tr>
+              <th>상품</th>
+              <th className="num">판매가</th>
+              <th className="num">원가(개)</th>
+              <th className="num">재고</th>
+              <th className="num">입고 예정</th>
+              <th className="num">지난주 판매</th>
+              <th className="num">{v.merch.season} 판매</th>
+              <th className="num">매출</th>
+              <th className="num">매출원가</th>
+              <th className="num">마진</th>
+              <th>수동 발주 (행동력 0)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {v.merch.skus.map((k) => (
+              <tr key={k.sku}>
+                <td>{k.label}</td>
+                <td className="num">{k.priceWon.toLocaleString('ko-KR')}원</td>
+                <td className="num">{k.unitCostWon.toLocaleString('ko-KR')}원</td>
+                <td className="num">{k.stock === 0 && k.sold > 0 ? <span className="reason">품절</span> : k.stock.toLocaleString('ko-KR')}</td>
+                <td className="num">
+                  {k.onOrder.toLocaleString('ko-KR')}
+                  {k.nextArrival ? <span className="muted small"> ({dateKo(k.nextArrival)})</span> : ''}
+                </td>
+                <td className="num">{k.lastWeekSold.toLocaleString('ko-KR')}</td>
+                <td className="num">{k.sold.toLocaleString('ko-KR')}</td>
+                <td className="num amount-pos">{won(k.revenueWon)}</td>
+                <td className="num">{won(k.cogsWon)}</td>
+                <td className="num">{k.revenueWon > 0 ? `${((1 - k.cogsWon / k.revenueWon) * 100).toFixed(1)}%` : '—'}</td>
+                <td>
+                  <input type="number" min={k.minOrder} step={100} aria-label={`${k.label} 발주 수량`} value={qty[k.sku] ?? k.minOrder} onChange={(e) => setQty((q) => ({ ...q, [k.sku]: Number(e.target.value) }))} style={{ width: 90 }} />{' '}
+                  <button className="small" disabled={busy || !v.merch.canOrder} title={v.merch.canOrder ? `최소 ${k.minOrder.toLocaleString('ko-KR')}개` : '발주는 시즌 모드에 합니다'} onClick={() => void run(() => api('business.orderMerch', { sku: k.sku, qty: qty[k.sku] ?? k.minOrder }))}>
+                    발주 {won((qty[k.sku] ?? k.minOrder) * k.unitCostWon)}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="panel-body">
+          <div className="toolbar">
+            <label>
+              <input type="checkbox" checked={v.merch.auto} disabled={busy} onChange={(e) => void run(() => api('business.setMerchPolicy', { auto: e.target.checked, targetWeeks: v.merch.targetWeeks }))} /> 상품팀 자동 재주문
+            </label>
+            <label>
+              목표 재고{' '}
+              <select value={v.merch.targetWeeks} disabled={busy} onChange={(e) => void run(() => api('business.setMerchPolicy', { auto: v.merch.auto, targetWeeks: Number(e.target.value) }))}>
+                {Array.from({ length: v.merch.targetWeeksRange[1] - v.merch.targetWeeksRange[0] + 1 }, (_, i) => v.merch.targetWeeksRange[0] + i).map((w) => (
+                  <option key={w} value={w}>
+                    {w}주
+                  </option>
+                ))}
+              </select>
+            </label>
+            {v.merch.auto && !v.merch.autoAvailable && <span className="reason small">상품팀장과 사업본부장이 모두 없어 자동 재주문이 멈췄습니다.</span>}
+            <span className="muted small">판매는 입고된 재고까지만 · 지급은 발주 때 · 원가는 이동평균</span>
+          </div>
+          {v.merch.vendorOpen && (
+            <>
+              <h3 style={{ marginTop: 10 }}>다음 시즌 제작업체 선택 (행동력 {v.merch.vendorAp}, 고르지 않으면 국내 전문 제작사)</h3>
+              <div className="toolbar">
+                {v.merch.vendorOptions.map((o) => (
+                  <button key={o.label} disabled={busy || !!o.reason} title={o.reason ?? ''} onClick={() => void run(() => api('business.chooseVendor', { kind: o.kind, ...(o.brandId ? { brandId: o.brandId } : {}) }))}>
+                    {o.label} · 원가율 {o.costPct}% · {o.demandNote} · 공급 {o.leadWeeks}주{o.feeWon > 0 ? ` · 후원금 ${won(o.feeWon)}` : ''}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
       <div className="columns even">
         <section className="panel">
           <div className="panel-head">
@@ -292,7 +376,7 @@ export function Business({ nav }: { nav: Nav }) {
                 )}
               </div>
             ))}
-            <p className="muted small">시즌권·좌석 증설·시설 노후도·굿즈는 다음 차수에서 추가됩니다.</p>
+            <p className="muted small">시즌권·좌석 증설·시설 노후도는 이후 차수에서 추가됩니다.</p>
           </div>
         </section>
       </div>
