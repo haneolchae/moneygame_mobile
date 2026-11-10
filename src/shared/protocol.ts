@@ -623,16 +623,40 @@ export interface RosterView {
     lines: Record<string, ExhibitionLineView>;
   } | null;
   moves: Array<{ date: string; playerId: number; name: string; to: '1군' | '2군' }>;
+  /** 4b-2 집중 훈련 계획 표와 코치별 담당 인원(D-128) */
+  training: TrainingTableView;
+}
+
+// ───────── 4b-2 집중 훈련 (11·D-128) ─────────
+
+export type TrainingIntensityView = 'low' | 'normal' | 'high';
+
+export interface TrainingView {
+  plan: { primary: string; primaryLabel: string; secondary: string | null; secondaryLabel: string | null; intensity: TrainingIntensityView; intensityLabel: string; since: string; source: string } | null;
+  /** 이 선수에게 지정할 수 있는 목표 능력 */
+  keys: Array<{ key: string; label: string }>;
+  /** 주 목표 담당 코치(평판 지도력)·담당 인원·한도 */
+  coach: { part: string; name: string | null; coaching: number | null; load: number; capacity: number };
+  /** 주 목표 연간 성장 예상 증가율(%) 범위(보통 강도 기준): 선수 코칭 수용도를 모르므로 범위로만 */
+  expected: { growthPctLow: number; growthPctHigh: number };
+  intensities: Array<{ key: TrainingIntensityView; label: string; effect: number; injury: number }>;
+  devWpLeft: number;
+  delegateName: string | null;
+}
+
+export interface TrainingTableView {
+  rows: Array<{ playerId: number; name: string; level: string; primaryLabel: string; secondaryLabel: string | null; intensityLabel: string; since: string; source: string; coachPart: string; coachName: string | null; injured: boolean }>;
+  loads: Array<{ part: string; name: string | null; load: number; capacity: number }>;
 }
 
 // ───────── 선수 상세 행동 영역 (3d, 18a·D-118) ─────────
 
-export type PlayerActionKey = 'faOffer' | 'faDelegate' | 'salaryOffer' | 'salaryDelegate' | 'foreignOffer' | 'release' | 'persuade' | 'rest' | 'medicalCheck';
+export type PlayerActionKey = 'faOffer' | 'faDelegate' | 'salaryOffer' | 'salaryDelegate' | 'foreignOffer' | 'release' | 'persuade' | 'rest' | 'medicalCheck' | 'train' | 'trainDelegate' | 'trainStop';
 
 /** 선수 상세에 보여줄 행동 하나. 가능 여부·비용·불가 사유는 게임 로직이 실행 명령과 같은 검증으로 계산한다. */
 export interface PlayerActionView {
   key: PlayerActionKey;
-  group: '계약·이적' | '면담' | '건강' | '선수 정리';
+  group: '계약·이적' | '면담' | '육성' | '건강' | '선수 정리';
   label: string;
   enabled: boolean;
   /** 지금 실행할 수 없는 이유와 해제 조건 */
@@ -658,6 +682,8 @@ export interface PlayerActionsView {
   foreign: ForeignPlayerView | null;
   release: { salaryWon: number; contractYears: number; remainingWon: number; rosterCount: number; rosterMax: number; note: string | null } | null;
   persuade: { reason: string; deadline: string } | null;
+  /** 우리 선수만: 집중 훈련 계획·담당 코치·예상 효과(4b-2) */
+  training: TrainingView | null;
   ops: { mode: DelegationModeView; faMaxTotal: number; faMaxYears: number };
   /** 이 선수의 진행 중 위임 업무 */
   tasks: Array<{ taskId: number; kind: 'fa' | 'salary'; status: string; note: string }>;
@@ -787,6 +813,9 @@ export interface RequestMap {
   'player.actions': { payload: { playerId: number }; result: PlayerActionsView };
   'player.rest': { payload: { playerId: number; days: number }; result: OfferResultView };
   'player.medicalCheck': { payload: { playerId: number }; result: OfferResultView };
+  'player.train': { payload: { playerId: number; primary: string; secondary: string | null; intensity: TrainingIntensityView }; result: OfferResultView };
+  'player.trainDelegate': { payload: { playerId: number }; result: OfferResultView };
+  'player.trainStop': { payload: { playerId: number }; result: OfferResultView };
   'club.view': { payload: { clubId: number }; result: ClubView };
   'club.note': { payload: { clubId: number; text: string; rival: boolean }; result: ClubNoteView };
   'roster.view': { payload: void; result: RosterView };
@@ -844,6 +873,9 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'player.actions',
   'player.rest',
   'player.medicalCheck',
+  'player.train',
+  'player.trainDelegate',
+  'player.trainStop',
   'club.view',
   'club.note',
   'roster.view',

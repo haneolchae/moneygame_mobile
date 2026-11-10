@@ -25,8 +25,8 @@ describe('선수 상세 행동 (3d)', () => {
     const otherContracted = players.find((p) => p.clubId === 3 && p.origin === 'domestic' && !p.career.faEligible)!;
     const foreignPool = players.find((p) => p.clubId === null && p.origin === 'foreign')!;
 
-    // 우리 일반 선수: 건강(휴식·검사, 4b-1)과 선수 정리(방출). 타 구단 계약 선수: 계약·정리 행동 없음. 해외 풀: 외국인 영입.
-    expect(keys(await call(d, 'player.actions', { playerId: ownDomestic.id }))).toEqual(['medicalCheck', 'release', 'rest']);
+    // 우리 일반 선수: 육성(집중 훈련·위임, 4b-2), 건강(휴식·검사, 4b-1)과 선수 정리(방출). 타 구단 계약 선수: 계약·정리 행동 없음. 해외 풀: 외국인 영입.
+    expect(keys(await call(d, 'player.actions', { playerId: ownDomestic.id }))).toEqual(['medicalCheck', 'release', 'rest', 'train', 'trainDelegate']);
     expect(keys(await call(d, 'player.actions', { playerId: otherContracted.id }))).toEqual([]);
     const fv = await call(d, 'player.actions', { playerId: foreignPool.id });
     expect(keys(fv)).toEqual(['foreignOffer']);
@@ -61,12 +61,12 @@ describe('선수 상세 행동 (3d)', () => {
     const pv = await call(d, 'player.actions', { playerId: ownDomestic.id });
     expect(pv.actions.find((a) => a.key === 'persuade')).toMatchObject({ enabled: true, primary: true });
     await call(d, 'roster.persuade', { playerId: ownDomestic.id });
-    expect(keys(await call(d, 'player.actions', { playerId: ownDomestic.id }))).toEqual(['medicalCheck', 'release', 'rest']);
+    expect(keys(await call(d, 'player.actions', { playerId: ownDomestic.id }))).toEqual(['medicalCheck', 'release', 'rest', 'train', 'trainDelegate']);
 
     await weeks(d, 2); // 12월 연봉 협상
     const talk = (await call(d, 'market.view')).salaryTalks.find((t) => t.status === '협상 중')!;
     const sv = await call(d, 'player.actions', { playerId: talk.playerId });
-    expect(keys(sv)).toEqual(['medicalCheck', 'release', 'rest', 'salaryDelegate', 'salaryOffer']);
+    expect(keys(sv)).toEqual(['medicalCheck', 'release', 'rest', 'salaryDelegate', 'salaryOffer', 'train', 'trainDelegate']);
     const ap = (await call(d, 'game.dashboard')).owner.apRemaining;
     const offer = { playerId: talk.playerId, offerWon: Math.round(talk.demandWon * 0.5) };
     expect((await call(d, 'market.salaryOffer', offer)).result).toBe('reject');

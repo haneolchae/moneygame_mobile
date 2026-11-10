@@ -1,6 +1,7 @@
 // 규칙 위반 검사. 장기 실행·테스트·자체 점검에서 같은 검사를 쓴다.
 import { seasonKeyDates } from '../engine/schedule';
-import { DEVELOPMENT, LEAGUE, ROSTER_MOVE } from '../engine/config';
+import { DEVELOPMENT, LEAGUE, ROSTER_MOVE, TRAINING } from '../engine/config';
+import { activePlan, planError } from '../engine/training';
 import { devSnapshot, VELOCITY } from '../engine/development';
 import { diffDays } from '../engine/calendar';
 import { planProblems } from '../engine/lineup';
@@ -31,6 +32,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   errors.push(...checkUserRoster(repo, season));
   errors.push(...checkDevelopment(repo));
   errors.push(...checkHealthPlay(repo, season));
+  errors.push(...checkTraining(repo));
 
   // 경기 기록 일관성: 득점 = 득점 기록 수, 타석 수 = 아웃 + 출루, 이닝 아웃 수
   const games = repo.getGames(season);
@@ -199,6 +201,26 @@ export function checkDevelopment(repo: GameRepository): string[] {
       if (now[k] !== undefined && Math.abs(now[k]! - b) > limit) errors.push(`성장 월 상한 초과: 선수 ${p.id} ${k} ${b} → ${now[k]}`);
     }
   }
+  return errors;
+}
+
+/**
+ * 4b-2 사전 등록 ③(D-129): 유효 계획의 목표가 선수 유형과 맞고 주·보조가 다르며, 시즌당 월간 훈련 반영은 8회 이하,
+ * AI 구단 계획 수는 한도 이하, 효과를 내는 계획은 소속 구단이 세운 것뿐이다(activePlan).
+ */
+export function checkTraining(repo: GameRepository): string[] {
+  const meta = repo.getMeta();
+  const errors: string[] = [];
+  const aiCount = new Map<number, number>();
+  for (const p of repo.getPlayers()) {
+    if ((p.dev?.trainMonths ?? 0) > DEVELOPMENT.monthlyMonths.length) errors.push(`월간 훈련 반영 초과: 선수 ${p.id} ${p.dev!.trainMonths}회`);
+    const plan = activePlan(p);
+    if (!plan) continue;
+    const err = planError(p, plan.primary, plan.secondary, plan.intensity);
+    if (err) errors.push(`훈련 계획 오류: 선수 ${p.id} ${err}`);
+    if (p.clubId !== meta.userClubId) aiCount.set(p.clubId!, (aiCount.get(p.clubId!) ?? 0) + 1);
+  }
+  for (const [clubId, n] of aiCount) if (n > TRAINING.aiPlans) errors.push(`AI 구단 ${clubId} 훈련 계획 ${n}명 > ${TRAINING.aiPlans}`);
   return errors;
 }
 

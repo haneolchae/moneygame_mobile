@@ -13,7 +13,7 @@ import { CLOSE_RULES } from '../game/seasonClose';
 import { Dispatcher } from '../host/dispatcher';
 import { coreAverage } from '../engine/development';
 import { checkInvariants, injuryStats, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
-import type { AdvanceResult, DashboardView, DelegationPolicyView, OrganizationView, PlayerListItem, RosterView, StandingView } from '../shared/protocol';
+import type { AdvanceResult, DashboardView, DelegationPolicyView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView } from '../shared/protocol';
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -103,6 +103,30 @@ async function main() {
       }
     } catch (e) {
       stoveErrors.push(`개막 준비 편성 실패: ${(e as Error).message}`);
+    }
+    // 4b-2(D-128·D-129 ②): 우리 구단 집중 훈련 — 계획 없는 젊은 선수는 육성팀에 맡기고, 2명은 직접 높은 강도로 지시한다.
+    // 처리량·행동력 부족 등 규칙상 거부는 게임 쪽 판단이므로 건너뛴다.
+    {
+      const mine = [...(await call<PlayerListItem[]>('game.players', { scope: 'mine', group: 'hitters', sortKey: 'age', sortDesc: false })), ...(await call<PlayerListItem[]>('game.players', { scope: 'mine', group: 'pitchers', sortKey: 'age', sortDesc: false }))].sort((a, b) => a.age - b.age || a.id - b.id);
+      let delegated = 0;
+      let direct = 0;
+      for (const p of mine.slice(0, 8)) {
+        const av = await call<PlayerActionsView>('player.actions', { playerId: p.id });
+        if (!av.training || av.training.plan) continue;
+        try {
+          if (direct < 2) {
+            const keys = av.training.keys.map((k) => k.key);
+            await call('player.train', { playerId: p.id, primary: keys[0], secondary: keys[1] ?? null, intensity: 'high' });
+            direct++;
+          } else {
+            await call('player.trainDelegate', { playerId: p.id });
+            delegated++;
+          }
+        } catch {
+          // 규칙상 거부(행동력·처리량 부족, 부상 등)
+        }
+      }
+      console.log(JSON.stringify({ training: { direct, delegated } }));
     }
     const t0 = performance.now();
     const adv = await advance('untilSeasonEnd');

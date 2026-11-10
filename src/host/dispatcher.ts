@@ -120,6 +120,14 @@ export class Dispatcher {
       }
       case 'player.medicalCheck':
         return this.game().medicalCheck((payload as RequestMap['player.medicalCheck']['payload']).playerId) as R;
+      case 'player.train': {
+        const p = payload as RequestMap['player.train']['payload'];
+        return this.game().trainPlayer(p.playerId, p.primary, p.secondary, p.intensity) as R;
+      }
+      case 'player.trainDelegate':
+        return this.game().trainDelegate((payload as RequestMap['player.trainDelegate']['payload']).playerId) as R;
+      case 'player.trainStop':
+        return this.game().trainStop((payload as RequestMap['player.trainStop']['payload']).playerId) as R;
       case 'player.actions':
         return this.game().playerActions((payload as RequestMap['player.actions']['payload']).playerId) as R;
       case 'game.standings':

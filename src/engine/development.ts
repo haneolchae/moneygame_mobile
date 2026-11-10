@@ -1,7 +1,7 @@
 // 4a 성장·노화(04·11 문서, D-123·D-124). 나이·히든 잠재 상한·성장 속도·성실성·정점 나이·노화 속도로
 // 연간 기대 변화를 정하고, 시즌 중 월 1회(소폭·상한)와 스토브리그 1회로 나눠 실제 현재 능력에 반영한다.
 // 히든 값은 성장에만 쓰고 경기 확률에 직접 더하지 않는다. 난수는 저장 시드에서 선수·기간별로 파생한다.
-import { DEVELOPMENT as D } from './config';
+import { DEVELOPMENT as D, TRAINING } from './config';
 import { Rng } from './rng';
 import type { DevelopmentState, PlayerTruth } from './types';
 
@@ -71,6 +71,21 @@ export function annualExpected(p: PlayerTruth, age: number): Record<string, numb
   return out;
 }
 
+/**
+ * 훈련 반영(4b-2, D-128): 능력별 훈련 강도 s(주 목표 보통·평균 코치 ≈ 1)에 따라
+ * 성장은 × (1 + 0.3s), 정점 뒤 하락은 × (1 − 0.2s). 정체 구간(0)은 그대로.
+ */
+export function withTraining(expected: Record<string, number>, strength: Record<string, number> | undefined): Record<string, number> {
+  if (!strength) return expected;
+  const out = { ...expected };
+  for (const [k, s] of Object.entries(strength)) {
+    const e = out[k];
+    if (e === undefined || !s) continue;
+    out[k] = e > 0 ? e * (1 + TRAINING.growthBonus * s) : e < 0 ? e * (1 - TRAINING.declineRelief * s) : 0;
+  }
+  return out;
+}
+
 /** 구속 이동: 평균·최고·구종 구속을 같은 폭으로 */
 function shiftVelocity(p: PlayerTruth, d: number) {
   if (!p.pitching || d === 0) return;
@@ -103,11 +118,17 @@ function applyRating(p: PlayerTruth, k: DevKey, step: number): number {
  * 월간 반영(D-123): 연간 기대 변화의 monthlyShare를 달 수로 나눠 소수까지 누적하고, 능력치당 월 1점(구속 0.3km/h)까지만 반영한다.
  * 같은 달은 다시 반영하지 않는다. 반영한 변화(능력별)를 돌려준다.
  */
-export function applyMonthly(p: PlayerTruth, seed: string, date: string, age: number): Record<string, number> {
+export function applyMonthly(p: PlayerTruth, seed: string, date: string, age: number, strength?: Record<string, number>): Record<string, number> {
   const monthKey = date.slice(0, 7);
   if (p.dev?.month === monthKey) return {};
   const dev = state(p, date);
-  const expected = annualExpected(p, age);
+  const expected = withTraining(annualExpected(p, age), strength);
+  // 연간 반영용 훈련 기록(4b-2): 그 달 강도를 더하고 월간 반영 횟수를 센다.
+  dev.trainMonths = (dev.trainMonths ?? 0) + 1;
+  if (strength && Object.keys(strength).length) {
+    dev.trainSum = dev.trainSum ?? {};
+    for (const [k, s] of Object.entries(strength)) dev.trainSum[k] = (dev.trainSum[k] ?? 0) + s;
+  }
   const rng = Rng.derive(seed, 'dev-month', p.id, monthKey);
   const share = D.monthlyShare / D.monthlyMonths.length;
   const changed: Record<string, number> = {};
@@ -139,7 +160,11 @@ export function applyAnnual(p: PlayerTruth, seed: string, season: number, date: 
   if (p.dev?.season === season) return {};
   const dev = state(p, date);
   const before = devSnapshot(p);
-  const expected = annualExpected(p, age);
+  // 4b-2: 연간 반영의 훈련 효과는 그 시즌 월간 훈련 강도의 평균(8개월 기준)
+  const avg = Object.fromEntries(Object.entries(dev.trainSum ?? {}).map(([k, s]) => [k, s / D.monthlyMonths.length]));
+  const expected = withTraining(annualExpected(p, age), avg);
+  delete dev.trainSum;
+  delete dev.trainMonths;
   const rng = Rng.derive(seed, 'dev-year', p.id, season);
   for (const k of devKeys(p)) {
     const total = (dev.acc[k.key] ?? 0) + expected[k.key]! * (1 - D.monthlyShare) + rng.normal(0, D.annualNoiseSd);

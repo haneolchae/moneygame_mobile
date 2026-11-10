@@ -268,6 +268,64 @@ export function Roster({ nav }: { nav: Nav }) {
         </section>
       )}
 
+      <section className="panel">
+        <h2>
+          집중 훈련 계획 {v.training.rows.length}명{' '}
+          <span className="muted small">선수 상세 [선수 행동]에서 지시·변경 · 계획 없는 선수는 기본 훈련</span>
+        </h2>
+        {v.training.rows.length === 0 ? (
+          <p className="muted">집중 훈련 중인 선수가 없습니다. 선수 상세에서 직접 지시(행동력 1)하거나 육성팀에 맡길 수 있습니다.</p>
+        ) : (
+          <div className="table-wrap">
+            <table className="grid dense">
+              <thead>
+                <tr>
+                  <th>선수</th>
+                  <th>1·2군</th>
+                  <th>주 목표</th>
+                  <th>보조</th>
+                  <th>강도</th>
+                  <th>담당 코치</th>
+                  <th>시작</th>
+                  <th>지시</th>
+                </tr>
+              </thead>
+              <tbody>
+                {v.training.rows.map((r) => (
+                  <tr key={r.playerId}>
+                    <td>
+                      <span className="clickable" onClick={() => nav.go({ name: 'player', playerId: r.playerId, list: v.training.rows.map((x) => x.playerId), back: { name: 'roster' } })}>
+                        {r.name}
+                      </span>{' '}
+                      {r.injured && <span className="badge req">부상 · 효과 정지</span>}
+                    </td>
+                    <td>{r.level}</td>
+                    <td>{r.primaryLabel}</td>
+                    <td>{r.secondaryLabel ?? '—'}</td>
+                    <td>{r.intensityLabel}</td>
+                    <td>
+                      {r.coachPart} {r.coachName ?? '(공석)'}
+                    </td>
+                    <td>{md(r.since)}</td>
+                    <td>{r.source}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {v.training.loads.length > 0 && (
+          <p className="small">
+            코치별 담당(주 목표 기준, 한도를 넘으면 담당 선수 전원 효과 감소):{' '}
+            {v.training.loads.map((l) => (
+              <span key={l.part} className={l.load > l.capacity ? 'reason' : ''} style={{ marginRight: 10 }}>
+                {l.part} {l.name ?? '(공석)'} {l.load}/{l.capacity}명
+              </span>
+            ))}
+          </p>
+        )}
+      </section>
+
       {v.moves.length > 0 && (
         <section className="panel">
           <h2>이번 시즌 1·2군 이동</h2>

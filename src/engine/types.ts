@@ -203,6 +203,22 @@ export interface PlayerTruth {
   dev?: DevelopmentState;
   /** 부상 상태·이력(4b-1, D-126). 실제 복귀일은 화면 응답에 넣지 않는다 */
   health?: HealthState;
+  /** 집중 훈련 계획(4b-2, D-128). clubId가 소속 구단과 다르면 효과 없음 */
+  training?: TrainingPlan;
+}
+
+export type TrainingIntensity = 'low' | 'normal' | 'high';
+
+export interface TrainingPlan {
+  clubId: number;
+  primary: string;
+  secondary: string | null;
+  intensity: TrainingIntensity;
+  /** 계획(목표)이 유효해진 날 */
+  since: GameDate;
+  source: 'owner' | 'dev';
+  /** 강도 기록(최근 31일만 유지): 날마다 그날 강도로 월간 효과를 계산 */
+  log?: Array<{ from: GameDate; intensity: TrainingIntensity }>;
 }
 
 export interface InjuryState {
@@ -237,6 +253,9 @@ export interface DevelopmentState {
   /** 마지막 연간 반영 직후(또는 첫 반영 직전) 능력: 우리 선수 변화 보고 기준 */
   base?: Record<string, number>;
   baseDate?: string;
+  /** 4b-2: 이번 시즌 월간 훈련 강도 합계(능력별)·월간 훈련 반영 횟수. 연간 반영 뒤 비운다 */
+  trainSum?: Record<string, number>;
+  trainMonths?: number;
 }
 
 export interface Fixture {

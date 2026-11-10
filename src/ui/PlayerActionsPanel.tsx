@@ -1,7 +1,7 @@
 // 선수 상세 행동 영역(3d, 18a 4장·D-118). 가능 여부·비용·불가 사유는 게임 로직(player.actions)이 계산하고,
 // 이 화면은 그대로 보여 주고 기존 명령을 호출한다. 실행 중에는 모든 버튼을 잠가 같은 명령이 두 번 가지 않게 한다.
 import { useCallback, useEffect, useState } from 'react';
-import type { OfferResultView, PlayerActionKey, PlayerActionsView } from '../shared/protocol';
+import type { OfferResultView, PlayerActionKey, PlayerActionsView, TrainingIntensityView } from '../shared/protocol';
 import type { Nav } from './App';
 import { api, ApiError } from './api';
 import { dateKo, won } from './format';
@@ -30,12 +30,17 @@ export function PlayerActionsPanel({ playerId, playerName, nav, beforeAct, onCha
   const [foreignMan, setForeignMan] = useState(0);
   const [releaseChecked, setReleaseChecked] = useState(false);
   const [restDays, setRestDays] = useState(1);
+  const [train, setTrain] = useState<{ primary: string; secondary: string; intensity: TrainingIntensityView }>({ primary: '', secondary: '', intensity: 'normal' });
 
   const load = useCallback(async () => {
     const v = await api('player.actions', { playerId });
     setView(v);
     if (v.salary) setSalaryEok(toEok(v.salary.demandWon));
     if (v.foreign) setForeignMan(Math.round(v.foreign.demandUsd / 10_000));
+    if (v.training) {
+      const pl = v.training.plan;
+      setTrain({ primary: pl?.primary ?? v.training.keys[0]?.key ?? '', secondary: pl?.secondary ?? '', intensity: pl?.intensity ?? 'normal' });
+    }
     return v;
   }, [playerId]);
 
@@ -88,6 +93,12 @@ export function PlayerActionsPanel({ playerId, playerName, nav, beforeAct, onCha
           {view.badges.map((b) => (
             <span key={b} className="badge fa" style={{ marginRight: 6 }}>{b}</span>
           ))}
+        </p>
+      )}
+      {view.training?.plan && (
+        <p className="small">
+          훈련 계획: 주 {view.training.plan.primaryLabel}
+          {view.training.plan.secondaryLabel ? ` · 보조 ${view.training.plan.secondaryLabel}` : ''} · 강도 {view.training.plan.intensityLabel} · 담당 {view.training.coach.part} {view.training.coach.name ?? '(공석)'} · {view.training.plan.source} {dateKo(view.training.plan.since)}부터
         </p>
       )}
       {view.release && (
@@ -196,6 +207,70 @@ export function PlayerActionsPanel({ playerId, playerName, nav, beforeAct, onCha
               </label>
               <button className="primary" disabled={busy} onClick={() => void run(() => api('player.rest', { playerId, days: restDays }))}>
                 휴식 지시 (행동력 0)
+              </button>
+            </div>
+          )}
+          {sel.key === 'train' && view.training && (() => {
+            const t = view.training;
+            const cur = t.plan;
+            const targetsChanged = !cur || cur.primary !== train.primary || (cur.secondary ?? '') !== train.secondary;
+            const same = !targetsChanged && cur!.intensity === train.intensity;
+            const it = t.intensities.find((x) => x.key === train.intensity)!;
+            return (
+              <div className="offer-form">
+                <strong>{playerName} 집중 훈련</strong>
+                <label>
+                  주 목표{' '}
+                  <select value={train.primary} onChange={(e) => setTrain((s) => ({ ...s, primary: e.target.value, secondary: s.secondary === e.target.value ? '' : s.secondary }))}>
+                    {t.keys.map((k) => (
+                      <option key={k.key} value={k.key}>{k.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  보조 목표{' '}
+                  <select value={train.secondary} onChange={(e) => setTrain((s) => ({ ...s, secondary: e.target.value }))}>
+                    <option value="">없음</option>
+                    {t.keys.filter((k) => k.key !== train.primary).map((k) => (
+                      <option key={k.key} value={k.key}>{k.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  강도{' '}
+                  <select value={train.intensity} onChange={(e) => setTrain((s) => ({ ...s, intensity: e.target.value as TrainingIntensityView }))}>
+                    {t.intensities.map((x) => (
+                      <option key={x.key} value={x.key}>{x.label} (효과 ×{x.effect}, 부상 위험 ×{x.injury})</option>
+                    ))}
+                  </select>
+                </label>
+                <span className="muted small">
+                  담당 {t.coach.part} 코치 {t.coach.name ?? '(공석)'}{t.coach.coaching !== null ? ` · 지도력 평판 ${t.coach.coaching}` : ''} · 담당 {t.coach.load}/{t.coach.capacity}명 · 강도 {it.label} 기준 주 목표 연간 성장 약 +{Math.round(t.expected.growthPctLow * it.effect)}~{Math.round(t.expected.growthPctHigh * it.effect)}%(선수 지도 수용에 따라 다름, 보조는 절반) · 강도 {it.label}: 부상 위험 ×{it.injury}
+                </span>
+                <button className="primary" disabled={busy || same} onClick={() => void run(() => api('player.train', { playerId, primary: train.primary, secondary: train.secondary || null, intensity: train.intensity }))}>
+                  {same ? '지금 계획과 같음' : targetsChanged ? `훈련 지시 (행동력 ${sel.apCost})` : '강도 변경 (행동력 0)'}
+                </button>
+              </div>
+            );
+          })()}
+          {sel.key === 'trainDelegate' && view.training && (
+            <div className="offer-form">
+              <span>
+                육성팀{view.training.delegateName ? `(${view.training.delegateName})` : ''}이 선수의 성장 여지를 판단해 주·보조 목표를 정하고 강도는 보통으로 둡니다. 이번 주 육성팀 남은 처리량 {view.training.devWpLeft}.
+              </span>
+              <button className="primary" disabled={busy} onClick={() => void run(() => api('player.trainDelegate', { playerId }))}>
+                육성팀에 맡기기 (행동력 0)
+              </button>
+            </div>
+          )}
+          {sel.key === 'trainStop' && view.training?.plan && (
+            <div className="offer-form">
+              <span>
+                지금 계획: {view.training.plan.primaryLabel}
+                {view.training.plan.secondaryLabel ? ` · 보조 ${view.training.plan.secondaryLabel}` : ''} · 강도 {view.training.plan.intensityLabel} ({view.training.plan.source}, {dateKo(view.training.plan.since)}부터)
+              </span>
+              <button className="danger" disabled={busy} onClick={() => void run(() => api('player.trainStop', { playerId }))}>
+                훈련 중단 (행동력 0)
               </button>
             </div>
           )}

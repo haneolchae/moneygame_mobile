@@ -226,6 +226,38 @@ export const HEALTH = {
   foreignLongDays: 42,
 } as const;
 
+/** 4b-2 집중 훈련(D-128). 효과·강도·코치 계수는 사용자 확정, 코치 배정·담당 한도·AI 계획 수는 초기안 */
+export const TRAINING = {
+  /** 주 목표: 연간 기대 성장 +30%, 정점 뒤 하락 −20%. 보조 목표는 그 절반 */
+  growthBonus: 0.3,
+  declineRelief: 0.2,
+  secondaryShare: 0.5,
+  intensity: {
+    low: { effect: 0.7, injury: 0.85, label: '낮음' },
+    normal: { effect: 1.0, injury: 1.0, label: '보통' },
+    high: { effect: 1.3, injury: 1.3, label: '높음' },
+  },
+  /** 코치·수용도 계수 = coachMin + coachSpan × (coachWeight × 지도력 + (1 − coachWeight) × 수용도) / 100 → 0.8~1.2 */
+  coachMin: 0.8,
+  coachSpan: 0.4,
+  coachWeight: 0.6,
+  /** ASSUMPTION(D-128): 담당 코치 공석일 때 지도력 */
+  vacantCoaching: 30,
+  /** ASSUMPTION(D-128): 코치당 담당 한도 = loadBase + ⌊소통력 / loadPer⌋ */
+  loadBase: 4,
+  loadPer: 20,
+  /** 월간 효과를 계산하는 지난 기간(일) */
+  periodDays: 30,
+  /** 비용: 새 지시·목표 변경 행동력 1(02) + 육성팀 처리량(개인 계획 작성 4의 50%), 맡기기는 처리량 4(03) */
+  directAp: 1,
+  planWp: 4,
+  /** ASSUMPTION(D-128): 육성팀 목표 선택 오차 σ = delegateNoiseBase + delegateNoiseSpan × (1 − 역량) */
+  delegateNoiseBase: 4,
+  delegateNoiseSpan: 8,
+  /** ASSUMPTION(D-128): AI 구단은 스프링캠프 시작에 정점 전 유망주 이만큼 계획 */
+  aiPlans: 6,
+} as const;
+
 /** 4a 성장·노화(D-123 사용자 확정 주기, D-124 초기안 계수) */
 export const DEVELOPMENT = {
   /** ASSUMPTION(D-124): 정점 전 연간 성장 = (잠재 − 현재) × growthShare × 계수 */

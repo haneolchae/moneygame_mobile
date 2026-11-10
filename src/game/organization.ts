@@ -130,6 +130,27 @@ export class Organization {
     this.repo.spendWp(source.weekId, team, directWpCost(fullCost), true);
   }
 
+  /** 위임 업무 담당자와 역량(0~1). 팀장 → 본부장 겸임(×0.7) → 없음 */
+  teamDelegate(clubId: ClubId, team: TeamKey): { who: StaffMember; quality: number } | null {
+    return this.delegate(team, this.staff(clubId));
+  }
+
+  /** 위임 업무 처리량 차감: 이번 주 남은 처리량이 모자라면 비용 없이 거부한다 */
+  spendDelegatedWp(meta: GameMeta, weekId: string, team: TeamKey, cost: number): void {
+    this.ensureWeek(meta, weekId);
+    const left = this.wpLeft(weekId, team);
+    if (left < cost) throw new GameError('WP_SHORT', `${teamDef(team).name} 이번 주 처리량이 부족합니다(필요 ${cost}, 남음 ${Math.max(0, left)}).`);
+    this.repo.spendWp(weekId, team, cost);
+  }
+
+  /** 팀 이번 주 남은 처리량(화면 안내용, 조회만 — 주간 지급 전이면 지급 예정값) */
+  wpRemaining(meta: GameMeta, weekId: string, team: TeamKey): number {
+    const w = this.repo.getWp(weekId).find((x) => x.team === team);
+    if (w) return Math.max(0, w.granted - w.used);
+    const cap = teamCapacity(this.staff(meta.userClubId), team, meta.mode);
+    return Math.max(0, cap.weeklyWp - Math.min(cap.weeklyWp, cap.upkeep));
+  }
+
   private wpLeft(weekId: string, team: TeamKey): number {
     const w = this.repo.getWp(weekId).find((x) => x.team === team);
     return w ? w.granted - w.used : 0;

@@ -3,6 +3,7 @@
 import { addDays, diffDays, type GameDate } from './calendar';
 import { HEALTH as H } from './config';
 import { Rng } from './rng';
+import { intensityInjury } from './training';
 import type { InjuryState, PlayerTruth } from './types';
 
 const HITTER_PARTS = ['햄스트링', '허리', '손목', '발목', '옆구리', '어깨', '무릎', '손가락'];
@@ -23,7 +24,8 @@ export function pitcherFatigue(usage: Array<{ daysAgo: number; pitches: number }
 export function injuryChance(p: PlayerTruth, fatigue: number, age: number): number {
   const ageF = 1 + Math.max(0, age - H.agePivot) * H.agePerYear;
   const durF = H.durabilityMax - (H.durabilitySpan * p.hidden.durability) / 100;
-  return H.baseInjuryChance * (1 + fatigue / H.fatigueDivisor) * ageF * durF;
+  // 4b-2(D-128): 집중 훈련 강도 배수(계획 없으면 1)
+  return H.baseInjuryChance * (1 + fatigue / H.fatigueDivisor) * ageF * durF * intensityInjury(p);
 }
 
 /** 부상 위험 등급(특별 검사 보고용): 기준 확률 대비 */

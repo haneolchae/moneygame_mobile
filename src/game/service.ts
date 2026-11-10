@@ -2,7 +2,7 @@ import { createSnapshot, currentRatings, snapshotRanges, SCOUTING, type Scouting
 // 게임 진행: 사용자 명령 검증·처리와 조회. 엔진 규칙을 호출하고 결과를 저장 계층에 반영한다.
 import { addDays, ageOn, diffDays, mondayOf, weekday, type GameDate } from '../engine/calendar';
 import { CLUB_PROFILES, SEASON_2026_STANDINGS } from '../engine/clubs';
-import { FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION } from '../engine/config';
+import { FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, TRAINING } from '../engine/config';
 import { compensationFor, foreignRenewalDemandUsd, offerTotal, wonToUsd, type ContractOffer } from '../engine/contracts';
 import { CATEGORY_LABEL, FINANCE_BASE, NOT_YET_IMPLEMENTED, scheduledEntries, stadiumFee, type LedgerEntry } from '../engine/finance';
 import { simulateGame, type GameResult } from '../engine/gamesim';
@@ -20,7 +20,7 @@ import { battingRates, fipConstant, formatInnings, pitchingRates, type BattingTo
 import { computeStandings } from '../engine/standings';
 import { ABILITY_LABEL, TASK_WP, teamCapacity, teamDef, TEAMS, type StaffMember, type TeamKey } from '../engine/staff';
 import { seasonModeStart, stoveEvents } from '../engine/stove';
-import type { ClubId, ClubProfile, PlayerTruth } from '../engine/types';
+import type { ClubId, ClubProfile, PlayerTruth, TrainingIntensity } from '../engine/types';
 import { clubHistory } from '../engine/data/history';
 import { generateHistory } from '../engine/history';
 import { asTruth, generateAmateurs } from '../engine/amateur';
@@ -33,6 +33,7 @@ import { Draft, draftDate, isSenior } from './draft';
 import { CLOSE_RULES, SeasonClose } from './seasonClose';
 import { exhibitionDates, RosterOps } from './rosterOps';
 import { Growth } from './growth';
+import { TrainingOps } from './training';
 import { HealthOps } from './health';
 import { DEV_LABEL, devSnapshot, VELOCITY } from '../engine/development';
 import { Postseason, POSTSEASON_MAX_INNINGS, SERIES_LABEL } from './postseason';
@@ -243,6 +244,7 @@ export class GameService {
   readonly rosterOps: RosterOps;
   readonly growth: Growth;
   readonly health: HealthOps;
+  readonly training: TrainingOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -296,6 +298,7 @@ export class GameService {
     this.rosterOps = new RosterOps(repo, this.forms);
     this.growth = new Growth(repo);
     this.health = new HealthOps(repo, this.rosterOps, (id) => this.org.medicalQuality(id));
+    this.training = new TrainingOps(repo, this.org);
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -364,7 +367,7 @@ export class GameService {
     // 위임 업무 큐(운영팀·경영지원팀): 시장 처리(월요일 AI 제안) 뒤에 같은 도메인 로직으로 실행한다.
     inbox.push(...this.org.onDay(meta, date));
     // 4a 성장·노화 월간 반영(D-123): 시즌 3~10월 1일, 그날 경기 전에 반영한다.
-    inbox.push(...this.growth.monthly(meta, date));
+    inbox.push(...this.growth.monthly(meta, date, (players) => this.training.strengths(date, players)));
     // 4b-1 건강(D-126): 복귀·1군 건강 인원 확보·휴식 지시 정리·주간 건강 보고(경기 전)
     inbox.push(...this.health.beforeGames(meta, date));
 
@@ -440,6 +443,8 @@ export class GameService {
       this.market.onSeasonStart();
       // 2d: 감독 추천 1군 = 개막 엔트리 초안, 이동 기록·시범경기 초기화, 수동 계획 보정(D-120)
       const camp = this.rosterOps.onSeasonStart(meta, season, next);
+      // 4b-2: AI 구단 육성팀 집중 훈련 계획(D-128)
+      this.training.planAi(meta, next);
       Object.assign(metaUpdate, camp.update);
       inbox.push(...camp.inbox);
       // 지난 시즌 상세 기록 압축(D-106): 새 시즌이 시작될 때 직전 시즌의 원시 기록을 시즌 합계로 바꾼다.
@@ -1452,6 +1457,7 @@ export class GameService {
           }
         : null,
       moves: ops.moves(meta).map((m) => ({ date: m.date, playerId: m.playerId, name: names.get(m.playerId) ?? `#${m.playerId}`, to: m.to })).reverse(),
+      training: this.training.rosterTable(meta),
     };
   }
 
@@ -1476,6 +1482,21 @@ export class GameService {
   medicalCheck(playerId: number): OfferResultView {
     const meta = this.meta();
     return { result: 'accept', message: this.health.medicalCheck(meta, weekIdFor(meta.currentDate), playerId) };
+  }
+
+  /** 4b-2 집중 훈련 직접 지시(D-128) */
+  trainPlayer(playerId: number, primary: string, secondary: string | null, intensity: TrainingIntensity): OfferResultView {
+    const meta = this.meta();
+    return { result: 'accept', message: this.training.set(meta, weekIdFor(meta.currentDate), playerId, { primary, secondary: secondary || null, intensity }) };
+  }
+
+  trainDelegate(playerId: number): OfferResultView {
+    const meta = this.meta();
+    return { result: 'accept', message: this.training.delegate(meta, weekIdFor(meta.currentDate), playerId) };
+  }
+
+  trainStop(playerId: number): OfferResultView {
+    return { result: 'accept', message: this.training.stop(this.meta(), playerId) };
   }
 
   /**
@@ -1596,6 +1617,32 @@ export class GameService {
       if (p.health?.injury && diffDays(meta.currentDate, p.health.injury.returnDate) < 0) badges.push('부상');
       else if (meta.restOrders?.[String(playerId)] && diffDays(meta.currentDate, meta.restOrders[String(playerId)]!) <= 0) badges.push('휴식 중');
     }
+    // 4b-2 집중 훈련(D-128): 새 지시·목표 변경 행동력 1, 강도 변경·중단 0, 육성팀에 맡기기 처리량 4
+    let training: PlayerActionsView['training'] = null;
+    if (own && !p.retired) {
+      training = this.training.view(meta, p);
+      const hurtNow = !!p.health?.injury && diffDays(meta.currentDate, p.health.injury.returnDate) < 0;
+      add({
+        key: 'train',
+        group: '육성',
+        label: training.plan ? '훈련 계획 변경' : '집중 훈련 지시',
+        reason: hurtNow && !training.plan ? '부상 중: 복귀 뒤 새 훈련을 지시할 수 있습니다.' : training.plan ? null : apReason(TRAINING.directAp),
+        apCost: TRAINING.directAp,
+        executor: `구단주 직접 · 육성팀 처리량 ${directWpCost(TRAINING.planWp)} · 담당 ${training.coach.part} 코치`,
+        costNote: '목표를 새로 정하거나 바꿀 때 행동력 1. 강도만 바꾸면 행동력 0. 월간 반영일에 지난 기간 비율만큼 효과',
+      });
+      add({
+        key: 'trainDelegate',
+        group: '육성',
+        label: '육성팀에 맡기기',
+        reason: reasonOf(() => this.training.delegateTarget(meta, playerId)) ?? (training.devWpLeft < TRAINING.planWp ? `육성팀 이번 주 처리량 부족(필요 ${TRAINING.planWp}, 남음 ${training.devWpLeft})` : null),
+        apCost: 0,
+        executor: `육성팀${training.delegateName ? `(${training.delegateName})` : ''} · 처리량 ${TRAINING.planWp}`,
+        costNote: '육성팀이 목표를 고르고 강도는 보통. 판단 정확도는 육성팀 역량에 따름',
+      });
+      if (training.plan) add({ key: 'trainStop', group: '육성', label: '훈련 중단', reason: null, apCost: 0, executor: '구단주 직접 · 즉시', costNote: '기본 훈련(4a 성장)만 남음' });
+      if (training.plan) badges.push(`집중 훈련: ${training.plan.primaryLabel}`);
+    }
     let release: PlayerActionsView['release'] = null;
     if (own && !p.retired) {
       const remainingWon = p.salary * p.contractYears;
@@ -1650,6 +1697,7 @@ export class GameService {
       foreign,
       release,
       persuade: pending ? { reason: pending.reason, deadline: pending.deadline } : null,
+      training,
       ops: mv.ops,
       tasks,
       history,
