@@ -20,3 +20,6 @@ verify-reports/logs/
 # Steam SDK·로컬 설정
 steamworks_sdk/
 steam_appid.txt
+
+# Diamond Office UI 에셋 원본(참고용, D-140). 런타임 에셋은 src/ui/assets/diamond-office/, 백업은 ../_backup
+diamond_office_ui_assets_v1/
