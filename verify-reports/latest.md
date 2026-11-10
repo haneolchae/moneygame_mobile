@@ -1,21 +1,21 @@
-# 검증 리포트: 4b-1
+# 검증 리포트: 4b-1-2
 
-- 일시: 2026. 11. 10. 오후 2:46:46
+- 일시: 2026. 11. 10. 오후 2:56:06
 - 모드: 전체 (장기 실행 10시즌, 시드 verify-1)
 - 환경: Node 24.18.0, win32/x64
-- **종합 판정: 실패**
+- **종합 판정: 조건부 통과(경고 있음)**
 
 | 단계 | 판정 | 시간(초) | 요약 |
 | --- | --- | --- | --- |
 | 실행 환경 | PASS | 0 | 준비됨 |
-| 타입 검사 | PASS | 1.2 | 오류 0건 |
+| 타입 검사 | PASS | 0.9 | 오류 0건 |
 | 계층 경계 검사 | PASS | 0.6 | 계층 경계 검사 통과 (93개 파일) |
-| 자동 테스트 | PASS | 87.2 | 122/122개 통과 |
-| 빌드 | PASS | 1 | 완료 |
-| 실제 Electron 자체 점검 | PASS | 11.6 | 스토브리그 12주 1193ms, 시즌 720/720 7143ms, 화면 지연 8ms, 저장 249ms·불러오기 221ms, Steam mock |
-| 장기 실행 10시즌 | FAIL | 23.9 | 결과 없음 |
+| 자동 테스트 | PASS | 77.8 | 122/122개 통과 |
+| 빌드 | PASS | 1.5 | 완료 |
+| 실제 Electron 자체 점검 | PASS | 9.6 | 스토브리그 12주 1115ms, 시즌 720/720 5147ms, 화면 지연 5ms, 저장 235ms·불러오기 206ms, Steam mock |
+| 장기 실행 10시즌 (시드 verify-1) | WARN | 136.7 | 10시즌, 규칙 위반 0건, 마지막 시즌 저장 635ms·저장본 28.3MB, 불러오기 279ms, 현금 267억 → 684억 |
 | 문서 정합성 | WARN | 0.2 | 실패 0건, 경고 1건, 임시 가정 36건 |
-| 저장소 상태 | PASS | 0 | HEAD 57aaded, 커밋되지 않은 변경 0개 |
+| 저장소 상태 | PASS | 0 | HEAD 1c066e2, 커밋되지 않은 변경 0개 |
 
 ## 상세
 
@@ -23,24 +23,29 @@
 
 - Node 24.18.0, win32/x64
 
-### 장기 실행 10시즌 (FAIL)
+### 장기 실행 10시즌 (시드 verify-1) (WARN)
 
-- {"stoveWeeks":12,"stoveMs":2079,"date":"2027-02-01","cashAfterStove":32914733335}
-- {"season":2027,"coreMean":48.56,"coreP95":null,"injuries":{"perClub":15.8,"longPerClub":7.3,"concurrent":1.51,"seasonOutPerClub":0.7},"games":"720/720","days":231,"simSec":5.91,"msPerGame":8.21,"hitterListMs":86,"pitcherListMs":74,"standingsMs":2,"boxScoreMs":5,"saveMs":239,"sessionMB":14.3,"saveFileMB":13.1,"leagueHRperPA":0.0232,"envRuns":0,"envHr":0,"targetRunsPerGame":9.8,"targetHrPerPa":0.0225,"runsPerGame":10.3,"cashWon":26694077892,"invariantErrors":0,"firstErrors":[]}
-- {"season":2028,"coreMean":47.94,"coreP95":2.67,"injuries":{"perClub":19.2,"longPerClub":9.3,"concurrent":1.98,"seasonOutPerClub":0.2},"games":"720/720","days":231,"simSec":7.05,"msPerGame":9.79,"hitterListMs":87,"pitcherListMs":79,"standingsMs":2,"boxScoreMs":3,"saveMs":371,"sessionMB":16.2,"saveFileMB":14.9,"leagueHRperPA":0.0223,"envRuns":0,"envHr":0.05,"targetRunsPerGame":9.8,"targetHrPerPa":0.0236,"runsPerGame":10.33,"cashWon":24964424466,"invariantErrors":0,"firstErrors":[]}
-- 
-- [stderr]
-- Error: roster.move: 1군 포수는 2명 이상이어야 합니다(변경 뒤 1명).
--     at call (D:\Documents\02_baseball game\front-office\dist\cli\simulate.js:16209:22)
--     at async main (D:\Documents\02_baseball game\front-office\dist\cli\simulate.js:16350:9)
+- 2027시즌 시즌 진행 5.5s (경고 5s)
+- 2028시즌 시즌 진행 6.18s (경고 5s)
+- 2029시즌 시즌 진행 5.34s (경고 5s)
+- 2030시즌 시즌 진행 6.14s (경고 5s)
+- 2031시즌 시즌 진행 5.46s (경고 5s)
+- 2032시즌 시즌 진행 6.37s (경고 5s)
+- 2033시즌 시즌 진행 6.07s (경고 5s)
+- 2034시즌 시즌 진행 7.59s (경고 5s)
+- 2034시즌 선수 목록 정렬 215ms (경고 200ms)
+- 2035시즌 시즌 진행 6.39s (경고 5s)
+- 2035시즌 경기당 득점 9.6: 시즌 목표 8.82 대비 8.8%
+- 2036시즌 시즌 진행 5.79s (경고 5s)
+- 2036시즌 경기당 득점 9.55: 시즌 목표 8.82 대비 8.3%
 
-로그: `verify-reports\logs\20261110-1444_4b-1\sim.log`
+로그: `verify-reports\logs\20261110-1452_4b-1-2\sim.log`
 
 ### 문서 정합성 (WARN)
 
 - [경고] 실제 테스트 122개 > 문서 기록 120개. 이번 차수 결과가 06_progress.md에 아직 없을 수 있음
 
-로그: `verify-reports\logs\20261110-1444_4b-1\docs.log`
+로그: `verify-reports\logs\20261110-1452_4b-1-2\docs.log`
 
 ## 문서상 개발 진행 (06_progress.md)
 
