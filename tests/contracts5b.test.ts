@@ -21,7 +21,8 @@ async function until(d: Dispatcher, date: string) {
 describe('계약 확장·재무 (5b)', () => {
   it('지원금 재협상 배수: 적정 범위 유지, 넉넉하면 삭감(하한 0.4), 부족하면 증액(상한 1.2)', () => {
     expect(supportFactorBp(300 * EOK, 300 * EOK)).toBe(10_000);
-    expect(supportFactorBp(600 * EOK, 300 * EOK)).toBe(5_200); // R 2.0 → 1 − 0.6 × 0.8
+    expect(supportFactorBp(450 * EOK, 300 * EOK)).toBe(7_000); // R 1.5 → 1 − 1.0 × 0.3 (D-139)
+    expect(supportFactorBp(600 * EOK, 300 * EOK)).toBe(4_000); // R 2.0 → 1 − 1.0 × 0.8 = 0.2 → 하한 0.4
     expect(supportFactorBp(1500 * EOK, 300 * EOK)).toBe(4_000);
     expect(supportFactorBp(150 * EOK, 300 * EOK)).toBe(11_500); // R 0.5 → 1 + 0.5 × 0.3
     expect(supportFactorBp(-100 * EOK, 300 * EOK)).toBe(12_000);

@@ -229,7 +229,8 @@ export const HEALTH = {
 /** D-135 모기업 지원금 재협상(방향 사용자 확정, 계수 초기안): 보유 현금 / 시작 현금 R로 다음 시즌 지원 배수 */
 export const SUPPORT_RENEGOTIATION = {
   upper: 1.2,
-  cutSlope: 0.6,
+  /** D-139(사용자 확정): 0.6 → 1.0 */
+  cutSlope: 1.0,
   minFactor: 0.4,
   lower: 0.8,
   raiseSlope: 0.5,
