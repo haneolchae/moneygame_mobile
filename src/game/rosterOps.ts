@@ -111,11 +111,14 @@ export class RosterOps {
       p.level = '2군';
     }
     const active = mine.filter((p) => p.level === '1군');
+    const before = rosterCounts(this.mine(meta).filter((p) => p.level === '1군'));
+    // 최소 인원은 '이번 변경으로 더 나빠지는 경우'만 막는다. 부상 등으로 이미 모자란 상태에서 관계없는 교체까지 막지 않는다.
+    const worse = (after: number, prev: number, min: number) => after < min && after < prev;
     if (active.length !== LEAGUE.activeRoster) throw new GameError('ROSTER_RULE', `1군은 ${LEAGUE.activeRoster}명이어야 합니다(변경 뒤 ${active.length}명). 올리는 선수와 내리는 선수 수를 맞추세요.`);
     const c = rosterCounts(active);
-    if (c.pitchers < ROSTER_COMPOSITION.activeMinPitchers) throw new GameError('ROSTER_RULE', `1군 투수는 ${ROSTER_COMPOSITION.activeMinPitchers}명 이상이어야 합니다(변경 뒤 ${c.pitchers}명).`);
-    if (c.hitters < ROSTER_COMPOSITION.activeMinHitters) throw new GameError('ROSTER_RULE', `1군 야수는 ${ROSTER_COMPOSITION.activeMinHitters}명 이상이어야 합니다(변경 뒤 ${c.hitters}명).`);
-    if (c.catchers < ROSTER_MOVE.activeMinCatchers) throw new GameError('ROSTER_RULE', `1군 포수는 ${ROSTER_MOVE.activeMinCatchers}명 이상이어야 합니다(변경 뒤 ${c.catchers}명).`);
+    if (worse(c.pitchers, before.pitchers, ROSTER_COMPOSITION.activeMinPitchers)) throw new GameError('ROSTER_RULE', `1군 투수는 ${ROSTER_COMPOSITION.activeMinPitchers}명 이상이어야 합니다(변경 뒤 ${c.pitchers}명).`);
+    if (worse(c.hitters, before.hitters, ROSTER_COMPOSITION.activeMinHitters)) throw new GameError('ROSTER_RULE', `1군 야수는 ${ROSTER_COMPOSITION.activeMinHitters}명 이상이어야 합니다(변경 뒤 ${c.hitters}명).`);
+    if (worse(c.catchers, before.catchers, ROSTER_MOVE.activeMinCatchers)) throw new GameError('ROSTER_RULE', `1군 포수는 ${ROSTER_MOVE.activeMinCatchers}명 이상이어야 합니다(변경 뒤 ${c.catchers}명).`);
     return mine;
   }
 

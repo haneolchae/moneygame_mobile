@@ -82,10 +82,29 @@ export class SqliteGameRepository implements GameRepository {
       `INSERT INTO players (id, club_id, level, is_pitcher, position, name, birth_date, salary, truth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET club_id = excluded.club_id, level = excluded.level, position = excluded.position, salary = excluded.salary, truth = excluded.truth`,
     );
+    const saved: PlayerTruth[] = [];
     this.tx(() => {
-      for (const p of players) up.run(p.id, p.clubId, p.level, p.isPitcher ? 1 : 0, p.position, p.name, p.birthDate, p.salary, JSON.stringify(p));
+      for (const p of players) {
+        const json = JSON.stringify(p);
+        up.run(p.id, p.clubId, p.level, p.isPitcher ? 1 : 0, p.position, p.name, p.birthDate, p.salary, json);
+        saved.push(JSON.parse(json) as PlayerTruth);
+      }
     });
-    this.playerCache = null;
+    // 캐시를 버리지 않고 저장한 선수만 바꾼다(전체 다시 읽기 비용 제거). 실패하면 트랜잭션 롤백에서 캐시를 비운다.
+    if (this.playerCache) {
+      const index = new Map(this.playerCache.map((p, i) => [p.id, i]));
+      let added = false;
+      // 저장한 JSON에서 다시 만든 사본을 넣어 호출 측 객체·공유된 하위 객체와 분리한다(저장본과 같은 상태 보장).
+      for (const p of saved) {
+        const i = index.get(p.id);
+        if (i === undefined) {
+          this.playerCache.push(p);
+          index.set(p.id, this.playerCache.length - 1);
+          added = true;
+        } else this.playerCache[i] = p;
+      }
+      if (added) this.playerCache.sort((a, b) => a.id - b.id);
+    }
   }
 
   getFa(offseason: number): FaEntry[] {

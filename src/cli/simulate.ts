@@ -184,8 +184,9 @@ async function main() {
       const rv = await call<RosterView>('roster.view');
       const down = rv.players.find((p) => p.level === '1군' && !p.isPitcher && p.position !== 'C');
       const up = rv.players.find((p) => p.level !== '1군' && !p.isPitcher && p.position !== 'C' && !rv.reRegister[String(p.id)]);
-      if (down && up) {
-        await call('roster.move', { promote: [up.id], demote: [down.id] });
+      const first = down && up ? await d.respond('roster.move', { promote: [up.id], demote: [down.id] }) : null;
+      // 첫 교체가 규칙(부상으로 인원 부족 등)에 따라 거부되면 이번 시즌 재등록 확인은 건너뛴다.
+      if (down && up && first?.ok) {
         const again = await d.respond('roster.move', { promote: [down.id], demote: [up.id] });
         if (again.ok || again.error.code !== 'RE_REGISTER') {
           const last = rows[rows.length - 1]!;

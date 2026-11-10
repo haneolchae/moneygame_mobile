@@ -1,21 +1,21 @@
-# 검증 리포트: 4a-2
+# 검증 리포트: 4b-1
 
-- 일시: 2026. 11. 10. 오후 2:30:09
+- 일시: 2026. 11. 10. 오후 2:46:46
 - 모드: 전체 (장기 실행 10시즌, 시드 verify-1)
 - 환경: Node 24.18.0, win32/x64
-- **종합 판정: 조건부 통과(경고 있음)**
+- **종합 판정: 실패**
 
 | 단계 | 판정 | 시간(초) | 요약 |
 | --- | --- | --- | --- |
 | 실행 환경 | PASS | 0 | 준비됨 |
-| 타입 검사 | PASS | 1 | 오류 0건 |
-| 계층 경계 검사 | PASS | 0.6 | 계층 경계 검사 통과 (91개 파일) |
-| 자동 테스트 | PASS | 78.3 | 120/120개 통과 |
-| 빌드 | PASS | 1.1 | 완료 |
-| 실제 Electron 자체 점검 | PASS | 10.2 | 스토브리그 12주 1295ms, 시즌 720/720 3881ms, 화면 지연 2ms, 저장 263ms·불러오기 228ms, Steam mock |
-| 장기 실행 10시즌 (시드 verify-1) | WARN | 124.7 | 10시즌, 규칙 위반 0건, 마지막 시즌 저장 686ms·저장본 27.3MB, 불러오기 291ms, 현금 267억 → 608억 |
-| 문서 정합성 | PASS | 0.2 | 실패 0건, 경고 0건, 임시 가정 35건 |
-| 저장소 상태 | PASS | 0 | HEAD 561835e, 커밋되지 않은 변경 0개 |
+| 타입 검사 | PASS | 1.2 | 오류 0건 |
+| 계층 경계 검사 | PASS | 0.6 | 계층 경계 검사 통과 (93개 파일) |
+| 자동 테스트 | PASS | 87.2 | 122/122개 통과 |
+| 빌드 | PASS | 1 | 완료 |
+| 실제 Electron 자체 점검 | PASS | 11.6 | 스토브리그 12주 1193ms, 시즌 720/720 7143ms, 화면 지연 8ms, 저장 249ms·불러오기 221ms, Steam mock |
+| 장기 실행 10시즌 | FAIL | 23.9 | 결과 없음 |
+| 문서 정합성 | WARN | 0.2 | 실패 0건, 경고 1건, 임시 가정 36건 |
+| 저장소 상태 | PASS | 0 | HEAD 57aaded, 커밋되지 않은 변경 0개 |
 
 ## 상세
 
@@ -23,12 +23,24 @@
 
 - Node 24.18.0, win32/x64
 
-### 장기 실행 10시즌 (시드 verify-1) (WARN)
+### 장기 실행 10시즌 (FAIL)
 
-- 2031시즌 타석당 홈런 0.0224: 시즌 목표 0.0248 대비 -9.7%
-- 2034시즌 시즌 진행 5.01s (경고 5s)
+- {"stoveWeeks":12,"stoveMs":2079,"date":"2027-02-01","cashAfterStove":32914733335}
+- {"season":2027,"coreMean":48.56,"coreP95":null,"injuries":{"perClub":15.8,"longPerClub":7.3,"concurrent":1.51,"seasonOutPerClub":0.7},"games":"720/720","days":231,"simSec":5.91,"msPerGame":8.21,"hitterListMs":86,"pitcherListMs":74,"standingsMs":2,"boxScoreMs":5,"saveMs":239,"sessionMB":14.3,"saveFileMB":13.1,"leagueHRperPA":0.0232,"envRuns":0,"envHr":0,"targetRunsPerGame":9.8,"targetHrPerPa":0.0225,"runsPerGame":10.3,"cashWon":26694077892,"invariantErrors":0,"firstErrors":[]}
+- {"season":2028,"coreMean":47.94,"coreP95":2.67,"injuries":{"perClub":19.2,"longPerClub":9.3,"concurrent":1.98,"seasonOutPerClub":0.2},"games":"720/720","days":231,"simSec":7.05,"msPerGame":9.79,"hitterListMs":87,"pitcherListMs":79,"standingsMs":2,"boxScoreMs":3,"saveMs":371,"sessionMB":16.2,"saveFileMB":14.9,"leagueHRperPA":0.0223,"envRuns":0,"envHr":0.05,"targetRunsPerGame":9.8,"targetHrPerPa":0.0236,"runsPerGame":10.33,"cashWon":24964424466,"invariantErrors":0,"firstErrors":[]}
+- 
+- [stderr]
+- Error: roster.move: 1군 포수는 2명 이상이어야 합니다(변경 뒤 1명).
+-     at call (D:\Documents\02_baseball game\front-office\dist\cli\simulate.js:16209:22)
+-     at async main (D:\Documents\02_baseball game\front-office\dist\cli\simulate.js:16350:9)
 
-로그: `verify-reports\logs\20261110-1426_4a-2\sim.log`
+로그: `verify-reports\logs\20261110-1444_4b-1\sim.log`
+
+### 문서 정합성 (WARN)
+
+- [경고] 실제 테스트 122개 > 문서 기록 120개. 이번 차수 결과가 06_progress.md에 아직 없을 수 있음
+
+로그: `verify-reports\logs\20261110-1444_4b-1\docs.log`
 
 ## 문서상 개발 진행 (06_progress.md)
 
@@ -48,8 +60,7 @@
 | 3d | 선수 행동 영역·기존 기능 연결 | 완료 표시 |
 | 2d | 개막 준비·수동 로스터 | 완료 표시 |
 | 3e | 구단 선택·비교 | 완료 표시 |
-| 4a | 성장·노화 | 미완료 |
-| 4b | 훈련·건강 | 미완료 |
+| 4a | 성장·노화 | 완료 표시 |
 
 ## 코드의 임시 가정 (ASSUMPTION)
 
@@ -65,9 +76,10 @@
 - `src/engine/config.ts:162` (D-098, D-099) ASSUMPTION(D-098): 국내 미계약 선수 풀 규모(새 게임 시작 때 1회 생성, 이후 공급은 D-099 미지명 졸업자)와 능력 평균 보정
 - `src/engine/config.ts:181` (D-120) ASSUMPTION(D-120): 개막 뒤 1군에서 말소한 선수는 10일 뒤 재등록(KBO 원문 확인 필요)
 - `src/engine/config.ts:183` (D-120) ASSUMPTION(D-120): 사용자 편성의 1군 포수 최소 인원(주전 + 백업)
-- `src/engine/config.ts:191` (D-124) ASSUMPTION(D-124): 정점 전 연간 성장 = (잠재 − 현재) × growthShare × 계수
-- `src/engine/config.ts:196` (D-124) ASSUMPTION(D-124): 하락 = (declineBase + declinePerYear × 정점+2 이후 연수) × 노화 계수 × 능력 배수
-- `src/engine/config.ts:220` (D-120) ASSUMPTION(D-120): 시범경기 — 개막 16일 전 목요일~개막 4일 전 화요일, 월요일 휴식, 9회까지(연장 없음)
+- `src/engine/config.ts:199` (D-126) ASSUMPTION(D-126): 출전 1회당 기본 부상 확률과 보정
+- `src/engine/config.ts:231` (D-124) ASSUMPTION(D-124): 정점 전 연간 성장 = (잠재 − 현재) × growthShare × 계수
+- `src/engine/config.ts:236` (D-124) ASSUMPTION(D-124): 하락 = (declineBase + declinePerYear × 정점+2 이후 연수) × 노화 계수 × 능력 배수
+- `src/engine/config.ts:260` (D-120) ASSUMPTION(D-120): 시범경기 — 개막 16일 전 목요일~개막 4일 전 화요일, 월요일 휴식, 9회까지(연장 없음)
 - `src/engine/contracts.ts:11` (D-075) FA 협상 설정 (ASSUMPTION, D-075)
 - `src/engine/finance.ts:63` (D-038) 2026년 기준 금액 (17·21 문서, D-038). 직원 급여는 2c 조직 구현 전까지 임시 총액이다(ASSUMPTION).
 - `src/engine/finance.ts:69` (D-112) broadcastRenewalBpAssumed: 1500, // ASSUMPTION(D-112): 관중 추세 모델 전까지 10~20%의 중간값
@@ -89,7 +101,7 @@
 - `src/game/records.ts:15` (D-079) ASSUMPTION(D-079): 시작 이전 기록의 규정 기준(144경기)
 - `src/game/seasonClose.ts:20` (D-043, D-085) ASSUMPTION(D-043·D-085): 목표·해임·파산·은퇴 수치
 - `src/game/seasonClose.ts:42` (D-085) ASSUMPTION(D-085): 파산 판정 적용 여부. 입장·스폰서·굿즈 등 사업 수입이 구현되기 전에는 모기업이 없는 구단이
-- `src/game/service.ts:544` (D-056) ASSUMPTION(D-056, 임시): 포스트시즌·스토브리그 없이 다음 시즌 정규시즌을 시작한다. 장기 데이터 검증용. 건너뛴 기간의 수입·지출은 처리되지 않는다.
+- `src/game/service.ts:554` (D-056) ASSUMPTION(D-056, 임시): 포스트시즌·스토브리그 없이 다음 시즌 정규시즌을 시작한다. 장기 데이터 검증용. 건너뛴 기간의 수입·지출은 처리되지 않는다.
 
 ## 판정 기준
 
