@@ -174,3 +174,20 @@ export const ROSTER_COMPOSITION = {
   activeMinPitchers: 12,
   activeMinHitters: 13,
 } as const;
+
+/** 2d 사용자 1·2군 편성·경기 운영 계획 (D-119 행동력 0, D-120) */
+export const ROSTER_MOVE = {
+  /** ASSUMPTION(D-120): 개막 뒤 1군에서 말소한 선수는 10일 뒤 재등록(KBO 원문 확인 필요) */
+  reRegisterDays: 10,
+  /** ASSUMPTION(D-120): 사용자 편성의 1군 포수 최소 인원(주전 + 백업) */
+  activeMinCatchers: 2,
+  /** 수동 선발 로테이션 인원 */
+  rotationSize: 5,
+} as const;
+
+/** ASSUMPTION(D-120): 시범경기 — 개막 16일 전 목요일~개막 4일 전 화요일, 월요일 휴식, 9회까지(연장 없음) */
+export const EXHIBITION = {
+  startDaysBeforeOpening: 16,
+  endDaysBeforeOpening: 4,
+  maxInnings: 9,
+} as const;

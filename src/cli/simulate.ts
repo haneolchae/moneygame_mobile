@@ -12,7 +12,7 @@ import { PROBABILITY_CONFIG } from '../engine/probabilityConfig';
 import { CLOSE_RULES } from '../game/seasonClose';
 import { Dispatcher } from '../host/dispatcher';
 import { checkInvariants, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
-import type { AdvanceResult, DashboardView, DelegationPolicyView, OrganizationView, PlayerListItem, StandingView } from '../shared/protocol';
+import type { AdvanceResult, DashboardView, DelegationPolicyView, OrganizationView, PlayerListItem, RosterView, StandingView } from '../shared/protocol';
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -85,6 +85,19 @@ async function main() {
         await advance('week');
       }
     stoveErrors.push(...[...checkRosterLimits(d.saves.repository()), ...checkRosterComposition(d.saves.repository())].map((e) => `스토브리그 후 ${e}`));
+    // 2d(D-120): 위임 구단주도 캠프 중 감독 추천을 수동 계획으로 저장하고, 계획의 지명타자를 2군 타자와 바꿔
+    // 수동 경기 운영·계획 보정 경로를 시즌 내내 함께 검사한다(규칙 판정은 게임 쪽 명령이 한다).
+    try {
+      const rv = await call<RosterView>('roster.view');
+      if (rv.editable && rv.recommended) {
+        await call('roster.setPlan', { mode: 'manual', plan: rv.recommended });
+        const dh = rv.recommended.lineup.find((x) => x.position === 'DH')?.playerId;
+        const up = rv.players.find((p) => p.level !== '1군' && !p.isPitcher && p.position !== 'C');
+        if (dh && up) await call('roster.move', { promote: [up.id], demote: [dh] });
+      }
+    } catch (e) {
+      stoveErrors.push(`개막 준비 편성 실패: ${(e as Error).message}`);
+    }
     const t0 = performance.now();
     const adv = await advance('untilSeasonEnd');
     const simMs = performance.now() - t0;
@@ -139,6 +152,21 @@ async function main() {
       firstErrors: inv.slice(0, 3),
     });
     console.log(JSON.stringify(rows[rows.length - 1]));
+    // 2d: 개막 뒤 말소한 선수를 바로 다시 올리면 거부돼야 한다(재등록 10일, D-120).
+    {
+      const rv = await call<RosterView>('roster.view');
+      const down = rv.players.find((p) => p.level === '1군' && !p.isPitcher && p.position !== 'C');
+      const up = rv.players.find((p) => p.level !== '1군' && !p.isPitcher && p.position !== 'C' && !rv.reRegister[String(p.id)]);
+      if (down && up) {
+        await call('roster.move', { promote: [up.id], demote: [down.id] });
+        const again = await d.respond('roster.move', { promote: [down.id], demote: [up.id] });
+        if (again.ok || again.error.code !== 'RE_REGISTER') {
+          const last = rows[rows.length - 1]!;
+          last.invariantErrors = Number(last.invariantErrors) + 1;
+          last.firstErrors = [...(last.firstErrors as string[]), '재등록 제한이 적용되지 않음'].slice(0, 3);
+        }
+      }
+    }
     // 정규시즌 측정 뒤 포스트시즌을 마치면 시즌 마감 → 스토브리그로 넘어간다(D-085).
     await advance('untilSeasonEnd');
     // 다음 시즌 일정이 생긴 뒤에도 정규시즌 기록이 같은지 시즌마다 확인한다.

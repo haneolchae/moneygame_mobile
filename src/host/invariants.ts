@@ -1,6 +1,9 @@
 // 규칙 위반 검사. 장기 실행·테스트·자체 점검에서 같은 검사를 쓴다.
 import { seasonKeyDates } from '../engine/schedule';
-import { LEAGUE } from '../engine/config';
+import { LEAGUE, ROSTER_MOVE } from '../engine/config';
+import { diffDays } from '../engine/calendar';
+import { planProblems } from '../engine/lineup';
+import { exhibitionDates } from '../game/rosterOps';
 import { compositionViolations } from '../engine/roster';
 import type { GameRepository } from '../game/ports';
 
@@ -24,6 +27,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
 
   errors.push(...checkRegularSeasons(repo));
   errors.push(...checkRosterComposition(repo));
+  errors.push(...checkUserRoster(repo, season));
 
   // 경기 기록 일관성: 득점 = 득점 기록 수, 타석 수 = 아웃 + 출루, 이닝 아웃 수
   const games = repo.getGames(season);
@@ -140,4 +144,39 @@ export function checkRosterLimits(repo: GameRepository): string[] {
 export function checkRosterComposition(repo: GameRepository): string[] {
   const players = repo.getPlayers();
   return repo.getClubs().flatMap((c) => compositionViolations(players.filter((p) => p.clubId === c.id)).map((v) => `${c.name} 포지션 최소 인원 미달: ${v}`));
+}
+
+/**
+ * 2d 사용자 편성 규칙(D-120): 수동 계획이 1군과 맞는다, 개막 뒤 말소 선수는 10일 안에 재등록되지 않았다,
+ * 시범경기는 정규 기록(경기 표)에 들어가지 않았고 날짜마다 5경기씩 치렀다.
+ */
+export function checkUserRoster(repo: GameRepository, season: number): string[] {
+  const errors: string[] = [];
+  const meta = repo.getMeta();
+  const mine = repo.getPlayers().filter((p) => p.clubId === meta.userClubId && p.level === '1군');
+  if (meta.userPlan?.mode === 'manual' && meta.userPlan.plan) {
+    for (const e of planProblems(meta.userPlan.plan, mine, ROSTER_MOVE.rotationSize)) errors.push(`수동 운영 계획 불일치: ${e}`);
+  }
+  if (meta.season === season && meta.mode === 'season') {
+    const opening = seasonKeyDates(season).opening;
+    const lastDown = new Map<number, string>();
+    for (const m of meta.rosterMoves ?? []) {
+      if (m.to === '2군') {
+        if (diffDays(m.date, opening) >= 0) lastDown.set(m.playerId, m.date);
+        continue;
+      }
+      const down = lastDown.get(m.playerId);
+      if (down && diffDays(m.date, down) < ROSTER_MOVE.reRegisterDays) errors.push(`재등록 제한 위반: 선수 ${m.playerId} ${down} 말소 → ${m.date} 등록`);
+    }
+    const ex = meta.exhibition;
+    if (ex && ex.season === season) {
+      const played = exhibitionDates(season).filter((d) => diffDays(d, meta.currentDate) < 0);
+      for (const d of played) {
+        const n = ex.games.filter((g) => g.date === d).length;
+        if (n !== LEAGUE.clubs / 2) errors.push(`시범경기 ${d} ${n}경기 ≠ ${LEAGUE.clubs / 2}`);
+      }
+    }
+  }
+  if (repo.getGames(season).some((g) => g.fixtureId < 0)) errors.push('시범경기가 정규 경기 기록에 들어감');
+  return errors;
 }

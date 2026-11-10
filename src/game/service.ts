@@ -2,11 +2,12 @@ import { createSnapshot, currentRatings, snapshotRanges, SCOUTING, type Scouting
 // 게임 진행: 사용자 명령 검증·처리와 조회. 엔진 규칙을 호출하고 결과를 저장 계층에 반영한다.
 import { addDays, ageOn, diffDays, mondayOf, weekday, type GameDate } from '../engine/calendar';
 import { CLUB_PROFILES, SEASON_2026_STANDINGS } from '../engine/clubs';
-import { FOREIGN, INFLATION, LEAGUE, NEW_GAME, RULES_VERSION } from '../engine/config';
+import { FOREIGN, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION } from '../engine/config';
 import { compensationFor, foreignRenewalDemandUsd, offerTotal, wonToUsd, type ContractOffer } from '../engine/contracts';
 import { CATEGORY_LABEL, FINANCE_BASE, NOT_YET_IMPLEMENTED, scheduledEntries, stadiumFee, type LedgerEntry } from '../engine/finance';
 import { simulateGame, type GameResult } from '../engine/gamesim';
-import { prepareTeam } from '../engine/lineup';
+import { prepareTeam, type GamePlan } from '../engine/lineup';
+import { rosterCounts } from '../engine/roster';
 import { EOK } from '../engine/money';
 import { observePlayer } from '../engine/observation';
 import { weeklyAp, xpToNext } from '../engine/owner';
@@ -30,6 +31,7 @@ import { FormTracker } from './formTracker';
 import { fieldingLine, Records } from './records';
 import { Draft, draftDate, isSenior } from './draft';
 import { CLOSE_RULES, SeasonClose } from './seasonClose';
+import { exhibitionDates, RosterOps } from './rosterOps';
 import { Postseason, POSTSEASON_MAX_INNINGS, SERIES_LABEL } from './postseason';
 import { DELEGABLE_TEAMS, directWpCost, ORG_AP, Organization } from './organization';
 import { weekIdFor } from './week';
@@ -51,6 +53,8 @@ import {
   type InboxItemView,
   type NextGameView,
   type PlayerActionsView,
+  type RosterView,
+  type GamePlanView,
   type PlayerActionView,
   type PlayerDetailView,
   type PlayerListItem,
@@ -231,6 +235,7 @@ export class GameService {
   readonly postseason: Postseason;
   readonly draft: Draft;
   readonly seasonClose: SeasonClose;
+  readonly rosterOps: RosterOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -281,6 +286,7 @@ export class GameService {
     this.postseason = new Postseason(repo);
     this.draft = new Draft(repo);
     this.seasonClose = new SeasonClose(repo, this.draft);
+    this.rosterOps = new RosterOps(repo, this.forms);
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -349,6 +355,17 @@ export class GameService {
     // 위임 업무 큐(운영팀·경영지원팀): 시장 처리(월요일 AI 제안) 뒤에 같은 도메인 로직으로 실행한다.
     inbox.push(...this.org.onDay(meta, date));
 
+    // 개막일: 그 시점 1군을 개막 엔트리로 알린다(2d, D-120).
+    const opening = this.rosterOps.openingNotice(meta, date);
+    if (opening) inbox.push(opening);
+    // 시범경기(2d, D-120): 정규 기록·표본·피로·순위와 분리해 점수와 우리 선수 기록만 남긴다.
+    const extraMeta: Partial<GameMeta> = {};
+    const exhibition = this.rosterOps.playExhibition(meta, date, meta.leagueEnvironment?.[String(meta.season)] ?? NEUTRAL_ENVIRONMENT);
+    if (exhibition) {
+      Object.assign(extraMeta, exhibition.update);
+      inbox.push(...exhibition.inbox);
+    }
+
     // 2) 경기 (정규시즌)
     const results: GameResult[] = [];
     const fixtures = meta.mode === 'season' ? this.repo.getFixturesOn(date) : [];
@@ -360,8 +377,10 @@ export class GameService {
       const env = meta.leagueEnvironment?.[String(meta.season)] ?? NEUTRAL_ENVIRONMENT;
       // 최근·과거 성적 표본(10a 4·7장): 그날 모든 경기에 전날까지의 기록으로 한 번에 고정한다.
       const forms = this.forms.formsFor(meta.season, date, active, env);
+      // 우리 구단 수동 운영 계획(2d): 감독 자동 운영과 같은 경기 준비 로직이 읽는다.
+      const userPlan = this.rosterOps.activePlan(meta);
       for (const f of fixtures) {
-        const teamOf = (clubId: ClubId) => prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null);
+        const teamOf = (clubId: ClubId) => prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null, clubId === meta.userClubId ? userPlan : null, ROSTER_MOVE.rotationSize);
         // 경기 난수는 (시드, 경기 ID)에서 파생한다. 처리 순서와 무관하게 같은 경기는 같은 결과를 낸다.
         const maxInnings = f.stage && f.stage !== 'regular' ? POSTSEASON_MAX_INNINGS : LEAGUE.regularSeasonMaxInnings;
         const postseason = !!f.stage && f.stage !== 'regular';
@@ -393,7 +412,7 @@ export class GameService {
 
     // 4) 다음 날 준비: 시즌 모드 전환, 새 주 행동력
     const next = addDays(date, 1);
-    const metaUpdate: Partial<GameMeta> = { currentDate: next };
+    const metaUpdate: Partial<GameMeta> = { ...extraMeta, currentDate: next };
     if (meta.mode === 'stove' && next === seasonModeStart(Number(meta.kDate.slice(0, 4)))) {
       const season = meta.season + 1;
       const business = new Rng(meta.rngStreams.business as RngState);
@@ -403,6 +422,10 @@ export class GameService {
       metaUpdate.inflationBp = { ...meta.inflationBp, [String(season)]: rate };
       metaUpdate.rngStreams = { ...meta.rngStreams, business: business.state() };
       this.market.onSeasonStart();
+      // 2d: 감독 추천 1군 = 개막 엔트리 초안, 이동 기록·시범경기 초기화, 수동 계획 보정(D-120)
+      const camp = this.rosterOps.onSeasonStart(meta, season, next);
+      Object.assign(metaUpdate, camp.update);
+      inbox.push(...camp.inbox);
       // 지난 시즌 상세 기록 압축(D-106): 새 시즌이 시작될 때 직전 시즌의 원시 기록을 시즌 합계로 바꾼다.
       this.repo.compressSeason(meta.season);
       // 성적 기본 목표: 시즌 모드 시작 때 예상 순위로 고정한다(02 문서).
@@ -626,7 +649,7 @@ export class GameService {
     const pit = this.repo.pitchingTotals(meta.season);
     const starterOf = (clubId: number) => {
       try {
-        const s = prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null).starter;
+        const s = prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null, clubId === meta.userClubId ? this.rosterOps.activePlan(meta) : null, ROSTER_MOVE.rotationSize).starter;
         const t = pit.get(s.id);
         const era = t && t.OUTS > 0 ? ((27 * t.ER) / t.OUTS).toFixed(2) : '—';
         return { id: s.id, name: s.name, throws: s.throws === 'L' ? '좌완' : '우완', line: `시즌 ${t?.W ?? 0}승 ${t?.L ?? 0}패 · ERA ${era}` };
@@ -655,6 +678,11 @@ export class GameService {
       const over = this.repo.getPlayers().filter((p) => p.clubId === meta.userClubId).length - LEAGUE.rosterMax;
       const rosterNote = over > 0 ? `현재 ${over}명 초과입니다.` : '현재 40명 이하라 추가 조치는 필요 없습니다.';
       out.push({ title: e.title, detail: e.kind === 'reserveList' || e.kind === 'campRoster' ? `보유 선수를 40명 이하로 맞춰야 합니다. ${rosterNote}` : e.body, due: e.date, level, target: 'schedule' });
+    }
+    // 2d: 스프링캠프~개막 전날에는 개막 엔트리 확인을 권한다(D-120).
+    if (meta.mode === 'season' && this.phase(meta) === 'preseason') {
+      const opening = seasonKeyDates(meta.season).opening;
+      out.push({ title: '개막 엔트리·경기 운영 확인', detail: `개막(${opening.slice(5).replace('-', '/')}) 때의 1군 ${LEAGUE.activeRoster}명이 개막 엔트리가 됩니다. 타순·로테이션은 감독 자동 운영 또는 수동 계획으로 정합니다(행동력 0).`, due: addDays(opening, -1), level: '권장', target: 'roster' });
     }
     if (meta.mode === 'stove') {
       const off = Number(meta.kDate.slice(0, 4));
@@ -934,8 +962,13 @@ export class GameService {
     return this.market.foreignOffer(meta, this.direct(meta), playerId, salaryUsd);
   }
 
+  /** 방출. 시즌 중 1군 선수를 내보내면 같은 트랜잭션에서 감독 추천으로 1군 26명을 다시 채운다(2d, D-120). */
   releasePlayer(playerId: number): OfferResultView {
-    return this.market.releasePlayer(this.meta(), playerId);
+    return this.repo.transaction(() => {
+      const r = this.market.releasePlayer(this.meta(), playerId);
+      const filled = this.rosterOps.fillActive(this.meta());
+      return filled ? { ...r, message: `${r.message} ${filled}` } : r;
+    });
   }
 
   // ───────── 조직·위임 (2c) ─────────
@@ -1222,6 +1255,80 @@ export class GameService {
 
   reject(approvalId: number): OfferResultView {
     return this.org.reject(this.meta(), approvalId);
+  }
+
+  // ───────── 선수단 운영 (2d, D-119·D-120) ─────────
+
+  /** 선수단 운영 화면: 1·2군, 재등록 제한, 경기 운영 계획·감독 추천, 시범경기 기록. 조회만 한다. */
+  rosterView(): RosterView {
+    const meta = this.meta();
+    const ops = this.rosterOps;
+    const players = this.players({ scope: 'mine', group: 'all', sortKey: 'name' });
+    const active = this.repo.getPlayers().filter((p) => p.clubId === meta.userClubId && p.level === '1군');
+    const c = rosterCounts(active);
+    const lock = ops.editLock(meta);
+    const reRegister: Record<string, string> = {};
+    for (const p of players) {
+      const d = ops.reRegisterDate(meta, p.id);
+      if (d) reRegister[String(p.id)] = d;
+    }
+    const state = ops.planState(meta);
+    let recommended: GamePlanView | null = null;
+    try {
+      recommended = ops.recommended(meta);
+    } catch {
+      recommended = null;
+    }
+    const ex = ops.exhibition(meta);
+    const season = meta.mode === 'season' ? meta.season : meta.season + 1;
+    const ours = (ex?.games ?? []).filter((g) => g.home === meta.userClubId || g.away === meta.userClubId).map((g) => {
+      const home = g.home === meta.userClubId;
+      return { date: g.date, opponent: this.ref(home ? g.away : g.home).shortName, home, us: home ? g.homeRuns : g.awayRuns, them: home ? g.awayRuns : g.homeRuns };
+    });
+    const names = new Map(players.map((p) => [p.id, p.name]));
+    return {
+      date: meta.currentDate,
+      phase: this.phase(meta),
+      openingDate: seasonKeyDates(season).opening,
+      editable: lock === null,
+      lockReason: lock,
+      players,
+      counts: { active: active.length, activePitchers: c.pitchers, activeHitters: c.hitters, activeCatchers: c.catchers, activeMax: LEAGUE.activeRoster },
+      rules: [
+        `1군 ${LEAGUE.activeRoster}명 유지: 올리는 선수와 내리는 선수를 함께 정해 한 번에 바꿉니다.`,
+        `1군 투수 ${ROSTER_COMPOSITION.activeMinPitchers}명·야수 ${ROSTER_COMPOSITION.activeMinHitters}명·포수 ${ROSTER_MOVE.activeMinCatchers}명 이상`,
+        `개막 뒤 2군으로 내린 선수는 ${ROSTER_MOVE.reRegisterDays}일 뒤 다시 등록 가능 (개막 전 캠프·시범경기 기간은 제한 없음)`,
+        '명단·타순·로테이션 편집은 행동력을 쓰지 않습니다(D-119). 진행된 경기 결과는 바뀌지 않고 다음 경기부터 반영됩니다.',
+      ],
+      reRegister,
+      mode: state.mode,
+      plan: state.plan,
+      recommended,
+      planProblems: state.plan ? ops.problems(meta, state.plan) : [],
+      exhibition: ex
+        ? {
+            dates: exhibitionDates(ex.season),
+            record: { w: ours.filter((g) => g.us > g.them).length, l: ours.filter((g) => g.us < g.them).length, t: ours.filter((g) => g.us === g.them).length },
+            games: ours,
+            lines: ex.stats,
+          }
+        : null,
+      moves: ops.moves(meta).map((m) => ({ date: m.date, playerId: m.playerId, name: names.get(m.playerId) ?? `#${m.playerId}`, to: m.to })).reverse(),
+    };
+  }
+
+  rosterMove(promote: number[], demote: number[]): { message: string; view: RosterView } {
+    const message = this.rosterOps.move(this.meta(), promote ?? [], demote ?? []);
+    return { message, view: this.rosterView() };
+  }
+
+  rosterSetPlan(mode: 'auto' | 'manual', plan?: GamePlanView): { message: string; view: RosterView } {
+    if (mode !== 'auto' && mode !== 'manual') throw new GameError('INVALID', '운영 방식은 자동 또는 수동입니다.');
+    const p: GamePlan | undefined = plan
+      ? { lineup: (plan.lineup ?? []).map((s) => ({ playerId: Number(s.playerId), position: s.position as GamePlan['lineup'][number]['position'] })), rotation: (plan.rotation ?? []).map(Number), closer: plan.closer === null || plan.closer === undefined ? null : Number(plan.closer) }
+      : undefined;
+    const message = this.rosterOps.setPlan(this.meta(), mode, p);
+    return { message, view: this.rosterView() };
   }
 
   /**

@@ -98,6 +98,16 @@ export class Dispatcher {
       }
       case 'player.scout':
         return this.game().scoutPlayer((payload as RequestMap['player.scout']['payload']).playerId) as R;
+      case 'roster.view':
+        return this.game().rosterView() as R;
+      case 'roster.move': {
+        const p = payload as RequestMap['roster.move']['payload'];
+        return this.game().rosterMove(p.promote, p.demote) as R;
+      }
+      case 'roster.setPlan': {
+        const p = payload as RequestMap['roster.setPlan']['payload'];
+        return this.game().rosterSetPlan(p.mode, p.plan) as R;
+      }
       case 'player.actions':
         return this.game().playerActions((payload as RequestMap['player.actions']['payload']).playerId) as R;
       case 'game.standings':

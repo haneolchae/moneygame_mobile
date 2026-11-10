@@ -5,7 +5,7 @@ import type { GameDate } from '../engine/calendar';
 import type { ContractOffer, FaGrade } from '../engine/contracts';
 import type { LedgerCategory, LedgerEntry } from '../engine/finance';
 import type { GameResult } from '../engine/gamesim';
-import type { PitcherUsage } from '../engine/lineup';
+import type { GamePlan, PitcherUsage } from '../engine/lineup';
 import type { RngState } from '../engine/rng';
 import type { Amateur } from '../engine/amateur';
 import type { HistoryLine } from '../engine/history';
@@ -59,6 +59,45 @@ export interface GameMeta {
   regularSeasons?: Record<string, { played: number; total: number; endDate: GameDate }>;
   /** 시즌별 리그 환경(득점·홈런 목표의 기준값 대비 편차, D-100). 시즌 모드 시작 때 정한다 */
   leagueEnvironment?: Record<string, { runs: number; hr: number; runsAdj?: number; hrAdj?: number; measuredRunsPerGame?: number; measuredHrPerPa?: number }>;
+  /** 우리 구단 경기 운영(2d, D-120): 감독 자동 또는 수동 계획 */
+  userPlan?: UserPlanState;
+  /** 이번 시즌 우리 구단 1·2군 이동 기록(재등록 제한 판정·규칙 검사용, 2/1에 비움) */
+  rosterMoves?: RosterMove[];
+  /** 이번 시즌 시범경기 점수·우리 선수 기록(정규 기록과 별도, D-120) */
+  exhibition?: ExhibitionState;
+}
+
+export interface UserPlanState {
+  mode: 'auto' | 'manual';
+  plan: GamePlan | null;
+}
+
+export type RosterMove = { date: GameDate; playerId: PlayerId; to: '1군' | '2군' };
+
+export interface ExhibitionLine {
+  G: number;
+  PA: number;
+  AB: number;
+  H: number;
+  HR: number;
+  BB: number;
+  SO: number;
+  RBI: number;
+  /** 투수: 등판·아웃·피안타·자책·볼넷·삼진 */
+  GP: number;
+  OUTS: number;
+  HA: number;
+  ER: number;
+  BBA: number;
+  K: number;
+}
+
+export interface ExhibitionState {
+  season: number;
+  games: Array<{ date: GameDate; home: ClubId; away: ClubId; homeRuns: number; awayRuns: number }>;
+  /** 우리 구단 선수 시범경기 기록 */
+  stats: Record<string, ExhibitionLine>;
+  lastStarters: Record<string, PlayerId>;
 }
 
 export interface StoredGame extends GameScore {

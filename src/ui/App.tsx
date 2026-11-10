@@ -18,6 +18,7 @@ import { NewGame } from './screens/NewGame';
 import { Organization } from './screens/Organization';
 import { PlayerDetail } from './screens/PlayerDetail';
 import { Players } from './screens/Players';
+import { Roster } from './screens/Roster';
 import { Saves } from './screens/Saves';
 import { Schedule } from './screens/Schedule';
 import { Standings } from './screens/Standings';
@@ -30,6 +31,7 @@ export type Route =
   | { name: 'dashboard' }
   | { name: 'inbox' }
   | { name: 'players' }
+  | { name: 'roster' }
   /** list: 진입 목록의 선수 순서(이전·다음), back: 닫으면 돌아갈 화면 */
   | { name: 'player'; playerId: number; list?: number[]; back?: Route }
   | { name: 'schedule' }
@@ -58,6 +60,7 @@ const MENU: Array<{ route: Route; label: string; icon: string }> = [
   { route: { name: 'dashboard' }, label: '구단 현황', icon: 'home' },
   { route: { name: 'inbox' }, label: '받은 편지함', icon: 'mail' },
   { route: { name: 'players' }, label: '선수단', icon: 'users' },
+  { route: { name: 'roster' }, label: '선수단 운영', icon: 'ball' },
   { route: { name: 'market' }, label: '계약·이적', icon: 'handshake' },
   { route: { name: 'org' }, label: '조직·위임', icon: 'org' },
   { route: { name: 'draft' }, label: '신인 드래프트', icon: 'star' },
@@ -244,6 +247,7 @@ export function App() {
         {route.name === 'dashboard' && <Dashboard nav={nav} />}
         {route.name === 'inbox' && <Inbox nav={nav} />}
         {route.name === 'players' && <Players nav={nav} />}
+        {route.name === 'roster' && <Roster nav={nav} />}
         {route.name === 'player' && <PlayerDetail nav={nav} playerId={route.playerId} list={route.list} back={route.back} />}
         {route.name === 'schedule' && <Schedule nav={nav} />}
         {route.name === 'boxScore' && <BoxScore nav={nav} fixtureId={route.fixtureId} />}

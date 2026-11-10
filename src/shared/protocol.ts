@@ -71,7 +71,7 @@ export interface TaskView {
   detail: string;
   due: string | null;
   level: '필수' | '권장' | '선택' | '정보';
-  target: 'inbox' | 'players' | 'finance' | 'schedule' | 'standings' | 'market' | 'org' | 'draft' | null;
+  target: 'inbox' | 'players' | 'finance' | 'schedule' | 'standings' | 'market' | 'org' | 'draft' | 'roster' | null;
 }
 
 export interface NextGameView {
@@ -528,6 +528,50 @@ export interface OfferResultView {
   counter?: ContractOfferView;
 }
 
+// ───────── 선수단 운영: 1·2군·경기 운영 계획·시범경기 (2d, D-119·D-120) ─────────
+
+export interface GamePlanView {
+  /** 타순 1~9번: 선수와 수비 위치(C·1B·2B·3B·SS·LF·CF·RF·DH) */
+  lineup: Array<{ playerId: number; position: string }>;
+  /** 선발 로테이션 순서 */
+  rotation: number[];
+  /** 마무리(null이면 감독 판단) */
+  closer: number | null;
+}
+
+export interface ExhibitionLineView {
+  G: number; PA: number; AB: number; H: number; HR: number; BB: number; SO: number; RBI: number;
+  GP: number; OUTS: number; HA: number; ER: number; BBA: number; K: number;
+}
+
+export interface RosterView {
+  date: string;
+  phase: SeasonPhase;
+  openingDate: string;
+  /** 편성 가능 여부와 불가 사유(스토브리그 등) */
+  editable: boolean;
+  lockReason: string | null;
+  /** 우리 구단 선수 전원(우리 선수라 실제 능력 공개) */
+  players: PlayerListItem[];
+  counts: { active: number; activePitchers: number; activeHitters: number; activeCatchers: number; activeMax: number };
+  rules: string[];
+  /** 재등록 제한 중인 선수: 선수 ID → 다시 등록할 수 있는 날짜 */
+  reRegister: Record<string, string>;
+  mode: 'auto' | 'manual';
+  plan: GamePlanView | null;
+  /** 지금 1군 기준 감독 추천안(구성 불가면 null) */
+  recommended: GamePlanView | null;
+  /** 저장된 계획이 지금 1군과 맞지 않는 이유 */
+  planProblems: string[];
+  exhibition: {
+    dates: string[];
+    record: { w: number; l: number; t: number };
+    games: Array<{ date: string; opponent: string; home: boolean; us: number; them: number }>;
+    lines: Record<string, ExhibitionLineView>;
+  } | null;
+  moves: Array<{ date: string; playerId: number; name: string; to: '1군' | '2군' }>;
+}
+
 // ───────── 선수 상세 행동 영역 (3d, 18a·D-118) ─────────
 
 export type PlayerActionKey = 'faOffer' | 'faDelegate' | 'salaryOffer' | 'salaryDelegate' | 'foreignOffer' | 'release' | 'persuade';
@@ -688,6 +732,9 @@ export interface RequestMap {
   'player.note': { payload: { playerId: number; text: string; watched: boolean }; result: PlayerNoteView };
   'player.scout': { payload: { playerId: number }; result: PlayerDetailView };
   'player.actions': { payload: { playerId: number }; result: PlayerActionsView };
+  'roster.view': { payload: void; result: RosterView };
+  'roster.move': { payload: { promote: number[]; demote: number[] }; result: { message: string; view: RosterView } };
+  'roster.setPlan': { payload: { mode: 'auto' | 'manual'; plan?: GamePlanView }; result: { message: string; view: RosterView } };
   'game.standings': { payload: void; result: StandingView[] };
   'game.schedule': { payload: { clubId?: number; month?: string }; result: FixtureView[] };
   'game.boxScore': { payload: { fixtureId: number }; result: BoxScoreView };
@@ -738,6 +785,9 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'player.note',
   'player.scout',
   'player.actions',
+  'roster.view',
+  'roster.move',
+  'roster.setPlan',
   'game.standings',
   'game.schedule',
   'game.boxScore',

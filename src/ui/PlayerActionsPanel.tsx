@@ -89,6 +89,15 @@ export function PlayerActionsPanel({ playerId, playerName, nav, beforeAct, onCha
           ))}
         </p>
       )}
+      {view.release && (
+        <p className="small">
+          1·2군 등록·말소와 타순·로테이션은{' '}
+          <span className="clickable gold" onClick={() => nav.go({ name: 'roster' })}>
+            [선수단 운영]
+          </span>
+          에서 바꿉니다(행동력 0).
+        </p>
+      )}
       {view.actions.length === 0 && <p className="muted small">지금 이 선수에게 실행할 수 있는 계약·선수 정리 행동이 없습니다. 조사는 [능력치] 탭에서 할 수 있습니다.</p>}
       {groups.map((g) => (
         <div key={g} className="action-group">

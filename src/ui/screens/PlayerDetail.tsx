@@ -94,7 +94,7 @@ function RecordTable({ r }: { r: PlayerRecordView }) {
 }
 
 const TABS = ['개요', '능력치', '시즌 기록', '계약·이력', '메모'] as const;
-const BACK_LABEL: Partial<Record<Route['name'], string>> = { players: '선수단', market: '계약·이적', dashboard: '구단 현황', boxScore: '박스스코어', draft: '신인 드래프트', team: '팀 기록' };
+const BACK_LABEL: Partial<Record<Route['name'], string>> = { players: '선수단', roster: '선수단 운영', market: '계약·이적', dashboard: '구단 현황', boxScore: '박스스코어', draft: '신인 드래프트', team: '팀 기록' };
 export function PlayerDetail({ nav, playerId, list, back }: { nav: Nav; playerId: number; list?: number[]; back?: Route }) {
   const [p, setP] = useState<PlayerDetailView | null>(null);
   const [tab, setTab] = useState(0);

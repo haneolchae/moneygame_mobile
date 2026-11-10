@@ -6,7 +6,7 @@ import { dateKo, int, POSITION_LABELS, rate3, shortDate, won } from '../format';
 import { Icon } from '../icons';
 import { PostseasonBracket } from '../PostseasonBracket';
 
-const TASK_ICON: Record<string, string> = { inbox: 'mail', players: 'users', finance: 'coins', schedule: 'calendar', standings: 'chart', market: 'handshake', org: 'org', draft: 'star' };
+const TASK_ICON: Record<string, string> = { inbox: 'mail', players: 'users', finance: 'coins', schedule: 'calendar', standings: 'chart', market: 'handshake', org: 'org', draft: 'star', roster: 'ball' };
 const LEVEL_CLASS: Record<TaskView['level'], string> = { 필수: 'req', 권장: 'rec', 선택: 'opt', 정보: 'opt' };
 
 function Kpis({ d }: { d: DashboardView }) {
