@@ -199,6 +199,20 @@ export interface PlayerTruth {
   draft?: { year: number; round: number; pick: number; school: string };
   /** 은퇴(시즌·사유). 은퇴 선수는 소속이 없다 */
   retired?: { season: number; reason: string };
+  /** 성장·노화 누적 상태(4a, D-124). 내부 계산용이며 화면 응답에 그대로 넣지 않는다 */
+  dev?: DevelopmentState;
+}
+
+export interface DevelopmentState {
+  /** 능력별 소수 누적(정수·0.1km/h 단위 반영 전) */
+  acc: Record<string, number>;
+  /** 마지막 월간 반영 'YYYY-MM' */
+  month?: string;
+  /** 마지막 연간(스토브리그) 반영 시즌 */
+  season?: number;
+  /** 마지막 연간 반영 직후(또는 첫 반영 직전) 능력: 우리 선수 변화 보고 기준 */
+  base?: Record<string, number>;
+  baseDate?: string;
 }
 
 export interface Fixture {

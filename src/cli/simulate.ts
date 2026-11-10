@@ -11,6 +11,7 @@ import { performance } from 'node:perf_hooks';
 import { PROBABILITY_CONFIG } from '../engine/probabilityConfig';
 import { CLOSE_RULES } from '../game/seasonClose';
 import { Dispatcher } from '../host/dispatcher';
+import { coreAverage } from '../engine/development';
 import { checkInvariants, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
 import type { AdvanceResult, DashboardView, DelegationPolicyView, OrganizationView, PlayerListItem, RosterView, StandingView } from '../shared/protocol';
 
@@ -61,6 +62,8 @@ async function main() {
   const afterStove = await call<DashboardView>('game.dashboard');
   console.log(JSON.stringify({ stoveWeeks, stoveMs, date: afterStove.date, cashAfterStove: afterStove.cashWon }));
 
+  let firstCoreMean: number | undefined;
+  let prevCore = new Map<number, number>();
   for (let s = 1; s <= seasons; s++) {
     // 두 번째 시즌부터: 한국시리즈 뒤 스토브리그를 주 단위로 지나 다음 시즌으로 간다(D-085).
     // 스토브리그를 지난 직후: 모든 구단 40인 한도(우리 구단은 의무 안건, AI는 같은 정리 규칙)
@@ -131,8 +134,22 @@ async function main() {
       },
       { pa: 0, hr: 0 },
     );
+    // 4a 사전 등록 기준 ②·③(D-124): 구단 소속 선수 핵심 능력 평균의 10시즌 이동, 1년 변화 95% 분위수
+    const rostered = d.saves.repository().getPlayers().filter((p) => p.clubId !== null && !p.retired);
+    const core = new Map(rostered.map((p) => [p.id, coreAverage(p)]));
+    const coreMean = +([...core.values()].reduce((a, v) => a + v, 0) / Math.max(1, core.size)).toFixed(2);
+    firstCoreMean ??= coreMean;
+    const yearly = [...core.entries()].filter(([id]) => prevCore.has(id)).map(([id, v]) => Math.abs(v - prevCore.get(id)!)).sort((a, b) => a - b);
+    const coreP95 = yearly.length ? +yearly[Math.floor(0.95 * (yearly.length - 1))]!.toFixed(2) : null;
+    prevCore = core;
+    const devErrors: string[] = [];
+    if (Math.abs(coreMean - firstCoreMean) > 3) devErrors.push(`사전 등록 ② 위반: 핵심 능력 평균 ${firstCoreMean} → ${coreMean}`);
+    if (coreP95 !== null && coreP95 > 6) devErrors.push(`사전 등록 ③ 위반: 1년 변화 95% 분위수 ${coreP95}`);
+    inv.push(...devErrors);
     rows.push({
       season: dash.season,
+      coreMean,
+      coreP95,
       games: regular && regular.season === dash.season ? `${regular.played}/${regular.total}` : '0/1', // 기록이 없으면 미완료로 판정
       days: adv.daysProcessed,
       simSec: +(simMs / 1000).toFixed(2),

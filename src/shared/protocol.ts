@@ -209,6 +209,8 @@ export interface FieldingLineView {
 
 export interface PlayerNoteView { text: string; watched: boolean; updatedAt: string | null }
 export interface PlayerDetailView extends PlayerListItem {
+  /** 우리 선수만: 지난 성장·노화 결산 뒤 실제 능력 변화(4a). 다른 구단 선수는 null */
+  development: { since: string | null; settled: boolean; changes: Array<{ key: string; label: string; delta: number }> } | null;
   scouting: { confidence: number; date: string; observer: string; stale: boolean; reports: number; nextDate: string; apCost: number };
   traits: Array<{ label: string; text: string }>;
   pitches: Array<{ type: string; values: Record<string, number>; ranges: Record<string, { low: number; high: number }> }>;

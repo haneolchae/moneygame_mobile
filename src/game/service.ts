@@ -32,6 +32,8 @@ import { fieldingLine, Records } from './records';
 import { Draft, draftDate, isSenior } from './draft';
 import { CLOSE_RULES, SeasonClose } from './seasonClose';
 import { exhibitionDates, RosterOps } from './rosterOps';
+import { Growth } from './growth';
+import { DEV_LABEL, devSnapshot, VELOCITY } from '../engine/development';
 import { Postseason, POSTSEASON_MAX_INNINGS, SERIES_LABEL } from './postseason';
 import { DELEGABLE_TEAMS, directWpCost, ORG_AP, Organization } from './organization';
 import { weekIdFor } from './week';
@@ -238,6 +240,7 @@ export class GameService {
   readonly draft: Draft;
   readonly seasonClose: SeasonClose;
   readonly rosterOps: RosterOps;
+  readonly growth: Growth;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -289,6 +292,7 @@ export class GameService {
     this.draft = new Draft(repo);
     this.seasonClose = new SeasonClose(repo, this.draft);
     this.rosterOps = new RosterOps(repo, this.forms);
+    this.growth = new Growth(repo);
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -356,6 +360,8 @@ export class GameService {
     inbox.push(...market.inbox);
     // 위임 업무 큐(운영팀·경영지원팀): 시장 처리(월요일 AI 제안) 뒤에 같은 도메인 로직으로 실행한다.
     inbox.push(...this.org.onDay(meta, date));
+    // 4a 성장·노화 월간 반영(D-123): 시즌 3~10월 1일, 그날 경기 전에 반영한다.
+    inbox.push(...this.growth.monthly(meta, date));
 
     // 개막일: 그 시점 1군을 개막 엔트리로 알린다(2d, D-120).
     const opening = this.rosterOps.openingNotice(meta, date);
@@ -481,7 +487,11 @@ export class GameService {
     this.achievements.onDay({ ...meta, ownerLevel: fresh.ownerLevel, ownerXp: fresh.ownerXp, postseason: fresh.postseason }, date, results);
     // 한국시리즈가 끝난 날: 시즌 마감 → 스토브리그 (D-085)
     const after = this.meta();
-    if (meta.mode === 'season' && after.postseason?.season === meta.season && after.postseason.finishedDate === date) this.seasonClose.close(after, date);
+    if (meta.mode === 'season' && after.postseason?.season === meta.season && after.postseason.finishedDate === date) {
+      // 4a 연간 성장·노화(D-124): 시즌 마감 직전 1회
+      this.repo.addInbox(this.growth.annual(after, date));
+      this.seasonClose.close(after, date);
+    }
     // 은퇴 설득 기한·파산 감시
     this.seasonClose.onDay(this.meta(), date);
     this.ensureScouting();
@@ -1754,7 +1764,19 @@ export class GameService {
       honors: p.honors ?? [],
       draftInfo: p.draft ? `${p.draft.year} 신인 드래프트 ${p.draft.round}라운드 ${p.draft.pick}순위 (${p.draft.school})` : null,
       retired: p.retired ? `${p.retired.season} 시즌 뒤 은퇴 (${p.retired.reason})` : null,
+      development: own && p.dev?.base ? this.developmentOf(p) : own ? { since: null, settled: false, changes: [] } : null,
     };
+  }
+
+  /** 우리 선수의 지난 결산 뒤 능력 변화(4a). 실제 능력 공개 규칙상 우리 선수에게만 쓴다. */
+  private developmentOf(p: PlayerTruth): NonNullable<PlayerDetailView['development']> {
+    const base = p.dev!.base!;
+    const now = devSnapshot(p);
+    const changes = Object.entries(now)
+      .filter(([k]) => base[k] !== undefined)
+      .map(([k, v]) => ({ key: k, label: DEV_LABEL[k] ?? k, delta: k === VELOCITY ? Math.round((v - base[k]!) * 10) / 10 : v - base[k]! }))
+      .filter((c) => c.delta !== 0);
+    return { since: p.dev!.baseDate ?? null, settled: p.dev!.season !== undefined, changes };
   }
 
   boxScore(fixtureId: number): BoxScoreView {

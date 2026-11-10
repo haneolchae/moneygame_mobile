@@ -185,6 +185,37 @@ export const ROSTER_MOVE = {
   rotationSize: 5,
 } as const;
 
+/** 4a 성장·노화(D-123 사용자 확정 주기, D-124 초기안 계수) */
+export const DEVELOPMENT = {
+  /** ASSUMPTION(D-124): 정점 전 연간 성장 = (잠재 − 현재) × growthShare × 계수 */
+  growthShare: 0.22,
+  maxAnnualGain: 6,
+  /** 정점 뒤 변화 없는 기간(년) */
+  plateauYears: 2,
+  /** ASSUMPTION(D-124): 하락 = (declineBase + declinePerYear × 정점+2 이후 연수) × 노화 계수 × 능력 배수 */
+  declineBase: 1.2,
+  declinePerYear: 0.35,
+  declineWeight: { speed: 1.4, power: 0.8, eye: 0.6, control: 0.6 } as Record<string, number>,
+  /** 특성(1~100) → 계수 0.7~1.3 */
+  traitMin: 0.7,
+  traitSpan: 0.6,
+  /** 구속(km/h) */
+  velocityYoungAge: 24,
+  velocityYoungGain: 0.5,
+  velocityDeclineBase: 0.5,
+  velocityDeclinePerYear: 0.15,
+  /** D-123: 시즌 3~10월 매월 1일 반영, 월 상한 */
+  monthlyMonths: [3, 4, 5, 6, 7, 8, 9, 10] as readonly number[],
+  monthlyShare: 0.4,
+  monthlyCap: 1,
+  monthlyVelocityCap: 0.3,
+  monthlyNoiseSd: 0.15,
+  /** 스토브리그 연간 편차 */
+  annualNoiseSd: 0.6,
+  ratingMin: 1,
+  ratingMax: 100,
+} as const;
+
 /** ASSUMPTION(D-120): 시범경기 — 개막 16일 전 목요일~개막 4일 전 화요일, 월요일 휴식, 9회까지(연장 없음) */
 export const EXHIBITION = {
   startDaysBeforeOpening: 16,

@@ -1,6 +1,7 @@
 // 규칙 위반 검사. 장기 실행·테스트·자체 점검에서 같은 검사를 쓴다.
 import { seasonKeyDates } from '../engine/schedule';
-import { LEAGUE, ROSTER_MOVE } from '../engine/config';
+import { DEVELOPMENT, LEAGUE, ROSTER_MOVE } from '../engine/config';
+import { devSnapshot, VELOCITY } from '../engine/development';
 import { diffDays } from '../engine/calendar';
 import { planProblems } from '../engine/lineup';
 import { exhibitionDates } from '../game/rosterOps';
@@ -28,6 +29,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   errors.push(...checkRegularSeasons(repo));
   errors.push(...checkRosterComposition(repo));
   errors.push(...checkUserRoster(repo, season));
+  errors.push(...checkDevelopment(repo));
 
   // 경기 기록 일관성: 득점 = 득점 기록 수, 타석 수 = 아웃 + 출루, 이닝 아웃 수
   const games = repo.getGames(season);
@@ -178,5 +180,23 @@ export function checkUserRoster(repo: GameRepository, season: number): string[] 
     }
   }
   if (repo.getGames(season).some((g) => g.fixtureId < 0)) errors.push('시범경기가 정규 경기 기록에 들어감');
+  return errors;
+}
+
+/** 4a 사전 등록 기준 ④(D-124): 시즌 중 지난 결산 뒤 누적 변화가 월 상한 × 반영 달 수를 넘지 않는다. */
+export function checkDevelopment(repo: GameRepository): string[] {
+  const meta = repo.getMeta();
+  if (meta.mode !== 'season') return [];
+  const months = DEVELOPMENT.monthlyMonths.length;
+  const errors: string[] = [];
+  for (const p of repo.getPlayers()) {
+    const base = p.dev?.base;
+    if (p.retired || !base || !(p.dev!.season === undefined || p.dev!.season === meta.season - 1)) continue;
+    const now = devSnapshot(p);
+    for (const [k, b] of Object.entries(base)) {
+      const limit = k === VELOCITY ? DEVELOPMENT.monthlyVelocityCap * months + 0.05 : DEVELOPMENT.monthlyCap * months;
+      if (now[k] !== undefined && Math.abs(now[k]! - b) > limit) errors.push(`성장 월 상한 초과: 선수 ${p.id} ${k} ${b} → ${now[k]}`);
+    }
+  }
   return errors;
 }
