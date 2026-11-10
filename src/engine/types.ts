@@ -205,6 +205,8 @@ export interface PlayerTruth {
   health?: HealthState;
   /** 집중 훈련 계획(4b-2, D-128). clubId가 소속 구단과 다르면 효과 없음 */
   training?: TrainingPlan;
+  /** 연장 계약(D-136): 새 연봉과 적용 시즌. 그 시즌 시작(2/1)에 연봉으로 옮긴다 */
+  nextContract?: { salary: number; startSeason: number };
 }
 
 export type TrainingIntensity = 'low' | 'normal' | 'high';

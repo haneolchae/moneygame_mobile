@@ -696,7 +696,7 @@ export interface TrainingTableView {
 
 // ───────── 선수 상세 행동 영역 (3d, 18a·D-118) ─────────
 
-export type PlayerActionKey = 'faOffer' | 'faDelegate' | 'salaryOffer' | 'salaryDelegate' | 'foreignOffer' | 'release' | 'persuade' | 'rest' | 'medicalCheck' | 'train' | 'trainDelegate' | 'trainStop' | 'tradeInquiry';
+export type PlayerActionKey = 'faOffer' | 'faDelegate' | 'salaryOffer' | 'salaryDelegate' | 'foreignOffer' | 'release' | 'persuade' | 'rest' | 'medicalCheck' | 'train' | 'trainDelegate' | 'trainStop' | 'tradeInquiry' | 'extensionOffer' | 'domesticOffer';
 
 /** 선수 상세에 보여줄 행동 하나. 가능 여부·비용·불가 사유는 게임 로직이 실행 명령과 같은 검증으로 계산한다. */
 export interface PlayerActionView {
@@ -729,6 +729,10 @@ export interface PlayerActionsView {
   foreign: ForeignPlayerView | null;
   release: { salaryWon: number; contractYears: number; remainingWon: number; rosterCount: number; rosterMax: number; note: string | null } | null;
   persuade: { reason: string; deadline: string } | null;
+  /** 5b: 연장 계약 요구(계약 마지막 해 우리 국내 선수, 시즌 중) */
+  extension: { demand: ContractOfferView } | null;
+  /** 5b: 국내 무소속 선수 요구 연봉 */
+  domestic: { demandWon: number } | null;
   /** 우리 선수만: 집중 훈련 계획·담당 코치·예상 효과(4b-2) */
   training: TrainingView | null;
   ops: { mode: DelegationModeView; faMaxTotal: number; faMaxYears: number };
@@ -884,6 +888,8 @@ export interface RequestMap {
   'market.faOffer': { payload: { playerId: number; years: number; salaryWon: number; bonusWon: number }; result: OfferResultView };
   'market.salaryOffer': { payload: { playerId: number; offerWon: number }; result: OfferResultView };
   'market.salaryAuto': { payload: void; result: OfferResultView };
+  'market.extensionOffer': { payload: { playerId: number; years: number; salaryWon: number; bonusWon: number }; result: OfferResultView };
+  'market.domesticOffer': { payload: { playerId: number; salaryWon: number }; result: OfferResultView };
   'market.foreignOffer': { payload: { playerId: number; salaryUsd: number }; result: OfferResultView };
   'market.release': { payload: { playerId: number }; result: OfferResultView };
   'org.view': { payload: void; result: OrganizationView };
@@ -949,6 +955,8 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'market.salaryOffer',
   'market.salaryAuto',
   'market.foreignOffer',
+  'market.extensionOffer',
+  'market.domesticOffer',
   'market.release',
   'org.view',
   'org.hire',

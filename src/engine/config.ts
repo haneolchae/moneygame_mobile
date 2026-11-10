@@ -226,6 +226,29 @@ export const HEALTH = {
   foreignLongDays: 42,
 } as const;
 
+/** D-135 모기업 지원금 재협상(방향 사용자 확정, 계수 초기안): 보유 현금 / 시작 현금 R로 다음 시즌 지원 배수 */
+export const SUPPORT_RENEGOTIATION = {
+  upper: 1.2,
+  cutSlope: 0.6,
+  minFactor: 0.4,
+  lower: 0.8,
+  raiseSlope: 0.5,
+  maxFactor: 1.2,
+} as const;
+
+/** 5b 계약 확장(D-136 초기안) */
+export const CONTRACT = {
+  /** D-130 세션: 같은 주 같은 선수 직접 제안 상한 */
+  offersPerSession: 3,
+  extensionMaxYears: 5,
+  /** 연장 요구 = FA 요구 × 배수(FA 자격까지 1년 이내 / 그 밖) */
+  extensionNearFa: 0.95,
+  extensionFar: 0.85,
+  extensionMaxAge: 36,
+  /** 국내 무소속 선수 요구 연봉 = max(최저, 시장 평가 연봉 × 배수) */
+  domesticDemandShare: 0.8,
+} as const;
+
 /** 5a 트레이드(D-130 세션 과금 사용자 확정, D-131 초기안) */
 export const TRADE = {
   /** 세션: 상대 구단과 그 주 첫 협상 때 행동력 1, 같은 주 제안 상한 */

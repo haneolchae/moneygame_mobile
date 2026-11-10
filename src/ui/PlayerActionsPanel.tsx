@@ -30,6 +30,8 @@ export function PlayerActionsPanel({ playerId, playerName, nav, beforeAct, onCha
   const [foreignMan, setForeignMan] = useState(0);
   const [releaseChecked, setReleaseChecked] = useState(false);
   const [restDays, setRestDays] = useState(1);
+  const [ext, setExt] = useState({ years: 3, salaryEok: 1, bonusEok: 0 });
+  const [domEok, setDomEok] = useState(0.3);
   const [train, setTrain] = useState<{ primary: string; secondary: string; intensity: TrainingIntensityView }>({ primary: '', secondary: '', intensity: 'normal' });
 
   const load = useCallback(async () => {
@@ -37,6 +39,8 @@ export function PlayerActionsPanel({ playerId, playerName, nav, beforeAct, onCha
     setView(v);
     if (v.salary) setSalaryEok(toEok(v.salary.demandWon));
     if (v.foreign) setForeignMan(Math.round(v.foreign.demandUsd / 10_000));
+    if (v.extension) setExt({ years: v.extension.demand.years, salaryEok: toEok(v.extension.demand.salaryWon), bonusEok: toEok(v.extension.demand.bonusWon) });
+    if (v.domestic) setDomEok(toEok(v.domestic.demandWon));
     if (v.training) {
       const pl = v.training.plan;
       setTrain({ primary: pl?.primary ?? v.training.keys[0]?.key ?? '', secondary: pl?.secondary ?? '', intensity: pl?.intensity ?? 'normal' });
@@ -163,7 +167,7 @@ export function PlayerActionsPanel({ playerId, playerName, nav, beforeAct, onCha
                 제시액(억) <input type="number" step="0.1" min="0.3" value={salaryEok} onChange={(e) => setSalaryEok(Number(e.target.value))} style={{ width: 90 }} />
               </label>
               <button className="primary" disabled={busy} onClick={() => void run(() => api('market.salaryOffer', { playerId, offerWon: Math.round(salaryEok * EOK) }))}>
-                연봉 제안 보내기 (행동력 1)
+                연봉 제안 보내기 (행동력 {sel.apCost})
               </button>
             </div>
           )}
@@ -185,7 +189,46 @@ export function PlayerActionsPanel({ playerId, playerName, nav, beforeAct, onCha
                 연봉(만 달러) <input type="number" step="1" min="1" value={foreignMan} onChange={(e) => setForeignMan(Number(e.target.value))} style={{ width: 90 }} />
               </label>
               <button className="primary" disabled={busy} onClick={() => void run(() => api('market.foreignOffer', { playerId, salaryUsd: foreignMan * 10_000 }))}>
-                계약 제안 보내기 (행동력 1)
+                계약 제안 보내기 (행동력 {sel.apCost})
+              </button>
+            </div>
+          )}
+          {sel.key === 'extensionOffer' && view.extension && (
+            <div className="offer-form">
+              <strong>{playerName} 연장 계약</strong>
+              <span className="muted small">
+                선수 요구 {view.extension.demand.years}년 · 연봉 {won(view.extension.demand.salaryWon)} · 계약금 {won(view.extension.demand.bonusWon)} (총 {won(view.extension.demand.totalWon)})
+              </span>
+              <label>
+                기간{' '}
+                <select value={ext.years} onChange={(e) => setExt((x) => ({ ...x, years: Number(e.target.value) }))}>
+                  {[1, 2, 3, 4, 5].map((y) => (
+                    <option key={y} value={y}>
+                      {y}년
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                연봉(억) <input type="number" step="0.1" min="0.3" value={ext.salaryEok} onChange={(e) => setExt((x) => ({ ...x, salaryEok: Number(e.target.value) }))} style={{ width: 80 }} />
+              </label>
+              <label>
+                계약금(억) <input type="number" step="0.1" min="0" value={ext.bonusEok} onChange={(e) => setExt((x) => ({ ...x, bonusEok: Number(e.target.value) }))} style={{ width: 80 }} />
+              </label>
+              <button className="primary" disabled={busy} onClick={() => void run(() => api('market.extensionOffer', { playerId, years: ext.years, salaryWon: Math.round(ext.salaryEok * EOK), bonusWon: Math.round(ext.bonusEok * EOK) }))}>
+                연장 제안 보내기 (행동력 {sel.apCost})
+              </button>
+            </div>
+          )}
+          {sel.key === 'domesticOffer' && view.domestic && (
+            <div className="offer-form">
+              <strong>{playerName} 영입 (1년)</strong>
+              <span className="muted small">요구 연봉 {won(view.domestic.demandWon)}</span>
+              <label>
+                연봉(억) <input type="number" step="0.1" min="0.3" value={domEok} onChange={(e) => setDomEok(Number(e.target.value))} style={{ width: 80 }} />
+              </label>
+              <button className="primary" disabled={busy} onClick={() => void run(() => api('market.domesticOffer', { playerId, salaryWon: Math.round(domEok * EOK) }))}>
+                영입 제안 보내기 (행동력 {sel.apCost})
               </button>
             </div>
           )}

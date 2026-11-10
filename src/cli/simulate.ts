@@ -13,7 +13,7 @@ import { CLOSE_RULES } from '../game/seasonClose';
 import { Dispatcher } from '../host/dispatcher';
 import { coreAverage } from '../engine/development';
 import { checkInvariants, injuryStats, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
-import type { AdvanceResult, DashboardView, DelegationPolicyView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView } from '../shared/protocol';
+import type { AdvanceResult, DashboardView, DelegationPolicyView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView, TradeResultView, TradeView } from '../shared/protocol';
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -63,6 +63,8 @@ async function main() {
   console.log(JSON.stringify({ stoveWeeks, stoveMs, date: afterStove.date, cashAfterStove: afterStove.cashWon }));
 
   let firstCoreMean: number | undefined;
+  const tradeStats: Array<{ season: number; attempts: number; done: number }> = [];
+  let extensions = 0;
   let prevCore = new Map<number, number>();
   for (let s = 1; s <= seasons; s++) {
     // 두 번째 시즌부터: 한국시리즈 뒤 스토브리그를 주 단위로 지나 다음 시즌으로 간다(D-085).
@@ -128,6 +130,49 @@ async function main() {
       }
       console.log(JSON.stringify({ training: { direct, delegated } }));
     }
+    // 5a·5b(D-132 ⑤·D-137 ③): 위임 구단주도 시즌마다 트레이드를 시도한다. 상대 선택·제안은 게임 명령으로만 하고
+    // 규칙 판정(기간·자격·선수단·현금·AI 응답)은 게임 쪽이 한다. 역제안은 받아들인다. 계약 마지막 해 선수 1명은 요구 조건으로 연장을 시도한다.
+    {
+      let attempts = 0;
+      let done = 0;
+      for (const clubId of [2 + ((s * 3) % 9), 2 + ((s * 7) % 9)]) {
+        const tv = await call<TradeView>('trade.view', { clubId });
+        if (tv.windowReason) break;
+        const ours = tv.ours.filter((r) => r.tradable && r.item.level === '2군').sort((a, b) => b.item.salaryWon - a.item.salaryWon || a.item.id - b.item.id);
+        const theirs = tv.theirs.filter((r) => r.tradable && r.item.level === '2군').sort((a, b) => a.item.salaryWon - b.item.salaryWon || a.item.id - b.item.id);
+        for (let i = 0; i < Math.min(3, ours.length, theirs.length); i++) {
+          const give = ours[i]!.item;
+          const get = theirs.find((t) => t.item.isPitcher === give.isPitcher)?.item ?? theirs[i]!.item;
+          attempts++;
+          try {
+            const r = await call<TradeResultView>('trade.propose', { clubId, give: [give.id], get: [get.id], cashWon: 0, commandId: `sim-${s}-${clubId}-${i}` });
+            if (r.result === 'counter') {
+              const c = await call<TradeResultView>('trade.acceptCounter', { clubId, commandId: `sim-${s}-${clubId}-${i}-c` });
+              if (c.result === 'accept') done++;
+            } else if (r.result === 'accept') done++;
+            if (r.result !== 'reject') break;
+          } catch {
+            // 규칙상 거부(행동력·선수단·현금 등)
+          }
+        }
+      }
+      tradeStats.push({ season: s, attempts, done });
+      const mineNow = await call<PlayerListItem[]>('game.players', { scope: 'mine', group: 'all', sortKey: 'salary', sortDesc: true });
+      const last = mineNow.find((p) => p.contractYears === 0 && !p.faEligible && p.age <= 33);
+      if (last) {
+        const av = await call<PlayerActionsView>('player.actions', { playerId: last.id });
+        if (av.extension) {
+          try {
+            const d0 = av.extension.demand;
+            const r = await call<{ result: string }>('market.extensionOffer', { playerId: last.id, years: d0.years, salaryWon: d0.salaryWon, bonusWon: d0.bonusWon });
+            if (r.result === 'accept') extensions++;
+          } catch {
+            // 규칙상 거부
+          }
+        }
+      }
+      console.log(JSON.stringify({ trades: { attempts, done }, extensions }));
+    }
     const t0 = performance.now();
     const adv = await advance('untilSeasonEnd');
     const simMs = performance.now() - t0;
@@ -176,8 +221,21 @@ async function main() {
     if (inj.longPerClub < 5 || inj.longPerClub > 20) inv.push(`사전 등록 4b-1 ② 위반: 10일 이상 ${inj.longPerClub}건/구단`);
     if (inj.concurrent < 1 || inj.concurrent > 5) inv.push(`사전 등록 4b-1 ③ 위반: 동시 부상 ${inj.concurrent}명/구단`);
     if (inj.seasonOutPerClub > 3) inv.push(`사전 등록 4b-1 ④ 위반: 시즌 아웃 ${inj.seasonOutPerClub}건/구단`);
+    // 5b 사전 등록 ①②(D-137): 시즌 말 현금 / 시작 현금
+    const repo5 = d.saves.repository();
+    const userStart = repo5.getClubs().find((c) => c.id === 1)!.startCash;
+    const cashRatio = +(dash.cashWon / userStart).toFixed(2);
+    const aiClubs = repo5.getClubs().filter((c) => c.id !== 1 && c.parentSupport > 0);
+    const aiCashRatio = +(aiClubs.reduce((a, c) => a + repo5.cashBalance(c.id) / c.startCash, 0) / aiClubs.length).toFixed(2);
+    if (cashRatio > 2.0) inv.push(`사전 등록 5b ① 위반: 현금 ${cashRatio}배 > 2.0`);
+    if (s === seasons && (cashRatio < 0.8 || cashRatio > 1.8)) inv.push(`사전 등록 5b ① 위반: 마지막 시즌 현금 ${cashRatio}배(0.8~1.8)`);
+    if (s === seasons && aiCashRatio > 2.0) inv.push(`사전 등록 5b ② 위반: AI 구단 현금 평균 ${aiCashRatio}배 > 2.0`);
+    if (!tradeStats.some((t) => t.season === s && t.attempts > 0)) inv.push(`사전 등록 5b ③: 시즌 ${s} 트레이드 시도 없음`);
     rows.push({
       season: dash.season,
+      cashRatio,
+      aiCashRatio,
+      trades: tradeStats.find((t) => t.season === s) ?? null,
       coreMean,
       coreP95,
       injuries: inj,

@@ -8,6 +8,7 @@
 // 해당 기능 단계에서 추가한다. 목록은 NOT_YET_IMPLEMENTED에 있다.
 import type { GameDate } from './calendar';
 import { addDays } from './calendar';
+import { SUPPORT_RENEGOTIATION } from './config';
 import { EOK, growBy, prorate, splitEvenly, type Won } from './money';
 import type { ClubProfile } from './types';
 
@@ -105,6 +106,16 @@ export function broadcastLeagueTotal(seasonYear: number): Won {
     if (sinceFirst > 0 && sinceFirst % FINANCE_BASE.broadcastRenewalEveryYears === 0) total = growBy(total, FINANCE_BASE.broadcastRenewalBpAssumed);
   }
   return total;
+}
+
+/**
+ * 모기업 지원금 재협상 배수(bp, D-135): 보유 현금 / 시작 현금 R이 1.2를 넘으면 줄이고(하한 0.4), 0.8보다 낮으면 늘린다(상한 1.2).
+ */
+export function supportFactorBp(cash: Won, startCash: Won): number {
+  const S = SUPPORT_RENEGOTIATION;
+  const r = startCash > 0 ? cash / startCash : 1;
+  const f = r > S.upper ? Math.max(S.minFactor, 1 - S.cutSlope * (r - S.upper)) : r < S.lower ? Math.min(S.maxFactor, 1 + S.raiseSlope * (S.lower - r)) : 1;
+  return Math.round(f * 10_000);
 }
 
 export function stadiumFee(club: ClubProfile): Won {

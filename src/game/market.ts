@@ -2,7 +2,7 @@
 // 날짜 처리(onDay)는 하루 처리 트랜잭션 안에서 호출되고, 사용자 명령은 각각 하나의 트랜잭션으로 반영된다.
 import { addDays, diffDays, weekday, type GameDate } from '../engine/calendar';
 import { SEASON_2026_STANDINGS } from '../engine/clubs';
-import { FOREIGN, LEAGUE, usdToWon, WORLDGEN, wonToUsd } from '../engine/config';
+import { CONTRACT, FOREIGN, LEAGUE, usdToWon, WORLDGEN, wonToUsd } from '../engine/config';
 import {
   acceptThreshold,
   aiOffer,
@@ -10,6 +10,7 @@ import {
   clubEstimate,
   compensationFor,
   faDemand,
+  publicOverall,
   foreignRenewalDemandUsd,
   offerScore,
   offerTotal,
@@ -29,11 +30,13 @@ import { inGroup, needFirst, neededGroup, pickRemovals } from '../engine/roster'
 import { stoveEvents } from '../engine/stove';
 import type { ClubId, ClubProfile, PlayerTruth } from '../engine/types';
 import { Rng } from '../engine/rng';
-import { assignActiveRoster, generateDomesticFreePool, overall } from '../engine/worldgen';
+import { assignActiveRoster, domesticSalary, FA_SERVICE_YEARS_REQUIRED, generateDomesticFreePool, overall } from '../engine/worldgen';
+import { dealWindowReason } from './trade';
+import { weekIdFor } from './week';
 import { GameError } from '../shared/protocol';
 import type { FaEntry, GameMeta, GameRepository, InboxMessage, OfferRow, SalaryTalk } from './ports';
 
-const won = (n: number) => `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억`;
+const won = (n: number) => (Math.abs(n) >= EOK ? `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억` : `${Math.round(n / 10_000).toLocaleString('ko-KR')}만`);
 const describe = (o: ContractOffer) => `${o.years}년 총액 ${won(offerTotal(o))} (계약금 ${won(o.bonus)}, 연봉 ${won(o.salary)})`;
 const round1m = (n: number) => Math.max(0, Math.round(n / 1_000_000) * 1_000_000);
 
@@ -527,6 +530,11 @@ export class Market {
   onSeasonStart(): void {
     const all = this.players();
     for (const p of all) if (p.clubId !== null && p.contractYears > 0) p.contractYears -= 1;
+    // 연장 계약(D-136): 새 연봉을 새 시즌 시작에 적용
+    for (const p of all) if (p.nextContract) {
+      if (p.clubId !== null && !p.retired) p.salary = p.nextContract.salary;
+      delete p.nextContract;
+    }
     for (const club of this.clubs.values()) assignActiveRoster(all.filter((p) => p.clubId === club.id));
     this.repo.savePlayers(all);
   }
@@ -541,10 +549,34 @@ export class Market {
     }
   }
 
-  /** 직접 행동: 행동력 1 + 운영팀 처리량 50%. 위임 실행: 추가 비용 없음(준비 때 처리량 100% 차감) */
-  private pay(source: ActionSource, wp: number) {
-    if (source.kind === 'direct') this.spendAp(source.weekId, 1);
-    this.chargeWp(source, 'ops', wp);
+  /** D-130·D-136 계약 세션: 이번 주 이 선수와 열린 세션과 남은 제안 수 */
+  contractSession(meta: GameMeta, playerId: number): { open: boolean; offersLeft: number; apCost: number } {
+    const weekId = weekIdFor(meta.currentDate);
+    const s = meta.contractSessions?.[String(playerId)];
+    const open = !!s && s.weekId === weekId;
+    return { open, offersLeft: open ? Math.max(0, CONTRACT.offersPerSession - s!.count) : CONTRACT.offersPerSession, apCost: open ? 0 : 1 };
+  }
+
+  /**
+   * 직접 행동(세션 과금): 이 선수와 그 주 첫 제안 때만 행동력 1 + 운영팀 처리량 50%, 같은 주 3회까지 추가 비용 없음.
+   * 위임 실행: 추가 비용 없음(준비 때 처리량 100% 차감). 호출자의 트랜잭션 안에서 부른다.
+   */
+  private pay(meta: GameMeta, source: ActionSource, playerId: number, wp: number) {
+    if (source.kind !== 'direct') {
+      this.chargeWp(source, 'ops', wp);
+      return;
+    }
+    const s = this.contractSession(meta, playerId);
+    if (s.open && s.offersLeft <= 0) throw new GameError('CONTRACT_LIMIT', `이번 주 이 선수에게 제안 ${CONTRACT.offersPerSession}회를 모두 했습니다. 다음 주에 다시 협상할 수 있습니다(행동력 1).`);
+    if (!s.open) {
+      this.spendAp(source.weekId, 1);
+      this.chargeWp(source, 'ops', wp);
+    }
+    const current = this.repo.getMeta();
+    const weekId = weekIdFor(meta.currentDate);
+    const kept = Object.fromEntries(Object.entries(current.contractSessions ?? {}).filter(([, v]) => v.weekId === weekId));
+    const prev = kept[String(playerId)];
+    this.repo.updateMeta({ contractSessions: { ...kept, [String(playerId)]: { weekId, count: (prev?.count ?? 0) + 1 } } });
   }
 
   /** 구단주가 직접 협상하면 같은 선수의 위임 업무를 멈춰 중복 실행을 막는다(03 문서). 실제 행동이 확정될 때만 호출한다. */
@@ -622,7 +654,7 @@ export class Market {
     const p = this.players().find((x) => x.id === playerId)!;
     const year = this.contractYear(meta);
     return this.repo.transaction(() => {
-      this.pay(source, TASK_WP.faRound);
+      this.pay(meta, source, playerId, TASK_WP.faRound);
       this.takeOver(meta, source, playerId);
       const ctx = this.offerContext(meta, p, e, meta.userClubId);
       const others = this.repo.getOffers({ playerId, status: 'pending', kind: 'fa' }).filter((o) => o.clubId !== meta.userClubId);
@@ -650,7 +682,7 @@ export class Market {
     if (source.kind === 'direct') this.assertNewOffer(meta, playerId, 'salary', record);
     const p = this.players().find((x) => x.id === playerId)!;
     return this.repo.transaction(() => {
-      this.pay(source, TASK_WP.salaryTalk);
+      this.pay(meta, source, playerId, TASK_WP.salaryTalk);
       this.takeOver(meta, source, playerId);
       t.offer = record.salary;
       if (salaryAccepts(meta.seed, p, t.offer, t.demand)) {
@@ -678,7 +710,7 @@ export class Market {
     const record: ContractOffer = { years: 1, salary: usdToWon(salaryUsd), bonus: 0 };
     if (source.kind === 'direct') this.assertNewOffer(meta, playerId, 'foreign', record);
     return this.repo.transaction(() => {
-      this.pay(source, TASK_WP.foreignContract);
+      this.pay(meta, source, playerId, TASK_WP.foreignContract);
       if (salaryUsd >= demand) {
         this.signForeign(meta.userClubId, p, salaryUsd, renewal);
         const message = `${p.name} 선수와 ${Math.round(salaryUsd / 10_000)}만 달러에 계약했습니다.`;
@@ -688,6 +720,91 @@ export class Market {
       }
       const message = `${p.name} 선수 측은 ${Math.round(demand / 10_000)}만 달러를 원합니다.`;
       this.repo.insertOffer({ playerId, clubId: meta.userClubId, kind: 'foreign', date: meta.currentDate, offer: record, status: 'rejected', response: message });
+      return { result: 'reject' as const, message };
+    });
+  }
+
+  // ───────── 5b 연장 계약·국내 무소속 영입 (D-136) ─────────
+
+  /** 연장 계약 대상: 시즌 중, 계약 마지막 해인 우리 국내 선수 */
+  extensionTarget(meta: GameMeta, playerId: number): { p: PlayerTruth; demand: ContractOffer } {
+    const p = this.players().find((x) => x.id === playerId);
+    if (!p || p.clubId !== meta.userClubId || p.retired) throw new GameError('NOT_AVAILABLE', '우리 구단 선수가 아닙니다.');
+    if (p.origin !== 'domestic') throw new GameError('NOT_AVAILABLE', '외국인 선수는 재계약 절차를 따릅니다.');
+    if (meta.mode !== 'season') throw new GameError('NOT_AVAILABLE', '연장 계약은 시즌 중(2월~)에 합니다. 스토브리그에는 FA·연봉 협상을 씁니다.');
+    if (p.contractYears !== 0) throw new GameError('NOT_AVAILABLE', `계약이 ${p.contractYears}년 더 남았습니다. 마지막 해에 연장할 수 있습니다.`);
+    if (p.nextContract) throw new GameError('NOT_AVAILABLE', '이미 연장 계약을 맺었습니다.');
+    const age = meta.season - Number(p.birthDate.slice(0, 4));
+    if (age > CONTRACT.extensionMaxAge) throw new GameError('NOT_AVAILABLE', `${CONTRACT.extensionMaxAge}세가 넘은 선수는 연장 계약 대신 시즌 뒤 재계약합니다.`);
+    const year = meta.season + 1;
+    const base = faDemand(meta.seed, p, year);
+    const near = p.career.faServiceYears + 1 >= FA_SERVICE_YEARS_REQUIRED;
+    const k = near ? CONTRACT.extensionNearFa : CONTRACT.extensionFar;
+    const demand = { years: Math.min(CONTRACT.extensionMaxYears, base.years), salary: Math.max(WORLDGEN.minSalary, round1m(base.salary * k)), bonus: round1m(base.bonus * k) };
+    return { p, demand };
+  }
+
+  extensionOffer(meta: GameMeta, source: ActionSource, playerId: number, offer: ContractOffer) {
+    if (offer.years < 1 || offer.years > CONTRACT.extensionMaxYears || offer.salary < WORLDGEN.minSalary || offer.bonus < 0) throw new GameError('INVALID_OFFER', `기간은 1~${CONTRACT.extensionMaxYears}년, 연봉은 최저 연봉 이상이어야 합니다.`);
+    const { p, demand } = this.extensionTarget(meta, playerId);
+    if (source.kind === 'direct') this.assertNewOffer(meta, playerId, 'extension', offer);
+    if (this.repo.cashBalance(meta.userClubId) < offer.bonus) throw new GameError('CASH_SHORT', `현금이 부족합니다. 계약금 ${won(offer.bonus)}이 필요합니다.`);
+    const year = meta.season + 1;
+    return this.repo.transaction(() => {
+      this.pay(meta, source, playerId, TASK_WP.faRound);
+      const ctx: OfferContext = { seed: meta.seed, player: p, demand, club: this.club(meta.userClubId), isFormerClub: true };
+      const res = respondToOffer(offer, ctx, year, 0, 0);
+      if (res.kind === 'accept') {
+        p.contractYears = offer.years;
+        p.nextContract = { salary: offer.salary, startSeason: meta.season + 1 };
+        this.repo.savePlayers([p]);
+        if (offer.bonus > 0) this.repo.addLedger([{ clubId: meta.userClubId, date: meta.currentDate, category: 'signingBonus', amount: -offer.bonus, memo: `${p.name} 연장 계약금` }]);
+        const message = `${p.name} 선수와 연장 계약에 합의했습니다. ${describe(offer)} (새 연봉은 ${meta.season + 1} 시즌부터)`;
+        this.repo.insertOffer({ playerId, clubId: meta.userClubId, kind: 'extension', date: meta.currentDate, offer, status: 'accepted', response: message });
+        this.repo.addInbox([{ date: meta.currentDate, kind: 'news', sender: 'KBO 소식', title: `${this.club(meta.userClubId).shortName}, ${p.name} 연장 계약`, body: message }]);
+        return { result: 'accept' as const, message };
+      }
+      this.repo.insertOffer({ playerId, clubId: meta.userClubId, kind: 'extension', date: meta.currentDate, offer, status: res.kind === 'counter' ? 'countered' : 'rejected', response: res.kind === 'counter' ? `${res.message} 역제안: ${describe(res.counter)}` : res.message });
+      return res.kind === 'counter' ? { result: 'counter' as const, message: res.message, counter: res.counter } : { result: 'reject' as const, message: res.message };
+    });
+  }
+
+  /** 국내 무소속 선수 영입 대상: 소속 없는 국내 선수(FA 시장 협상 중이 아님), 거래 기간 안 */
+  domesticTarget(meta: GameMeta, playerId: number): { p: PlayerTruth; demand: number } {
+    const p = this.players().find((x) => x.id === playerId);
+    if (!p || p.clubId !== null || p.retired || p.origin !== 'domestic') throw new GameError('NOT_AVAILABLE', '소속 없는 국내 선수가 아닙니다.');
+    const e = this.repo.getFa(this.offseason(meta)).find((x) => x.playerId === playerId);
+    if (e && (e.status === 'applied' || e.status === 'approved')) throw new GameError('NOT_AVAILABLE', 'FA 시장에 나온 선수는 FA 협상으로 영입합니다.');
+    const window = dealWindowReason(meta, '무소속 선수 영입');
+    if (window) throw new GameError('NOT_AVAILABLE', window);
+    if (this.players().filter((x) => x.clubId === meta.userClubId).length >= LEAGUE.rosterMax) throw new GameError('ROSTER_FULL', `선수단이 ${LEAGUE.rosterMax}명입니다. 먼저 자리를 비우세요.`);
+    const age = meta.season - Number(p.birthDate.slice(0, 4));
+    const demand = Math.max(WORLDGEN.minSalary, round1m(domesticSalary(publicOverall(meta.seed, p), age, p.career.proSeasons) * CONTRACT.domesticDemandShare));
+    return { p, demand };
+  }
+
+  domesticOffer(meta: GameMeta, source: ActionSource, playerId: number, salary: number) {
+    if (!(salary >= WORLDGEN.minSalary)) throw new GameError('INVALID_OFFER', '최저 연봉 이상이어야 합니다.');
+    const { p, demand } = this.domesticTarget(meta, playerId);
+    const record: ContractOffer = { years: 1, salary: round1m(salary), bonus: 0 };
+    if (source.kind === 'direct') this.assertNewOffer(meta, playerId, 'domestic', record);
+    return this.repo.transaction(() => {
+      this.pay(meta, source, playerId, TASK_WP.salaryTalk);
+      if (record.salary >= demand) {
+        p.clubId = meta.userClubId;
+        p.level = '2군';
+        p.salary = record.salary;
+        // 스토브리그 계약은 다음 시즌 1년(2/1에 1 → 0), 시즌 중 계약은 올해만
+        p.contractYears = meta.mode === 'stove' ? 1 : 0;
+        delete p.training;
+        this.repo.savePlayers([p]);
+        const message = `${p.name} 선수와 1년 ${won(record.salary)}에 계약했습니다(2군 등록).`;
+        this.repo.insertOffer({ playerId, clubId: meta.userClubId, kind: 'domestic', date: meta.currentDate, offer: record, status: 'accepted', response: message });
+        this.repo.addInbox([{ date: meta.currentDate, kind: 'news', sender: 'KBO 소식', title: `${this.club(meta.userClubId).shortName}, ${p.name} 영입`, body: message }]);
+        return { result: 'accept' as const, message };
+      }
+      const message = `${p.name} 선수 측은 ${won(demand)} 이상을 원합니다.`;
+      this.repo.insertOffer({ playerId, clubId: meta.userClubId, kind: 'domestic', date: meta.currentDate, offer: record, status: 'rejected', response: message });
       return { result: 'reject' as const, message };
     });
   }

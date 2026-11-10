@@ -56,7 +56,7 @@ export function OfferForm({ row, onDone, nav }: { row: FaRowView; onDone: (r: Of
         {row.compensationWon > 0 && <span className="muted small"> + 보상금 {won(row.compensationWon)}</span>}
       </span>
       <button className="primary" disabled={sending} onClick={submit}>
-        제안하기 (행동력 1)
+        제안하기 (이번 주 첫 제안만 행동력 1)
       </button>
     </div>
   );
@@ -334,7 +334,7 @@ export function Market({ nav }: { nav: Nav }) {
                         <>
                           <input type="number" step="0.1" style={{ width: 80 }} value={salaryEdits[t.playerId] ?? toEok(t.offerWon)} onChange={(e) => setSalaryEdits({ ...salaryEdits, [t.playerId]: Number(e.target.value) })} />
                           <button className="small" onClick={() => void run(() => api('market.salaryOffer', { playerId: t.playerId, offerWon: Math.round((salaryEdits[t.playerId] ?? toEok(t.offerWon)) * EOK) }))}>
-                            제시 (행동력 1)
+                            제시 (이번 주 첫 제안만 행동력 1)
                           </button>
                         </>
                       )}
@@ -387,7 +387,7 @@ export function Market({ nav }: { nav: Nav }) {
                           <input type="number" step="1" style={{ width: 70 }} value={usdEdits[p.playerId] ?? Math.round(p.demandUsd / 10_000)} onChange={(e) => setUsdEdits({ ...usdEdits, [p.playerId]: Number(e.target.value) })} />
                           만$
                           <button className="small" onClick={() => void run(() => api('market.foreignOffer', { playerId: p.playerId, salaryUsd: (usdEdits[p.playerId] ?? Math.round(p.demandUsd / 10_000)) * 10_000 }))}>
-                            재계약 (행동력 1)
+                            재계약 (이번 주 첫 제안만 행동력 1)
                           </button>
                         </>
                       )}
@@ -408,7 +408,7 @@ export function Market({ nav }: { nav: Nav }) {
           <section className="panel">
             <div className="panel-head">
               <h2>해외 선수 풀</h2>
-              <span className="meta">스카우트 해외 담당 평가 · 신규 영입은 행동력 1</span>
+              <span className="meta">스카우트 해외 담당 평가 · 신규 영입은 선수별 이번 주 첫 제안만 행동력 1</span>
             </div>
             <div style={{ maxHeight: 420, overflow: 'auto' }}>
               <table className="grid dense">

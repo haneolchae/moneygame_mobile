@@ -75,6 +75,10 @@ export interface GameMeta {
   tradeHistory?: TradeRecord[];
   /** 확정 명령 기록(D-131, 최근 300건). 같은 명령 식별자 재전송은 저장된 결과를 돌려준다 */
   actionLog?: ActionLogEntry[];
+  /** D-135 모기업 지원금 재협상 배수: 시즌 → 구단 ID → bp */
+  supportBp?: Record<string, Record<string, number>>;
+  /** D-136 계약 세션: 선수 ID → 이번 주 세션(주·제안 횟수) */
+  contractSessions?: Record<string, { weekId: string; count: number }>;
 }
 
 /** 트레이드 교환안: cashWon > 0이면 우리가 상대에게, < 0이면 상대가 우리에게 낸다 */
@@ -274,7 +278,7 @@ export interface OfferRow {
   playerId: PlayerId;
   clubId: ClubId;
   /** salary·foreign은 구단 직접·위임 제안 기록(3d, D-118). 같은 날 같은 조건 재제안 차단과 결과 이력에 쓴다. */
-  kind: 'fa' | 'foreign' | 'salary';
+  kind: 'fa' | 'foreign' | 'salary' | 'extension' | 'domestic';
   date: GameDate;
   offer: ContractOffer;
   status: OfferStatus;

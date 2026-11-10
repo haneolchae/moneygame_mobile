@@ -178,6 +178,14 @@ export class Dispatcher {
         const p = payload as RequestMap['market.foreignOffer']['payload'];
         return this.game().foreignOffer(p.playerId, p.salaryUsd) as R;
       }
+      case 'market.extensionOffer': {
+        const p = payload as RequestMap['market.extensionOffer']['payload'];
+        return this.game().extensionOffer(p.playerId, p.years, p.salaryWon, p.bonusWon) as R;
+      }
+      case 'market.domesticOffer': {
+        const p = payload as RequestMap['market.domesticOffer']['payload'];
+        return this.game().domesticOffer(p.playerId, p.salaryWon) as R;
+      }
       case 'market.release':
         return this.game().releasePlayer((payload as RequestMap['market.release']['payload']).playerId) as R;
       case 'org.view':

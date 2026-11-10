@@ -2,7 +2,7 @@ import { createSnapshot, currentRatings, snapshotRanges, SCOUTING, type Scouting
 // 게임 진행: 사용자 명령 검증·처리와 조회. 엔진 규칙을 호출하고 결과를 저장 계층에 반영한다.
 import { addDays, ageOn, diffDays, mondayOf, weekday, type GameDate } from '../engine/calendar';
 import { CLUB_PROFILES, SEASON_2026_STANDINGS } from '../engine/clubs';
-import { FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, TRADE, TRAINING } from '../engine/config';
+import { FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
 import { compensationFor, foreignRenewalDemandUsd, offerTotal, wonToUsd, type ContractOffer } from '../engine/contracts';
 import { CATEGORY_LABEL, FINANCE_BASE, NOT_YET_IMPLEMENTED, scheduledEntries, stadiumFee, type LedgerEntry } from '../engine/finance';
 import { simulateGame, type GameResult } from '../engine/gamesim';
@@ -426,7 +426,7 @@ export class GameService {
           date,
           seasonYear: meta.season,
           inflationBp: meta.inflationBp,
-          club: club.id === meta.userClubId ? this.supportAdjusted(meta, club) : club,
+          club: this.supportAdjusted(meta, club),
           // 스토브리그 중(11월분)은 시즌 종료 시점 계약 기준으로 지급한다.
           salaries: meta.mode === 'stove' ? (meta.salarySnapshot[String(club.id)] ?? []) : players.filter((p) => p.clubId === club.id).map((p) => p.salary),
           releasedSalaries: obligations.filter((o) => o.clubId === club.id).map((o) => o.salary),
@@ -997,6 +997,19 @@ export class GameService {
     return this.market.foreignOffer(meta, this.direct(meta), playerId, salaryUsd);
   }
 
+  /** 5b 연장 계약(D-136) */
+  extensionOffer(playerId: number, years: number, salaryWon: number, bonusWon: number): OfferResultView {
+    const meta = this.meta();
+    const r = this.market.extensionOffer(meta, this.direct(meta), playerId, { years, salary: salaryWon, bonus: bonusWon });
+    return r.result === 'counter' ? { result: 'counter', message: r.message, counter: { years: r.counter.years, salaryWon: r.counter.salary, bonusWon: r.counter.bonus, totalWon: offerTotal(r.counter) } } : { result: r.result, message: r.message };
+  }
+
+  /** 5b 국내 무소속 선수 영입(D-136) */
+  domesticOffer(playerId: number, salaryWon: number): OfferResultView {
+    const meta = this.meta();
+    return this.market.domesticOffer(meta, this.direct(meta), playerId, salaryWon);
+  }
+
   /** 방출. 시즌 중 1군 선수를 내보내면 같은 트랜잭션에서 감독 추천으로 1군 26명을 다시 채운다(2d, D-120). */
   releasePlayer(playerId: number): OfferResultView {
     return this.repo.transaction(() => {
@@ -1157,10 +1170,14 @@ export class GameService {
   /** 우리 구단 모기업 지원금: 경고 삭감(bp)과 긴급 지원 차감을 반영한다(D-043). */
   private supportAdjusted(meta: GameMeta, club: ClubProfile): ClubProfile {
     const key = String(meta.season);
-    const cut = meta.supportCutBp?.[key] ?? 0;
-    const deduction = meta.supportDeduction?.[key] ?? 0;
-    if (!cut && !deduction) return club;
-    return { ...club, parentSupport: Math.max(0, Math.round((club.parentSupport * (10_000 - cut)) / 10_000) - deduction) };
+    // D-135 재협상 배수(모든 구단), 경고 삭감·긴급 지원 차감(우리 구단)
+    const factor = meta.supportBp?.[key]?.[String(club.id)] ?? 10_000;
+    const mine = club.id === meta.userClubId;
+    const cut = mine ? (meta.supportCutBp?.[key] ?? 0) : 0;
+    const deduction = mine ? (meta.supportDeduction?.[key] ?? 0) : 0;
+    if (factor === 10_000 && !cut && !deduction) return club;
+    const base = Math.round((club.parentSupport * factor) / 10_000);
+    return { ...club, parentSupport: Math.max(0, Math.round((base * (10_000 - cut)) / 10_000) - deduction) };
   }
 
   /** 신인 드래프트 보드와 결과 (07 문서) */
@@ -1598,6 +1615,11 @@ export class GameService {
       .map((t) => ({ taskId: t.id, kind: t.kind, status: TASK_STATUS_LABEL[t.status] ?? t.status, note: t.note }));
     const modeLabel = { direct: '직접 운영', approve: '제안 후 승인', auto: '완전 위임' }[mv.ops.mode];
 
+    // D-130·D-136 계약 세션: 이 선수와 그 주 첫 제안만 행동력 1, 같은 주 3회까지
+    const cs = this.market.contractSession(meta, playerId);
+    const sessionReason = cs.offersLeft <= 0 ? `이번 주 이 선수에게 제안 ${CONTRACT.offersPerSession}회를 모두 했습니다(다음 주 다시 행동력 1).` : apReason(cs.apCost);
+    const sessionText = (wp: number) => (cs.open ? `구단주 직접 · 이번 주 협상 중(남은 제안 ${cs.offersLeft}회)` : `구단주 직접 · 이번 주 첫 제안 · 운영팀 처리량 ${directWpCost(wp)}`);
+
     const fa = p.retired ? null : (mv.fa.find((f) => f.playerId === playerId && (f.statusKey === 'applied' || f.statusKey === 'approved')) ?? null);
     if (fa) {
       badges.push(fa.status);
@@ -1605,9 +1627,9 @@ export class GameService {
         key: 'faOffer',
         group: '계약·이적',
         label: fa.originClub.id === meta.userClubId ? 'FA 잔류 협상' : 'FA 영입 제안',
-        reason: reasonOf(() => this.market.faTarget(meta, playerId)) ?? apReason(1) ?? (mv.cashWon < fa.compensationWon ? `현금 부족: 보상금 ${won(fa.compensationWon)} 필요` : null),
-        apCost: 1,
-        executor: `구단주 직접 · 운영팀 처리량 ${directWpCost(TASK_WP.faRound)}`,
+        reason: reasonOf(() => this.market.faTarget(meta, playerId)) ?? sessionReason ?? (mv.cashWon < fa.compensationWon ? `현금 부족: 보상금 ${won(fa.compensationWon)} 필요` : null),
+        apCost: cs.apCost,
+        executor: sessionText(TASK_WP.faRound),
         costNote: `계약금(입력값)${fa.compensationWon > 0 ? ` + 보상금 ${won(fa.compensationWon)}` : ''} 계약 시 즉시 지급, 연봉은 계약 기간 동안 지급`,
       });
       add({
@@ -1628,9 +1650,9 @@ export class GameService {
         key: 'salaryOffer',
         group: '계약·이적',
         label: '연봉 제시',
-        reason: reasonOf(() => this.market.salaryTarget(meta, playerId)) ?? apReason(1),
-        apCost: 1,
-        executor: `구단주 직접 · 운영팀 처리량 ${directWpCost(TASK_WP.salaryTalk)}`,
+        reason: reasonOf(() => this.market.salaryTarget(meta, playerId)) ?? sessionReason,
+        apCost: cs.apCost,
+        executor: sessionText(TASK_WP.salaryTalk),
         costNote: '합의하면 다음 시즌 연봉이 바뀜',
       });
       add({
@@ -1657,11 +1679,39 @@ export class GameService {
         key: 'foreignOffer',
         group: '계약·이적',
         label: own ? '외국인 재계약' : '외국인 영입 제안',
-        reason: ruleReason ?? apReason(1),
-        apCost: 1,
-        executor: `구단주 직접 · 운영팀 처리량 ${directWpCost(TASK_WP.foreignContract)} (외국인 위임은 아직 없음)`,
+        reason: ruleReason ?? sessionReason,
+        apCost: cs.apCost,
+        executor: `${sessionText(TASK_WP.foreignContract)} (외국인 위임은 아직 없음)`,
         costNote: '1년 계약, 연봉은 달러 환산으로 지급',
       });
+    }
+
+    // 5b 연장 계약(D-136): 시즌 중 계약 마지막 해인 우리 국내 선수
+    let extension: PlayerActionsView['extension'] = null;
+    if (own && !p.retired && p.origin === 'domestic' && p.contractYears === 0 && meta.mode === 'season') {
+      let reason: string | null = null;
+      try {
+        const t = this.market.extensionTarget(meta, playerId);
+        extension = { demand: { years: t.demand.years, salaryWon: t.demand.salary, bonusWon: t.demand.bonus, totalWon: offerTotal(t.demand) } };
+        badges.push('계약 마지막 해');
+      } catch (e) {
+        if (!(e instanceof GameError)) throw e;
+        reason = e.message;
+      }
+      add({ key: 'extensionOffer', group: '계약·이적', label: '연장 계약 제안', reason: reason ?? sessionReason, apCost: cs.apCost, executor: sessionText(TASK_WP.faRound), costNote: '계약금은 합의 즉시 지급, 새 연봉은 다음 시즌부터. 합의하면 이번 시즌 뒤 FA·연봉 협상 대상에서 빠짐' });
+    }
+    // 5b 국내 무소속 선수 영입(D-136)
+    let domestic: PlayerActionsView['domestic'] = null;
+    if (!p.retired && p.clubId === null && p.origin === 'domestic' && !fa) {
+      let reason: string | null = null;
+      try {
+        domestic = { demandWon: this.market.domesticTarget(meta, playerId).demand };
+      } catch (e) {
+        if (!(e instanceof GameError)) throw e;
+        reason = e.message;
+      }
+      badges.push('국내 무소속');
+      add({ key: 'domesticOffer', group: '계약·이적', label: '무소속 선수 영입', reason: reason ?? sessionReason, apCost: cs.apCost, executor: sessionText(TASK_WP.salaryTalk), costNote: '1년 계약, 2군 등록. 선수단 40명 이하' });
     }
 
     // 5a 트레이드 문의(D-131): 다른 구단 계약 선수 → 같은 협상 화면·세션을 연다(이동만, 비용은 실제 제안 때)
@@ -1749,7 +1799,7 @@ export class GameService {
     if (tasks.length) badges.push('위임 진행 중');
 
     // 주요 행동: 기한이 있는 설득 → 계약 협상 순. 방출은 추천하지 않는다(18a 4장).
-    const order: PlayerActionView['key'][] = ['persuade', 'faOffer', 'salaryOffer', 'foreignOffer'];
+    const order: PlayerActionView['key'][] = ['persuade', 'faOffer', 'salaryOffer', 'foreignOffer', 'extensionOffer', 'domesticOffer'];
     const primary = order.map((k) => actions.find((a) => a.key === k && a.enabled)).find(Boolean);
     if (primary) primary.primary = true;
 
@@ -1780,6 +1830,8 @@ export class GameService {
       foreign,
       release,
       persuade: pending ? { reason: pending.reason, deadline: pending.deadline } : null,
+      extension,
+      domestic,
       training,
       ops: mv.ops,
       tasks,

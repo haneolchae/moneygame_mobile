@@ -4,7 +4,7 @@ import { addDays, diffDays, type GameDate } from '../engine/calendar';
 import { advanceSchoolYear, asTruth, prospectScore } from '../engine/amateur';
 import { FREE_POOL, UNDRAFTED_FA, WORLDGEN } from '../engine/config';
 import { publicOverall } from '../engine/contracts';
-import type { LedgerEntry } from '../engine/finance';
+import { supportFactorBp, type LedgerEntry } from '../engine/finance';
 import { EOK } from '../engine/money';
 import { addXp } from '../engine/owner';
 import { Rng, type RngState } from '../engine/rng';
@@ -204,6 +204,22 @@ export class SeasonClose {
     if (extra.length) inbox.push({ date, kind: 'news', sender: 'KBO 소식', title: `독립리그·재야 선수 ${extra.length}명 FA 시장 등록`, body: `소속 없는 국내 선수 풀이 줄어 독립리그·재야 선수가 FA 시장에 나왔습니다(투수 ${topUp.pitchers}, 포수 ${topUp.catchers}, 야수 ${topUp.otherHitters}).` });
     const catchers = undrafted.filter((p) => p.position === 'C' && !p.isPitcher).length;
     inbox.push({ date, kind: 'news', sender: 'KBO 소식', title: `${season} 미지명 선수 FA 등록 ${undrafted.length}명`, body: `드래프트에서 지명받지 못한 졸업자 ${undrafted.length}명(투수 ${undrafted.filter((p) => p.isPitcher).length}, 포수 ${catchers}, 야수 ${undrafted.length - catchers - undrafted.filter((p) => p.isPitcher).length})이 소속 없는 FA로 등록됐습니다. 1년 동안 계약하지 못한 무소속 선수 ${unsigned.length}명은 은퇴했습니다.` });
+
+    // 4-2) 모기업 지원금 재협상(D-135): 모기업 지원이 있는 모든 구단, 보유 현금 / 시작 현금으로 다음 시즌 배수
+    const supportNext: Record<string, number> = {};
+    for (const c of this.repo.getClubs()) {
+      if (c.parentSupport <= 0) continue;
+      const cash = this.repo.cashBalance(c.id);
+      const bp = supportFactorBp(cash, c.startCash);
+      supportNext[String(c.id)] = bp;
+      if (c.id === meta.userClubId) {
+        const pct = Math.round(bp / 100);
+        const ratio = (cash / c.startCash).toFixed(2);
+        const why = bp < 10_000 ? `보유 현금이 시작 현금의 ${ratio}배로 넉넉해 지원을 줄입니다. 여유 자금은 선수 영입·시설 투자에 쓰기를 기대합니다.` : bp > 10_000 ? `보유 현금이 시작 현금의 ${ratio}배로 부족해 지원을 늘립니다.` : `보유 현금(시작 현금의 ${ratio}배)이 적정 범위라 지원을 유지합니다.`;
+        inbox.push({ date, kind: 'report', sender: '모기업', title: `${season + 1} 시즌 지원금 재협상: 기준의 ${pct}%`, body: `${why}\n다음 시즌 모기업 지원금은 기준액 ${Math.round(c.parentSupport / EOK)}억의 ${pct}%입니다(경고 삭감·긴급 지원 차감은 별도).` });
+      }
+    }
+    update.supportBp = { ...(meta.supportBp ?? {}), [String(season + 1)]: supportNext };
 
     // 5) 다음 시즌 일정·스토브리그 달력, 11월분 연봉 기준
     const next = season + 1;

@@ -32,6 +32,19 @@ export interface TradeResponse {
   apCharged: number;
 }
 
+/** 거래·영입 기간(D-131·D-136 공통): 스토브리그 K+5 뒤, 시즌 7/31까지, 포스트시즌 제외 [KBO·확인 필요] */
+export function dealWindowReason(meta: GameMeta, what: string): string | null {
+  if (meta.gameOver) return '종료된 게임입니다.';
+  const date = meta.currentDate;
+  if (meta.mode === 'stove') {
+    const open = addDays(meta.kDate, T.stoveOpenDaysAfterK);
+    return diffDays(date, open) < 0 ? `스토브리그 ${what}은(는) ${open.slice(5).replace('-', '/')}(시즌 마감 단계 뒤)부터 할 수 있습니다.` : null;
+  }
+  if (meta.postseason?.season === meta.season) return `포스트시즌 중에는 ${what}을(를) 할 수 없습니다.`;
+  const deadline = `${date.slice(0, 4)}-${T.deadlineMonthDay}`;
+  return diffDays(date, deadline) > 0 ? `${T.deadlineMonthDay.replace('-', '/')} 마감이 지났습니다. 스토브리그에 다시 열립니다.` : null;
+}
+
 export class TradeOps {
   constructor(
     private readonly repo: GameRepository,
@@ -44,15 +57,7 @@ export class TradeOps {
 
   /** 거래할 수 없는 이유(없으면 null) */
   windowReason(meta: GameMeta): string | null {
-    if (meta.gameOver) return '종료된 게임입니다.';
-    const date = meta.currentDate;
-    if (meta.mode === 'stove') {
-      const open = addDays(meta.kDate, T.stoveOpenDaysAfterK);
-      return diffDays(date, open) < 0 ? `스토브리그 트레이드는 ${open.slice(5).replace('-', '/')}(시즌 마감 단계 뒤)부터 할 수 있습니다.` : null;
-    }
-    if (meta.postseason?.season === meta.season) return '포스트시즌 중에는 트레이드할 수 없습니다.';
-    const deadline = `${date.slice(0, 4)}-${T.deadlineMonthDay}`;
-    return diffDays(date, deadline) > 0 ? `트레이드 마감(${T.deadlineMonthDay.replace('-', '/')})이 지났습니다. 스토브리그에 다시 열립니다.` : null;
+    return dealWindowReason(meta, '트레이드');
   }
 
   private hurtDays(p: PlayerTruth, date: GameDate, own: boolean): number {
