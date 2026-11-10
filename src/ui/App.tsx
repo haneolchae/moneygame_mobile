@@ -18,6 +18,8 @@ import { NewGame } from './screens/NewGame';
 import { Organization } from './screens/Organization';
 import { PlayerDetail } from './screens/PlayerDetail';
 import { Players } from './screens/Players';
+import { Club } from './screens/Club';
+import { Compare } from './screens/Compare';
 import { Roster } from './screens/Roster';
 import { Saves } from './screens/Saves';
 import { Schedule } from './screens/Schedule';
@@ -41,7 +43,9 @@ export type Route =
   | { name: 'market' }
   | { name: 'org' }
   | { name: 'team' }
-  | { name: 'hof' }
+  | { name: 'hof'; clubId?: number }
+  | { name: 'club'; clubId: number }
+  | { name: 'compare' }
   | { name: 'draft' }
   | { name: 'saves' };
 
@@ -66,6 +70,7 @@ const MENU: Array<{ route: Route; label: string; icon: string }> = [
   { route: { name: 'draft' }, label: '신인 드래프트', icon: 'star' },
   { route: { name: 'schedule' }, label: '일정', icon: 'calendar' },
   { route: { name: 'standings' }, label: '리그 순위', icon: 'chart' },
+  { route: { name: 'compare' }, label: '선수 비교', icon: 'file' },
   { route: { name: 'team' }, label: '팀 기록', icon: 'ball' },
   { route: { name: 'hof' }, label: '명예의 전당', icon: 'trophy' },
   { route: { name: 'finance' }, label: '재정', icon: 'coins' },
@@ -218,8 +223,8 @@ export function App() {
             <span>{d.phaseLabel}</span>
           </div>
         </div>
-        {MENU.map((m) => (
-          <button key={m.label} className={`nav ${route.name === m.route.name ? 'active' : ''}`} onClick={() => go(m.route)}>
+        {[MENU[0]!, { route: { name: 'club', clubId: d.userClub.id } as Route, label: '구단 정보', icon: 'trophy' }, ...MENU.slice(1)].map((m) => (
+          <button key={m.label} className={`nav ${route.name === m.route.name && (route.name !== 'club' || (m.route.name === 'club' && route.clubId === m.route.clubId)) ? 'active' : ''}`} onClick={() => go(m.route)}>
             <Icon name={m.icon} size={22} />
             {m.label}
             {m.route.name === 'inbox' && d.unreadInbox > 0 && <span className="badge-count">{d.unreadInbox}</span>}
@@ -256,7 +261,9 @@ export function App() {
         {route.name === 'market' && <Market nav={nav} />}
         {route.name === 'org' && <Organization nav={nav} />}
         {route.name === 'team' && <TeamRecords nav={nav} />}
-        {route.name === 'hof' && <HallOfFame nav={nav} />}
+        {route.name === 'hof' && <HallOfFame nav={nav} initialClubId={route.clubId} key={route.clubId ?? 0} />}
+        {route.name === 'club' && <Club nav={nav} clubId={route.clubId} key={route.clubId} />}
+        {route.name === 'compare' && <Compare nav={nav} />}
         {route.name === 'draft' && <Draft nav={nav} />}
         {route.name === 'saves' && <Saves nav={nav} />}
       </main>

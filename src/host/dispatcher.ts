@@ -98,6 +98,12 @@ export class Dispatcher {
       }
       case 'player.scout':
         return this.game().scoutPlayer((payload as RequestMap['player.scout']['payload']).playerId) as R;
+      case 'club.view':
+        return this.game().clubView((payload as RequestMap['club.view']['payload']).clubId) as R;
+      case 'club.note': {
+        const p = payload as RequestMap['club.note']['payload'];
+        return this.game().saveClubNote(p.clubId, p.text, p.rival, this.now()) as R;
+      }
       case 'roster.view':
         return this.game().rosterView() as R;
       case 'roster.move': {

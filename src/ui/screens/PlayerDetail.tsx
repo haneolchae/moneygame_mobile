@@ -1,6 +1,7 @@
 import { PlayerAbilities } from '../PlayerAbilities';
 import { leaveGuard, playerFocus } from '../playerFocus';
 import { PlayerActionsPanel } from '../PlayerActionsPanel';
+import { COMPARE_MAX, compareList, toggleCompare } from '../compareList';
 import { useEffect, useRef, useState } from 'react';
 import type { FieldingLineView, PlayerDetailView, PlayerRecordView, StatValue } from '../../shared/protocol';
 import type { Nav, Route } from '../App';
@@ -94,7 +95,7 @@ function RecordTable({ r }: { r: PlayerRecordView }) {
 }
 
 const TABS = ['개요', '능력치', '시즌 기록', '계약·이력', '메모'] as const;
-const BACK_LABEL: Partial<Record<Route['name'], string>> = { players: '선수단', roster: '선수단 운영', market: '계약·이적', dashboard: '구단 현황', boxScore: '박스스코어', draft: '신인 드래프트', team: '팀 기록' };
+const BACK_LABEL: Partial<Record<Route['name'], string>> = { players: '선수단', roster: '선수단 운영', club: '구단 정보', compare: '선수 비교', market: '계약·이적', dashboard: '구단 현황', boxScore: '박스스코어', draft: '신인 드래프트', team: '팀 기록' };
 export function PlayerDetail({ nav, playerId, list, back }: { nav: Nav; playerId: number; list?: number[]; back?: Route }) {
   const [p, setP] = useState<PlayerDetailView | null>(null);
   const [tab, setTab] = useState(0);
@@ -102,6 +103,8 @@ export function PlayerDetail({ nav, playerId, list, back }: { nav: Nav; playerId
   const [watched, setWatched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [inCompare, setInCompare] = useState(compareList.ids.includes(playerId));
+  useEffect(() => setInCompare(compareList.ids.includes(playerId)), [playerId]);
   const closeButton = useRef<HTMLButtonElement>(null);
   const notify = nav.notify;
   // 화면 이탈 확인에 쓰는 최신 메모 상태(렌더 사이 비동기 저장에서도 같은 값을 본다)
@@ -144,6 +147,9 @@ export function PlayerDetail({ nav, playerId, list, back }: { nav: Nav; playerId
     if (id === null) playerFocus.id = playerId;
     nav.go(id === null ? (back ?? { name: 'players' }) : { name: 'player', playerId: id, list, back });
   }
+  async function leaveTo(r: Route) {
+    if (await save()) nav.go(r);
+  }
   async function reload() {
     const v = await api('game.player', { playerId });
     setP(v);
@@ -175,8 +181,10 @@ export function PlayerDetail({ nav, playerId, list, back }: { nav: Nav; playerId
         catch (e) { setWatched(p.note.watched); setError((e as Error).message); }
         finally { setSaving(false); }
       }} /> 관심 등록</label>
+      <button disabled={saving} onClick={() => { const r = toggleCompare(playerId); setInCompare(compareList.ids.includes(playerId)); if (r === 'full') notify(`비교는 최대 ${COMPARE_MAX}명까지입니다.`, 'error'); }}>{inCompare ? '비교에서 빼기' : '비교에 추가'}</button>
+      {compareList.ids.length > 0 && <button disabled={saving} onClick={() => void leaveTo({ name: 'compare' })}>비교 보기 ({compareList.ids.length})</button>}
     </div>
-    <h1>{p.name} <span className="muted">{p.club?.name ?? 'FA'} · {POSITION_LABELS[p.position] ?? p.position} · {p.level}</span></h1>
+    <h1>{p.name} <span className="muted">{p.club ? <span className="clickable" title="구단 정보" onClick={() => void leaveTo({ name: 'club', clubId: p.club!.id })}>{p.club.name}</span> : 'FA'} · {POSITION_LABELS[p.position] ?? p.position} · {p.level}</span></h1>
     <div className="cards">
       <div className="card"><div className="label">나이·생년월일</div><div className="value">{p.age}세</div>{dateKo(p.birthDate)}</div>
       <div className="card"><div className="label">투타</div><div className="value">{p.throws}투 {p.bats === 'S' ? '양' : p.bats}타</div></div>

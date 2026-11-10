@@ -53,6 +53,8 @@ import {
   type InboxItemView,
   type NextGameView,
   type PlayerActionsView,
+  type ClubView,
+  type ClubNoteView,
   type RosterView,
   type GamePlanView,
   type PlayerActionView,
@@ -1255,6 +1257,121 @@ export class GameService {
 
   reject(approvalId: number): OfferResultView {
     return this.org.reject(this.meta(), approvalId);
+  }
+
+  // ───────── 구단 선택·비교 (3e, D-121·D-122) ─────────
+
+  private clubNote(meta: GameMeta, clubId: number): ClubNoteView {
+    return meta.clubNotes?.[String(clubId)] ?? { text: '', rival: false, updatedAt: null };
+  }
+
+  saveClubNote(clubId: number, text: string, rival: boolean, updatedAt: string): ClubNoteView {
+    if (!this.clubMap.has(clubId)) throw new GameError('INVALID_CLUB', '존재하지 않는 구단입니다.');
+    if (typeof text !== 'string' || text.length > 2000 || typeof rival !== 'boolean') throw new GameError('INVALID_NOTE', '메모는 2,000자 이내의 텍스트여야 합니다.');
+    const meta = this.meta();
+    const note = { text, rival, updatedAt };
+    this.repo.updateMeta({ clubNotes: { ...(meta.clubNotes ?? {}), [String(clubId)]: note } });
+    return note;
+  }
+
+  /**
+   * 전력 비교 묶음(D-122): 1군에서 묶음별 상위 선수를 골라 능력 평균을 낸다.
+   * 우리 선수는 실제 능력, 타 구단 선수는 저장된 스카우트 추정 범위만 쓴다(실제 능력은 읽지 않는다).
+   */
+  private strengthGroups(meta: GameMeta, clubId: number) {
+    const own = clubId === meta.userClubId;
+    const players = this.repo.getPlayers().filter((p) => p.clubId === clubId && p.level === '1군');
+    const HIT = ['contact', 'eye', 'power', 'def_fielding'];
+    const groups: Array<{ key: string; label: string; n: number; pick: (p: PlayerTruth) => boolean; keys: string[] }> = [
+      { key: 'C', label: '포수', n: 1, pick: (p) => !p.isPitcher && p.position === 'C', keys: HIT },
+      { key: 'IF', label: '내야(1·2·3루·유격)', n: 4, pick: (p) => !p.isPitcher && ['1B', '2B', '3B', 'SS'].includes(p.position), keys: HIT },
+      { key: 'OF', label: '외야', n: 3, pick: (p) => !p.isPitcher && ['LF', 'CF', 'RF'].includes(p.position), keys: HIT },
+      { key: 'SP', label: '선발 5명', n: 5, pick: (p) => p.isPitcher && p.position === 'SP', keys: ['stuff', 'control', 'stamina'] },
+      { key: 'RP', label: '불펜 6명', n: 6, pick: (p) => p.isPitcher && p.position !== 'SP', keys: ['stuff', 'control'] },
+    ];
+    const valueOf = (p: PlayerTruth, keys: string[]) => {
+      if (own) {
+        const r = currentRatings(p);
+        const v = keys.reduce((a, k) => a + (r[k] ?? 0), 0) / keys.length;
+        return { low: v, high: v, confidence: 100 };
+      }
+      const snap = this.scouting.get(p.id)!;
+      const ranges = snapshotRanges(snap, meta.currentDate);
+      const low = keys.reduce((a, k) => a + (ranges[k]?.low ?? 1), 0) / keys.length;
+      const high = keys.reduce((a, k) => a + (ranges[k]?.high ?? 100), 0) / keys.length;
+      return { low, high, confidence: snap.confidence };
+    };
+    return groups.map((g) => {
+      const vals = players
+        .filter(g.pick)
+        .map((p) => valueOf(p, g.keys))
+        .sort((a, b) => b.low + b.high - (a.low + a.high))
+        .slice(0, g.n);
+      const avg = (f: (v: { low: number; high: number; confidence: number }) => number) => (vals.length ? Math.round(vals.reduce((a, v) => a + f(v), 0) / vals.length) : 0);
+      return { key: g.key, label: g.label, n: vals.length, low: avg((v) => v.low), high: avg((v) => v.high), confidence: avg((v) => v.confidence) };
+    });
+  }
+
+  /** 구단 화면(3e): 공개 프로필·순위·팀 기록·최근 경기·선수단과 전력 비교. 조회만 하며 상태·난수를 바꾸지 않는다. */
+  clubView(clubId: number): ClubView {
+    const meta = this.meta();
+    const club = this.clubMap.get(clubId);
+    if (!club) throw new GameError('INVALID_CLUB', '존재하지 않는 구단입니다.');
+    const mine = clubId === meta.userClubId;
+    // 기록 기준 시즌: 시즌 모드는 현재 시즌, 스토브리그는 끝난 시즌
+    const season = meta.season;
+    const totals = this.repo.teamTotals(season);
+    const team: ClubView['team'] = [];
+    const t = totals.find((x) => x.clubId === clubId);
+    if (t && t.bat.PA > 0) {
+      const fipC = fipConstant(this.repo.leaguePitchingTotals(season));
+      const rows = totals.map((x) => ({ id: x.clubId, b: battingRates(x.bat), p: pitchingRates(x.pit, fipC), hr: x.bat.HR, rf: x.runsFor, ra: x.runsAgainst }));
+      const rankOf = (get: (r: (typeof rows)[number]) => number | null, higherBetter: boolean) => {
+        const sorted = [...rows].sort((a, b) => ((get(b) ?? 0) - (get(a) ?? 0)) * (higherBetter ? 1 : -1));
+        return sorted.findIndex((r) => r.id === clubId) + 1;
+      };
+      const me = rows.find((r) => r.id === clubId)!;
+      const f3 = (v: number | null) => (v === null ? '—' : v.toFixed(3).replace(/^0/, ''));
+      const f2 = (v: number | null) => (v === null ? '—' : v.toFixed(2));
+      team.push(
+        { key: 'R', label: '득점', value: String(me.rf), rank: rankOf((r) => r.rf, true) },
+        { key: 'RA', label: '실점', value: String(me.ra), rank: rankOf((r) => r.ra, false) },
+        { key: 'AVG', label: '팀 타율', value: f3(me.b.AVG), rank: rankOf((r) => r.b.AVG, true) },
+        { key: 'OPS', label: '팀 OPS', value: f3(me.b.OPS), rank: rankOf((r) => r.b.OPS, true) },
+        { key: 'HR', label: '팀 홈런', value: String(me.hr), rank: rankOf((r) => r.hr, true) },
+        { key: 'ERA', label: '팀 평균자책', value: f2(me.p.ERA), rank: rankOf((r) => r.p.ERA, false) },
+        { key: 'WHIP', label: 'WHIP', value: f2(me.p.WHIP), rank: rankOf((r) => r.p.WHIP, false) },
+      );
+    }
+    const recent = this.repo
+      .getGames(season)
+      .filter((g) => g.home === clubId || g.away === clubId)
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.fixtureId - a.fixtureId))
+      .slice(0, 10)
+      .map((g) => {
+        const home = g.home === clubId;
+        return { date: g.date, opponent: this.ref(home ? g.away : g.home).shortName, home, us: home ? g.homeRuns : g.awayRuns, them: home ? g.awayRuns : g.homeRuns };
+      });
+    const roster = this.players({ scope: clubId, group: 'all', sortKey: 'name' });
+    let comparison: ClubView['comparison'] = null;
+    if (!mine) {
+      const ours = this.strengthGroups(meta, meta.userClubId);
+      const theirs = this.strengthGroups(meta, clubId);
+      comparison = theirs.map((g, i) => ({ key: g.key, label: g.label, n: g.n, ours: { low: ours[i]!.low, high: ours[i]!.high }, theirs: { low: g.low, high: g.high }, theirConfidence: g.confidence }));
+    }
+    return {
+      club: this.ref(clubId),
+      mine,
+      season,
+      profile: { city: club.city, stadium: club.stadium, stadiumCapacity: club.stadiumCapacity, parentIndustry: club.parentIndustry, loyalty: club.loyalty },
+      standing: this.standings().find((s) => s.club.id === clubId) ?? null,
+      team,
+      recent,
+      roster,
+      payrollWon: roster.reduce((a, p) => a + p.salaryWon, 0),
+      comparison,
+      note: this.clubNote(meta, clubId),
+    };
   }
 
   // ───────── 선수단 운영 (2d, D-119·D-120) ─────────

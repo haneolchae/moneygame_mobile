@@ -26,7 +26,11 @@ export function Standings({ nav }: { nav: Nav }) {
           {rows.map((s) => (
             <tr key={s.club.id} className={`${s.club.id === mine ? 'mine' : ''} ${s.rank === 5 ? 'cutline' : ''}`}>
               <td>{s.rank}</td>
-              <td>{s.club.name}</td>
+              <td>
+                <span className="clickable" onClick={() => nav.go({ name: 'club', clubId: s.club.id })}>
+                  {s.club.name}
+                </span>
+              </td>
               <td className="num">{s.games}</td>
               <td className="num">{s.wins}</td>
               <td className="num">{s.losses}</td>

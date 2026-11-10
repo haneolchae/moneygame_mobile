@@ -528,6 +528,42 @@ export interface OfferResultView {
   counter?: ContractOfferView;
 }
 
+// ───────── 구단 선택·비교 (3e, 18b·D-121·D-122) ─────────
+
+export interface ClubNoteView {
+  text: string;
+  rival: boolean;
+  updatedAt: string | null;
+}
+
+/** 전력 비교 한 묶음: 우리 선수는 실제 능력(하한=상한), 타 구단은 스카우트 추정 범위 평균 */
+export interface ClubStrengthView {
+  key: string;
+  label: string;
+  /** 비교에 쓴 선수 수 */
+  n: number;
+  ours: { low: number; high: number };
+  theirs: { low: number; high: number };
+  /** 타 구단 선수 평균 관측 신뢰도(0~100) */
+  theirConfidence: number;
+}
+
+export interface ClubView {
+  club: ClubRef;
+  mine: boolean;
+  season: number;
+  profile: { city: string; stadium: string; stadiumCapacity: number; parentIndustry: string; loyalty: string };
+  standing: StandingView | null;
+  /** 팀 시즌 기록(공개). rank는 10개 구단 중 순위(1=가장 좋음) */
+  team: Array<{ key: string; label: string; value: string; rank: number }>;
+  recent: Array<{ date: string; opponent: string; home: boolean; us: number; them: number }>;
+  /** 선수단(타 구단은 능력 대신 추정 범위만) */
+  roster: PlayerListItem[];
+  payrollWon: number;
+  comparison: ClubStrengthView[] | null;
+  note: ClubNoteView;
+}
+
 // ───────── 선수단 운영: 1·2군·경기 운영 계획·시범경기 (2d, D-119·D-120) ─────────
 
 export interface GamePlanView {
@@ -732,6 +768,8 @@ export interface RequestMap {
   'player.note': { payload: { playerId: number; text: string; watched: boolean }; result: PlayerNoteView };
   'player.scout': { payload: { playerId: number }; result: PlayerDetailView };
   'player.actions': { payload: { playerId: number }; result: PlayerActionsView };
+  'club.view': { payload: { clubId: number }; result: ClubView };
+  'club.note': { payload: { clubId: number; text: string; rival: boolean }; result: ClubNoteView };
   'roster.view': { payload: void; result: RosterView };
   'roster.move': { payload: { promote: number[]; demote: number[] }; result: { message: string; view: RosterView } };
   'roster.setPlan': { payload: { mode: 'auto' | 'manual'; plan?: GamePlanView }; result: { message: string; view: RosterView } };
@@ -785,6 +823,8 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'player.note',
   'player.scout',
   'player.actions',
+  'club.view',
+  'club.note',
   'roster.view',
   'roster.move',
   'roster.setPlan',

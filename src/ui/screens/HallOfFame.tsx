@@ -15,10 +15,10 @@ function MineBadge() {
   return <span className="badge star">구단주 달성</span>;
 }
 
-export function HallOfFame({ nav }: { nav: Nav }) {
+export function HallOfFame({ nav, initialClubId }: { nav: Nav; initialClubId?: number }) {
   const userClub = nav.dashboard!.userClub.id;
   const [clubs, setClubs] = useState<ClubOption[]>([]);
-  const [clubId, setClubId] = useState(userClub);
+  const [clubId, setClubId] = useState(initialClubId ?? userClub);
   const [tab, setTab] = useState<Tab>('timeline');
   const [v, setV] = useState<TeamRecordsView | null>(null);
 

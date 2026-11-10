@@ -65,6 +65,8 @@ export interface GameMeta {
   rosterMoves?: RosterMove[];
   /** 이번 시즌 시범경기 점수·우리 선수 기록(정규 기록과 별도, D-120) */
   exhibition?: ExhibitionState;
+  /** 구단 메모·라이벌 표시(3e, D-122): 구단 ID → 메모 */
+  clubNotes?: Record<string, { text: string; rival: boolean; updatedAt: string | null }>;
 }
 
 export interface UserPlanState {
