@@ -23,3 +23,6 @@ steam_appid.txt
 
 # Diamond Office UI 에셋 원본(참고용, D-140). 런타임 에셋은 src/ui/assets/diamond-office/, 백업은 ../_backup
 diamond_office_ui_assets_v1/
+
+# 작업 중 확인(dev) 리포트는 매번 덮어쓰는 임시 파일(D-143)
+verify-reports/latest-dev.md

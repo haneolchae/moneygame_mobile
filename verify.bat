@@ -1,9 +1,11 @@
 @echo off
-rem 프런트 오피스 개발 차수 종료 검증
-rem   verify.bat 2c            전체 검증 (차수 이름 2c)
-rem   verify.bat 2c --quick    빠른 확인 (빌드·Electron 자체 점검·장기 실행 생략)
-rem   verify.bat 2c --seasons 3
-rem 결과: verify-reports\latest.md, verify-reports\날짜_차수.md
+rem 프런트 오피스 개발 검증
+rem   verify.bat 2c                     차수 종료 검증 (차수 이름 2c, Electron 자체 점검 + 장기 실행 2시즌)
+rem   verify.bat 2c --stage dev         작업 중 확인 (타입·경계·바뀐 파일 관련 테스트)
+rem   verify.bat 2c --stage milestone   최종 마일스톤 검증 (장기 실행 10시즌, 모든 기능 차수 완료 후)
+rem   verify.bat 2c --quick             --stage dev와 같음
+rem   verify.bat 2c --seasons 3         장기 실행 시즌 수 지정
+rem 결과: verify-reports\latest.md, verify-reports\날짜_차수_단계.md (dev는 verify-reports\latest-dev.md)
 rem 종료 코드: 0 = 통과(경고 포함), 1 = 실패
 chcp 65001 >nul
 setlocal

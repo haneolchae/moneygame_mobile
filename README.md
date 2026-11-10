@@ -17,7 +17,7 @@ npm run check:docs         # 문서 정합성 검사 (../baseball_management_doc
 
 ## 개발 차수 종료 검증
 
-`verify.bat 2c`(차수 이름)로 타입·경계·테스트·빌드·Electron 자체 점검·10시즌 장기 실행·문서 정합성을 한 번에 검사한다. 결과는 `verify-reports/latest.md`에 남는다. 작업 중 빠른 확인은 `verify.bat 2c --quick`. 기준은 `scripts/verify.mjs`의 BUDGET.
+`verify.bat 2c`(차수 이름)로 차수 종료 검증(타입·경계·테스트·빌드·Electron 자체 점검·장기 실행 2시즌·문서 정합성)을 한다. 작업 중 확인은 `verify.bat 2c --stage dev`, 10시즌 장기 실행은 모든 기능 차수가 끝난 뒤 `verify.bat 9a --stage milestone`으로 한 번 돌린다(D-143). 결과는 `verify-reports/latest.md`에 남는다. 기준은 `scripts/verify.mjs`의 BUDGET·STAGES.
 
 VS Code 확장처럼 `ELECTRON_RUN_AS_NODE`가 설정된 환경에서 `electron .`을 직접 실행하면 Node 모드로 떠서 실패한다. `npm run dev`/`npm start`는 이 변수를 지우고 실행한다.
 
