@@ -244,8 +244,10 @@ async function main() {
     const aiClubs = repo5.getClubs().filter((c) => c.id !== 1 && c.parentSupport > 0);
     const aiCashRatio = +(aiClubs.reduce((a, c) => a + repo5.cashBalance(c.id) / c.startCash, 0) / aiClubs.length).toFixed(2);
     if (cashRatio > 2.0) inv.push(`사전 등록 5b ① 위반: 현금 ${cashRatio}배 > 2.0`);
-    if (s === seasons && (cashRatio < 0.8 || cashRatio > 1.8)) inv.push(`사전 등록 5b ① 위반: 마지막 시즌 현금 ${cashRatio}배(0.8~1.8)`);
-    if (s === seasons && aiCashRatio > 2.0) inv.push(`사전 등록 5b ② 위반: AI 구단 현금 평균 ${aiCashRatio}배 > 2.0`);
+    // 10시즌 측정 기준(D-137 ① 마지막 시즌·②)은 10시즌 이상 실행(최종 마일스톤)에서만 판정한다(D-143·D-146). 그 전에는 '10시즌 기준 보류'.
+    const milestone = seasons >= 10;
+    if (milestone && s === seasons && (cashRatio < 0.8 || cashRatio > 1.8)) inv.push(`사전 등록 5b ① 위반: 마지막 시즌 현금 ${cashRatio}배(0.8~1.8)`);
+    if (milestone && s === seasons && aiCashRatio > 2.0) inv.push(`사전 등록 5b ② 위반: AI 구단 현금 평균 ${aiCashRatio}배 > 2.0`);
     // 6a 사전 등록 ②③(D-142): 리그 평균 점유율 55~85%, 구단당 입장수입 2026 기준 환산 100~200억
     const att = repo5.getMeta().attendance?.[String(dash.season)] ?? {};
     const caps = new Map(repo5.getClubs().map((c) => [String(c.id), c.stadiumCapacity]));
