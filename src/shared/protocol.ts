@@ -627,6 +627,51 @@ export interface RosterView {
   training: TrainingTableView;
 }
 
+// ───────── 5a 트레이드 (09·18b·D-131) ─────────
+
+/** cashWon > 0이면 우리가 상대에게, < 0이면 상대가 우리에게 낸다 */
+export interface TradePackageView {
+  give: number[];
+  get: number[];
+  cashWon: number;
+}
+
+export interface TradePlayerView {
+  /** 우리 선수는 실제 능력, 상대 선수는 스카우트 추정 범위(기존 목록 규칙) */
+  item: PlayerListItem;
+  tradable: boolean;
+  reason: string | null;
+}
+
+export interface TradeView {
+  club: ClubRef;
+  date: string;
+  windowReason: string | null;
+  /** 이번 주 세션: 열려 있으면 추가 행동력 없음 */
+  session: { open: boolean; proposalsLeft: number; apCost: number };
+  counter: TradePackageView | null;
+  apRemaining: number;
+  cashWon: number;
+  limits: { maxPlayers: number; maxCashWon: number; proposalsPerSession: number };
+  ours: TradePlayerView[];
+  theirs: TradePlayerView[];
+  log: Array<{ date: string; kind: string; result: string; message: string; give: string[]; get: string[]; cashWon: number }>;
+  history: Array<{ date: string; sent: string[]; received: string[]; cashWon: number }>;
+}
+
+export interface TradePreviewView {
+  errors: string[];
+  ours: { before: number; after: number; salaryDelta: number };
+  theirs: { before: number; after: number };
+}
+
+export interface TradeResultView {
+  result: 'accept' | 'counter' | 'reject';
+  message: string;
+  counter: TradePackageView | null;
+  apCharged: number;
+  view: TradeView;
+}
 // ───────── 4b-2 집중 훈련 (11·D-128) ─────────
 
 export type TrainingIntensityView = 'low' | 'normal' | 'high';
@@ -651,7 +696,7 @@ export interface TrainingTableView {
 
 // ───────── 선수 상세 행동 영역 (3d, 18a·D-118) ─────────
 
-export type PlayerActionKey = 'faOffer' | 'faDelegate' | 'salaryOffer' | 'salaryDelegate' | 'foreignOffer' | 'release' | 'persuade' | 'rest' | 'medicalCheck' | 'train' | 'trainDelegate' | 'trainStop';
+export type PlayerActionKey = 'faOffer' | 'faDelegate' | 'salaryOffer' | 'salaryDelegate' | 'foreignOffer' | 'release' | 'persuade' | 'rest' | 'medicalCheck' | 'train' | 'trainDelegate' | 'trainStop' | 'tradeInquiry';
 
 /** 선수 상세에 보여줄 행동 하나. 가능 여부·비용·불가 사유는 게임 로직이 실행 명령과 같은 검증으로 계산한다. */
 export interface PlayerActionView {
@@ -671,6 +716,8 @@ export interface PlayerActionView {
 
 export interface PlayerActionsView {
   playerId: number;
+  /** 선수 소속 구단(트레이드 문의 이동용) */
+  clubId: number | null;
   date: string;
   apRemaining: number;
   cashWon: number;
@@ -818,6 +865,10 @@ export interface RequestMap {
   'player.trainStop': { payload: { playerId: number }; result: OfferResultView };
   'club.view': { payload: { clubId: number }; result: ClubView };
   'club.note': { payload: { clubId: number; text: string; rival: boolean }; result: ClubNoteView };
+  'trade.view': { payload: { clubId: number }; result: TradeView };
+  'trade.preview': { payload: { clubId: number } & TradePackageView; result: TradePreviewView };
+  'trade.propose': { payload: { clubId: number; commandId: string } & TradePackageView; result: TradeResultView };
+  'trade.acceptCounter': { payload: { clubId: number; commandId: string }; result: TradeResultView };
   'roster.view': { payload: void; result: RosterView };
   'roster.move': { payload: { promote: number[]; demote: number[] }; result: { message: string; view: RosterView } };
   'roster.setPlan': { payload: { mode: 'auto' | 'manual'; plan?: GamePlanView }; result: { message: string; view: RosterView } };
@@ -878,6 +929,10 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'player.trainStop',
   'club.view',
   'club.note',
+  'trade.view',
+  'trade.preview',
+  'trade.propose',
+  'trade.acceptCounter',
   'roster.view',
   'roster.move',
   'roster.setPlan',

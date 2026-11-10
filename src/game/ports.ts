@@ -69,6 +69,60 @@ export interface GameMeta {
   restOrders?: Record<string, GameDate>;
   /** 구단 메모·라이벌 표시(3e, D-122): 구단 ID → 메모 */
   clubNotes?: Record<string, { text: string; rival: boolean; updatedAt: string | null }>;
+  /** 5a 트레이드 협상(D-131): 상대 구단 ID → 이번 시즌 협상 */
+  tradeTalks?: Record<string, TradeTalk>;
+  /** 성사된 트레이드 */
+  tradeHistory?: TradeRecord[];
+  /** 확정 명령 기록(D-131, 최근 300건). 같은 명령 식별자 재전송은 저장된 결과를 돌려준다 */
+  actionLog?: ActionLogEntry[];
+}
+
+/** 트레이드 교환안: cashWon > 0이면 우리가 상대에게, < 0이면 상대가 우리에게 낸다 */
+export interface TradePackage {
+  give: PlayerId[];
+  get: PlayerId[];
+  cashWon: number;
+}
+
+export interface TradeLogEntry {
+  date: GameDate;
+  weekId: string;
+  kind: 'proposal' | 'counterAccepted';
+  pkg: TradePackage;
+  result: 'accept' | 'counter' | 'reject';
+  message: string;
+}
+
+export interface TradeTalk {
+  clubId: ClubId;
+  season: number;
+  /** 행동력을 낸 주 */
+  weeksPaid: string[];
+  log: TradeLogEntry[];
+  /** 상대 역제안(그 주 안에서만 유효) */
+  counter: { pkg: TradePackage; weekId: string } | null;
+}
+
+export interface TradeRecord {
+  date: GameDate;
+  season: number;
+  clubA: ClubId;
+  clubB: ClubId;
+  /** clubA → clubB 선수, clubB → clubA 선수, clubA가 낸 현금(음수면 받음) */
+  aToB: PlayerId[];
+  bToA: PlayerId[];
+  cashAtoB: number;
+}
+
+export interface ActionLogEntry {
+  commandId: string;
+  command: string;
+  target: string;
+  date: GameDate;
+  ap: number;
+  talkClubId: ClubId | null;
+  result: 'accept' | 'counter' | 'reject' | 'error';
+  message: string;
 }
 
 export interface UserPlanState {

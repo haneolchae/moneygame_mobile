@@ -25,9 +25,12 @@ describe('선수 상세 행동 (3d)', () => {
     const otherContracted = players.find((p) => p.clubId === 3 && p.origin === 'domestic' && !p.career.faEligible)!;
     const foreignPool = players.find((p) => p.clubId === null && p.origin === 'foreign')!;
 
-    // 우리 일반 선수: 육성(집중 훈련·위임, 4b-2), 건강(휴식·검사, 4b-1)과 선수 정리(방출). 타 구단 계약 선수: 계약·정리 행동 없음. 해외 풀: 외국인 영입.
+    // 우리 일반 선수: 육성(집중 훈련·위임, 4b-2), 건강(휴식·검사, 4b-1)과 선수 정리(방출). 해외 풀: 외국인 영입.
     expect(keys(await call(d, 'player.actions', { playerId: ownDomestic.id }))).toEqual(['medicalCheck', 'release', 'rest', 'train', 'trainDelegate']);
-    expect(keys(await call(d, 'player.actions', { playerId: otherContracted.id }))).toEqual([]);
+    // 타 구단 계약 선수: 계약·정리 행동 없음, 트레이드 문의만(5a). 시즌 마감 단계(K+5 전)라 비활성
+    const ov = await call(d, 'player.actions', { playerId: otherContracted.id });
+    expect(keys(ov)).toEqual(['tradeInquiry']);
+    expect(ov.actions[0]!.enabled).toBe(false);
     const fv = await call(d, 'player.actions', { playerId: foreignPool.id });
     expect(keys(fv)).toEqual(['foreignOffer']);
     expect(fv.foreign?.demandUsd).toBeGreaterThan(0);

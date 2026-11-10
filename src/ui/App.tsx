@@ -26,6 +26,7 @@ import { Schedule } from './screens/Schedule';
 import { Standings } from './screens/Standings';
 import { StartScreen } from './screens/StartScreen';
 import { TeamRecords } from './screens/TeamRecords';
+import { Trade } from './screens/Trade';
 
 export type Route =
   | { name: 'start' }
@@ -45,6 +46,8 @@ export type Route =
   | { name: 'team' }
   | { name: 'hof'; clubId?: number }
   | { name: 'club'; clubId: number }
+  /** 5a 트레이드 협상: want = 처음 받을 선수(선수 상세 '트레이드 문의') */
+  | { name: 'trade'; clubId: number; want?: number }
   | { name: 'compare' }
   | { name: 'draft' }
   | { name: 'saves' };
@@ -263,6 +266,7 @@ export function App() {
         {route.name === 'team' && <TeamRecords nav={nav} />}
         {route.name === 'hof' && <HallOfFame nav={nav} initialClubId={route.clubId} key={route.clubId ?? 0} />}
         {route.name === 'club' && <Club nav={nav} clubId={route.clubId} key={route.clubId} />}
+        {route.name === 'trade' && <Trade nav={nav} clubId={route.clubId} want={route.want} key={`${route.clubId}-${route.want ?? 0}`} />}
         {route.name === 'compare' && <Compare nav={nav} />}
         {route.name === 'draft' && <Draft nav={nav} />}
         {route.name === 'saves' && <Saves nav={nav} />}

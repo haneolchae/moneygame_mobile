@@ -124,6 +124,12 @@ export function PlayerActionsPanel({ playerId, playerName, nav, beforeAct, onCha
                     disabled={busy || !a.enabled}
                     aria-expanded={open === a.key}
                     onClick={async () => {
+                      // 트레이드 문의: 같은 협상 화면으로 이동(비용은 실제 제안 때)
+                      if (a.key === 'tradeInquiry' && view.clubId !== null) {
+                        if (!(await beforeAct())) return;
+                        nav.go({ name: 'trade', clubId: view.clubId, want: playerId });
+                        return;
+                      }
                       // 입력 양식을 열기 전에 미저장 메모를 저장한다(계약 양식은 자체 전송).
                       if (open !== a.key && !(await beforeAct())) return;
                       setOpen(open === a.key ? null : a.key);

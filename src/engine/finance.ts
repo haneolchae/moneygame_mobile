@@ -28,7 +28,8 @@ export type LedgerCategory =
   | 'signingBonus'
   | 'faCompensation'
   | 'releasedSalary'
-  | 'staffSeverance';
+  | 'staffSeverance'
+  | 'tradeCash';
 
 export const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   startCash: '기초 현금',
@@ -48,6 +49,7 @@ export const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   signingBonus: '계약금',
   faCompensation: 'FA 보상금',
   releasedSalary: '방출 선수 잔여 연봉',
+  tradeCash: '트레이드 현금',
 };
 
 export const NOT_YET_IMPLEMENTED = [

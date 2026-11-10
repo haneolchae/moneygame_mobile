@@ -152,6 +152,18 @@ export function Club({ nav, clubId }: { nav: Nav; clubId: number }) {
         </section>
       )}
 
+      {!v.mine && (
+        <section className="panel">
+          <h2>트레이드</h2>
+          <div className="toolbar">
+            <button className="primary" onClick={() => nav.go({ name: 'trade', clubId })}>
+              트레이드 협상
+            </button>
+            <span className="muted small">교환안 작성·미리보기는 무료 · 이 구단과 그 주 첫 제안 때 행동력 1, 같은 주 제안 3회까지</span>
+          </div>
+        </section>
+      )}
+
       {v.comparison && (
         <section className="panel">
           <h2>

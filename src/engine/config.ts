@@ -226,6 +226,61 @@ export const HEALTH = {
   foreignLongDays: 42,
 } as const;
 
+/** 5a 트레이드(D-130 세션 과금 사용자 확정, D-131 초기안) */
+export const TRADE = {
+  /** 세션: 상대 구단과 그 주 첫 협상 때 행동력 1, 같은 주 제안 상한 */
+  sessionAp: 1,
+  proposalsPerSession: 3,
+  maxPlayersPerSide: 3,
+  /** ASSUMPTION(D-131): 한 거래 현금 한도 */
+  maxCashWon: 1_000_000_000,
+  /** ASSUMPTION(D-131): 거래 기간 — 스토브리그 K+5부터, 시즌은 7/31까지 [KBO·확인 필요] */
+  stoveOpenDaysAfterK: 5,
+  deadlineMonthDay: '07-31',
+  /** 가치 모델: 보유 기간 상한·연 할인·시장 가치(FA 기준 연봉 × 프리미엄) */
+  maxHorizon: 4,
+  discount: 0.9,
+  worthAge: 29,
+  worthProSeasons: 9,
+  worthPremium: 1.25,
+  /** 공개 나이 곡선(연간 예상 능력 변화): [이 나이 이하, 변화] */
+  ageCurve: [
+    [24, 2],
+    [27, 1],
+    [30, 0],
+    [33, -1],
+    [99, -2],
+  ] as ReadonlyArray<readonly [number, number]>,
+  /** 다른 구단 선수 평가 오차(구단·시즌 고정) — 리그 공통 평가와 평균한다(D-133) */
+  clubEstimateSd: 2,
+  /** 포지션 수요: 40인 안 같은 쪽 인원 기준 */
+  needThin: { pitchers: 18, hitters: 18, catchers: 3 },
+  needThick: { pitchers: 24, hitters: 23, catchers: 5 },
+  needUp: 1.15,
+  needDown: 0.9,
+  /** 경쟁 단계: 순위 이하 상위권, 이상 하위권 */
+  contenderRank: 3,
+  rebuildRank: 8,
+  contenderNow: 1.3,
+  contenderLater: 0.8,
+  rebuildNow: 0.7,
+  rebuildLater: 1.2,
+  rebuildVeteranAge: 31,
+  rebuildVeteran: 0.8,
+  franchiseKeep: 1.5,
+  /** 수락: 받는 가치 ≥ 주는 가치 + |주는 가치| × (margin ± marginSd) + friction */
+  /** D-134(사용자 확정): 12% → 6% */
+  margin: 0.06,
+  marginSd: 0.04,
+  frictionWon: 100_000_000,
+  /** 이 비율 이상이면 현금 역제안 */
+  counterRatio: 0.8,
+  cashStepWon: 10_000_000,
+  /** AI가 현금을 낼 때 남겨 둘 현금 */
+  aiCashReserveWon: 3_000_000_000,
+  actionLogMax: 300,
+} as const;
+
 /** 4b-2 집중 훈련(D-128). 효과·강도·코치 계수는 사용자 확정, 코치 배정·담당 한도·AI 계획 수는 초기안 */
 export const TRAINING = {
   /** 주 목표: 연간 기대 성장 +30%, 정점 뒤 하락 −20%. 보조 목표는 그 절반 */

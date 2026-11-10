@@ -104,6 +104,20 @@ export class Dispatcher {
         const p = payload as RequestMap['club.note']['payload'];
         return this.game().saveClubNote(p.clubId, p.text, p.rival, this.now()) as R;
       }
+      case 'trade.view':
+        return this.game().tradeView((payload as RequestMap['trade.view']['payload']).clubId) as R;
+      case 'trade.preview': {
+        const p = payload as RequestMap['trade.preview']['payload'];
+        return this.game().tradePreview(p.clubId, p) as R;
+      }
+      case 'trade.propose': {
+        const p = payload as RequestMap['trade.propose']['payload'];
+        return this.game().tradePropose(p.clubId, p, p.commandId) as R;
+      }
+      case 'trade.acceptCounter': {
+        const p = payload as RequestMap['trade.acceptCounter']['payload'];
+        return this.game().tradeAcceptCounter(p.clubId, p.commandId) as R;
+      }
       case 'roster.view':
         return this.game().rosterView() as R;
       case 'roster.move': {

@@ -2,7 +2,7 @@ import { createSnapshot, currentRatings, snapshotRanges, SCOUTING, type Scouting
 // 게임 진행: 사용자 명령 검증·처리와 조회. 엔진 규칙을 호출하고 결과를 저장 계층에 반영한다.
 import { addDays, ageOn, diffDays, mondayOf, weekday, type GameDate } from '../engine/calendar';
 import { CLUB_PROFILES, SEASON_2026_STANDINGS } from '../engine/clubs';
-import { FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, TRAINING } from '../engine/config';
+import { FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, TRADE, TRAINING } from '../engine/config';
 import { compensationFor, foreignRenewalDemandUsd, offerTotal, wonToUsd, type ContractOffer } from '../engine/contracts';
 import { CATEGORY_LABEL, FINANCE_BASE, NOT_YET_IMPLEMENTED, scheduledEntries, stadiumFee, type LedgerEntry } from '../engine/finance';
 import { simulateGame, type GameResult } from '../engine/gamesim';
@@ -34,6 +34,7 @@ import { CLOSE_RULES, SeasonClose } from './seasonClose';
 import { exhibitionDates, RosterOps } from './rosterOps';
 import { Growth } from './growth';
 import { TrainingOps } from './training';
+import { TradeOps } from './trade';
 import { HealthOps } from './health';
 import { DEV_LABEL, devSnapshot, VELOCITY } from '../engine/development';
 import { Postseason, POSTSEASON_MAX_INNINGS, SERIES_LABEL } from './postseason';
@@ -77,6 +78,10 @@ import {
   type DraftView,
   type ApprovalView,
   type TeamRecordsView,
+  type TradePackageView,
+  type TradePreviewView,
+  type TradeResultView,
+  type TradeView,
 } from '../shared/protocol';
 import type { CalendarEvent, DayCommit, GameMeta, GameRepository, InboxMessage, StoredGame } from './ports';
 
@@ -245,6 +250,7 @@ export class GameService {
   readonly growth: Growth;
   readonly health: HealthOps;
   readonly training: TrainingOps;
+  readonly trades: TradeOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -299,6 +305,7 @@ export class GameService {
     this.growth = new Growth(repo);
     this.health = new HealthOps(repo, this.rosterOps, (id) => this.org.medicalQuality(id));
     this.training = new TrainingOps(repo, this.org);
+    this.trades = new TradeOps(repo, this.org, this.rosterOps, (id) => this.standings().find((s) => s.club.id === id)?.rank ?? null);
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -1499,6 +1506,67 @@ export class GameService {
     return { result: 'accept', message: this.training.stop(this.meta(), playerId) };
   }
 
+  // ───────── 5a 트레이드 (D-130·D-131) ─────────
+
+  private tradePkg(p: { give?: number[]; get?: number[]; cashWon?: number }): TradePackageView {
+    return { give: Array.isArray(p.give) ? p.give.map(Number) : [], get: Array.isArray(p.get) ? p.get.map(Number) : [], cashWon: Number(p.cashWon ?? 0) };
+  }
+
+  private requireOtherClub(clubId: number): ClubProfile {
+    const meta = this.meta();
+    const club = this.clubMap.get(Number(clubId));
+    if (!club || club.id === meta.userClubId) throw new GameError('NOT_AVAILABLE', '트레이드 상대 구단을 고르세요.');
+    return club;
+  }
+
+  /** 협상 화면: 조회만(비용·상태 변화 없음). 상대 선수는 스카우트 추정 범위로만 */
+  tradeView(clubId: number): TradeView {
+    const club = this.requireOtherClub(clubId);
+    const meta = this.meta();
+    const s = this.trades.session(meta, club.id);
+    const players = new Map(this.repo.getPlayers().map((p) => [p.id, p]));
+    const rows = (scope: 'mine' | number, owner: number) =>
+      this.players({ scope, group: 'all', level: 'all', sortKey: 'name', sortDesc: false }).map((item) => {
+        const reason = this.trades.tradableReason(meta, players.get(item.id) ?? null, owner);
+        return { item, tradable: reason === null, reason };
+      });
+    const name = (id: number) => players.get(id)?.name ?? `#${id}`;
+    const week = this.repo.getApWeek(weekIdFor(meta.currentDate));
+    return {
+      club: this.ref(club.id),
+      date: meta.currentDate,
+      windowReason: this.trades.windowReason(meta),
+      session: { open: s.open, proposalsLeft: s.proposalsLeft, apCost: s.open ? 0 : TRADE.sessionAp },
+      counter: s.counter,
+      apRemaining: week ? week.granted - week.used : 0,
+      cashWon: this.repo.cashBalance(meta.userClubId),
+      limits: { maxPlayers: TRADE.maxPlayersPerSide, maxCashWon: TRADE.maxCashWon, proposalsPerSession: TRADE.proposalsPerSession },
+      ours: rows('mine', meta.userClubId),
+      theirs: rows(club.id, club.id),
+      log: [...s.talk.log].reverse().slice(0, 12).map((l) => ({ date: l.date, kind: l.kind === 'proposal' ? '제안' : '역제안 수락', result: l.result, message: l.message, give: l.pkg.give.map(name), get: l.pkg.get.map(name), cashWon: l.pkg.cashWon })),
+      history: (meta.tradeHistory ?? []).filter((h) => h.clubB === club.id || h.clubA === club.id).reverse().map((h) => ({ date: h.date, sent: (h.clubA === meta.userClubId ? h.aToB : h.bToA).map(name), received: (h.clubA === meta.userClubId ? h.bToA : h.aToB).map(name), cashWon: h.clubA === meta.userClubId ? h.cashAtoB : -h.cashAtoB })),
+    };
+  }
+
+  /** 미리보기: 규칙 검사·인원·연봉 변화(무료, 상대 반응 없음) */
+  tradePreview(clubId: number, pkg: TradePackageView): TradePreviewView {
+    const club = this.requireOtherClub(clubId);
+    const v = this.trades.validate(this.meta(), club.id, this.tradePkg(pkg));
+    return { errors: v.errors, ours: v.preview.ours, theirs: v.preview.theirs };
+  }
+
+  tradePropose(clubId: number, pkg: TradePackageView, commandId: string): TradeResultView {
+    const club = this.requireOtherClub(clubId);
+    const r = this.trades.propose(this.meta(), club.id, this.tradePkg(pkg), commandId);
+    return { ...r, view: this.tradeView(club.id) };
+  }
+
+  tradeAcceptCounter(clubId: number, commandId: string): TradeResultView {
+    const club = this.requireOtherClub(clubId);
+    const r = this.trades.acceptCounter(this.meta(), club.id, commandId);
+    return { ...r, view: this.tradeView(club.id) };
+  }
+
   /**
    * 선수 상세 행동 영역(3d, 18a·D-118). 조회만 하며 상태·난수를 바꾸지 않는다.
    * 가능 여부와 불가 사유는 실행 명령과 같은 대상 검증 함수(Market·Organization·SeasonClose)로 계산한다.
@@ -1596,6 +1664,20 @@ export class GameService {
       });
     }
 
+    // 5a 트레이드 문의(D-131): 다른 구단 계약 선수 → 같은 협상 화면·세션을 연다(이동만, 비용은 실제 제안 때)
+    if (!own && !p.retired && p.clubId !== null) {
+      const s = this.trades.session(meta, p.clubId);
+      add({
+        key: 'tradeInquiry',
+        group: '계약·이적',
+        label: s.open ? '트레이드 협상 보기' : '트레이드 문의',
+        reason: this.trades.windowReason(meta) ?? this.trades.tradableReason(meta, p, p.clubId),
+        apCost: 0,
+        executor: `구단주 직접 · 제안 때 ${s.open ? `이번 주 협상 중(남은 제안 ${s.proposalsLeft}회)` : `세션 행동력 ${TRADE.sessionAp} + 운영팀 처리량 ${directWpCost(TASK_WP.tradeRound)}`}`,
+        costNote: '교환안 작성·미리보기는 무료. 상대 구단과 그 주 첫 제안 때 행동력 1, 같은 주 제안 3회까지',
+      });
+    }
+
     const pending = (meta.retirementPending ?? []).find((x) => x.playerId === playerId) ?? null;
     if (pending) {
       badges.push(`은퇴 고민 (설득 기한 ${pending.deadline.slice(5).replace('-', '/')})`);
@@ -1687,6 +1769,7 @@ export class GameService {
 
     return {
       playerId,
+      clubId: p.clubId,
       date: meta.currentDate,
       apRemaining: mv.apRemaining,
       cashWon: mv.cashWon,
