@@ -154,8 +154,9 @@ export const ROSTER_OBLIGATION = {
  * 1년 동안 계약하지 못한 국내 무소속 선수는 다음 시즌 마감 때 은퇴한다.
  */
 export const UNDRAFTED_FA = {
-  hsMinScore: 38,
-  colMinScore: 40,
+  // D-125: 아마추어 척도와 함께 9 낮춤(38·40 → 29·31)
+  hsMinScore: 29,
+  colMinScore: 31,
 } as const;
 
 /** ASSUMPTION(D-098): 국내 미계약 선수 풀 규모(새 게임 시작 때 1회 생성, 이후 공급은 D-099 미지명 졸업자)와 능력 평균 보정 */

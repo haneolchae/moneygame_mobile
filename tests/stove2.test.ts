@@ -64,9 +64,12 @@ describe('두 번째 스토브리그 (D-084·D-085)', () => {
     expect(free.length).toBeGreaterThan(20);
     expect(free.every((p) => p.contractYears === 0 && p.draft === undefined)).toBe(true);
     const graduates = new Set(repo.getAmateurs('gone').filter((a) => !a.draft).map((a) => a.name));
-    expect(free.every((p) => graduates.has(p.name))).toBe(true);
+    // 무소속 선수는 이번 미지명 졸업자이거나, 풀이 모자라 이번 시즌 보충한 독립리그·재야 선수(D-111)뿐이다(이전 미계약 선수는 은퇴).
+    const grads = free.filter((p) => graduates.has(p.name));
+    const extra = free.filter((p) => !graduates.has(p.name));
+    if (extra.length) expect(repo.getInbox(500).some((m) => m.title === `독립리그·재야 선수 ${extra.length}명 FA 시장 등록`)).toBe(true);
     expect(repo.getPlayers().some((p) => p.retired?.reason === '미계약')).toBe(true);
-    expect(repo.getInbox(500).some((m) => m.title === '2027 미지명 선수 FA 등록 ' + free.length + '명')).toBe(true);
+    expect(repo.getInbox(500).some((m) => m.title === '2027 미지명 선수 FA 등록 ' + grads.length + '명')).toBe(true);
     // 우리 구단 신인 선수 정보에 아마추어 업적·드래프트 정보가 보인다.
     const r0 = rookies.find((p) => p.clubId === 7)!;
     const pv = await call(d, 'game.player', { playerId: r0.id });

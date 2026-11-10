@@ -20,7 +20,7 @@ export const DRAFT = {
   bonusByRound: [2 * EOK, 1.2 * EOK, 0.8 * EOK, 0.5 * EOK, 0.3 * EOK],
   rookieSalary: WORLDGEN.minSalary,
   /** 고교 3학년은 이 점수 이상이면 프로 진출을 신청한다(나머지는 진학 검토) */
-  hsApplyScore: 38,
+  hsApplyScore: 29, // D-125: 아마추어 척도와 함께 38에서 9 낮춤
 } as const;
 
 /** 정규시즌 종료 다음 월요일 */

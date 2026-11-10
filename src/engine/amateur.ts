@@ -61,8 +61,14 @@ export const AMATEUR = {
   hsAceOuts: 150,
   colAceOuts: 210,
   /** 학교급 평균 상대 능력 */
-  hsOpponent: 24,
-  colOpponent: 32,
+  /** ASSUMPTION(D-125): 성숙 수준 levelBase + 9 × 재능. 드래프트 유입 잠재 = 프로 정점 현재 수준이 되도록 48에서 9 낮춤(보정 시드 calib-4a 정적 측정) */
+  levelBase: 39,
+  /** 학교급 평균 상대 능력(D-125: 척도와 함께 9 낮춤) */
+  hsOpponent: 15,
+  colOpponent: 23,
+  /** 요약 성적 출전 비중 기준 능력(D-125: 척도와 함께 9 낮춤) */
+  hsRoleBase: 21,
+  colRoleBase: 29,
   honorShare: 0.1,
   hsCollegeRate: 0.55,
   growthPerYear: 2.6,
@@ -94,7 +100,7 @@ export function makeAmateur(rng: Rng, id: number, level: SchoolLevel, grade: num
   const isPitcher = rng.chance(AMATEUR.pitcherShare);
   const talent = rng.normal(0, 1);
   const remaining = Math.max(0, 24 - age) * AMATEUR.growthPerYear;
-  const cur = (bias = 0) => clamp(48 + 9 * talent + bias + rng.normal(0, 6) - remaining);
+  const cur = (bias = 0) => clamp(AMATEUR.levelBase + 9 * talent + bias + rng.normal(0, 6) - remaining);
   const position = isPitcher ? (rng.chance(0.5) ? 'SP' : 'RP') : rng.pick(POSITIONS);
   // 프로 선수와 같은 능력치 묶음(D-087)을 같은 함수로 만든다. 현재 능력은 cur(나이·재능 반영)에서 나온다.
   const ab = isPitcher ? pitcherAbilities(rng, position === 'SP', cur) : { ...hitterAbilities(rng, position as Position, cur), pitching: null, pitches: undefined };
@@ -104,7 +110,7 @@ export function makeAmateur(rng: Rng, id: number, level: SchoolLevel, grade: num
     : { contact: batting.contact, eye: batting.eye, power: batting.power, speed: batting.speed };
   const hidden = hiddenFor(rng, age, current);
   // 잠재력은 재능에 묶는다(hiddenFor의 기본 여유보다 크다).
-  for (const k of Object.keys(current)) (hidden.potential as Record<string, number>)[k] = clamp(Math.max(current[k]!, 48 + 9 * talent + rng.normal(0, 5) + (k === 'stamina' || k === 'speed' || k === 'groundball' ? current[k]! - 48 : 0)), 10, 99);
+  for (const k of Object.keys(current)) (hidden.potential as Record<string, number>)[k] = clamp(Math.max(current[k]!, AMATEUR.levelBase + 9 * talent + rng.normal(0, 5) + (k === 'stamina' || k === 'speed' || k === 'groundball' ? current[k]! - AMATEUR.levelBase : 0)), 10, 99);
   return {
     id,
     name: makeName(rng, 'domestic'),
@@ -166,7 +172,7 @@ export function prospectScore(a: Amateur): number {
 /** 한 시즌 요약 성적(B안). 출전량은 능력이 높을수록 많다. */
 export function seasonLine(rng: Rng, a: Amateur, year: number): AmateurSeason {
   const hs = a.level === '고교';
-  const role = Math.max(0.15, Math.min(1, 0.35 + (overall(asTruth(a)) - (hs ? 30 : 38)) / 25));
+  const role = Math.max(0.15, Math.min(1, 0.35 + (overall(asTruth(a)) - (hs ? AMATEUR.hsRoleBase : AMATEUR.colRoleBase)) / 25));
   const opponent = hs ? AMATEUR.hsOpponent : AMATEUR.colOpponent;
   const base = { year, level: a.level, school: a.school, grade: a.grade };
   if (a.isPitcher) {

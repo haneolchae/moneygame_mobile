@@ -46,9 +46,10 @@ const CONTRACT_PREFERENCES: readonly ContractPreference[] = ['금액', '기간',
 /** 히든 요소 12종(D-088). current: 잠재 상한을 둘 능력치(현재 값) */
 export function hiddenFor(rng: Rng, age: number, current: Record<string, number>): HiddenAttributes {
   const potential: HiddenAttributes['potential'] = {};
-  const room = Math.max(0, 27 - age) * 1.6;
+  // D-125: 남은 성장 여유는 나이 곡선(ageCurve)과 같은 기울기, 오차는 작은 양수만(정점 연령의 위쪽 치우침 축소)
+  const room = Math.max(0, 27 - age) * 1.1;
   for (const [key, value] of Object.entries(current)) {
-    (potential as Record<string, number>)[key] = clamp(value + Math.max(0, rng.normal(room, 5)), 10, 99);
+    (potential as Record<string, number>)[key] = clamp(value + room + Math.max(0, rng.normal(0, 2)), 10, 99);
   }
   const trait = () => clamp(rng.normal(50, 15), 1, 100);
   return {
