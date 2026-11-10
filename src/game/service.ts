@@ -2,7 +2,8 @@ import { createSnapshot, currentRatings, snapshotRanges, SCOUTING, type Scouting
 // 게임 진행: 사용자 명령 검증·처리와 조회. 엔진 규칙을 호출하고 결과를 저장 계층에 반영한다.
 import { addDays, ageOn, diffDays, mondayOf, weekday, type GameDate } from '../engine/calendar';
 import { CLUB_PROFILES, SEASON_2026_STANDINGS } from '../engine/clubs';
-import { FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
+import { STANCE_LABEL } from '../engine/aiClub';
+import { AI_CLUB, FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
 import { compensationFor, foreignRenewalDemandUsd, offerTotal, wonToUsd, type ContractOffer } from '../engine/contracts';
 import { CATEGORY_LABEL, FINANCE_BASE, NOT_YET_IMPLEMENTED, scheduledEntries, stadiumFee, type LedgerEntry } from '../engine/finance';
 import { simulateGame, type GameResult } from '../engine/gamesim';
@@ -35,6 +36,7 @@ import { exhibitionDates, RosterOps } from './rosterOps';
 import { Growth } from './growth';
 import { TrainingOps } from './training';
 import { TradeOps } from './trade';
+import { AiClubOps } from './aiClubs';
 import { BusinessOps } from './business';
 import { SponsorOps } from './sponsors';
 import { MerchOps } from './merch';
@@ -257,6 +259,7 @@ export class GameService {
   readonly health: HealthOps;
   readonly training: TrainingOps;
   readonly trades: TradeOps;
+  readonly aiClubs: AiClubOps;
   readonly business: BusinessOps;
   readonly sponsors: SponsorOps;
   readonly merch: MerchOps;
@@ -304,7 +307,7 @@ export class GameService {
     this.forms = new FormTracker(repo);
     this.scouting = new Map(repo.getScouting(repo.getMeta().userClubId).map(s => [s.playerId, s]));
     this.clubMap = new Map(repo.getClubs().map((c) => [c.id, c]));
-    this.market = new Market(repo, this.clubMap, (source, team, wp) => this.org.charge(this.meta(), source, team, wp));
+    this.market = new Market(repo, this.clubMap, (source, team, wp) => this.org.charge(this.meta(), source, team, wp), (id) => this.aiClubs.stance(id));
     this.org = new Organization(repo, this.market);
     this.achievements = new Achievements(repo);
     this.postseason = new Postseason(repo);
@@ -318,7 +321,10 @@ export class GameService {
     this.training = new TrainingOps(repo, this.org, (id) => this.business.trainingBoost(id));
     this.sponsors = new SponsorOps(repo, this.clubMap, this.org, this.business);
     this.merch = new MerchOps(repo, this.clubMap, this.org, this.business);
-    this.trades = new TradeOps(repo, this.org, this.rosterOps, (id) => this.standings().find((s) => s.club.id === id)?.rank ?? null);
+    this.trades = new TradeOps(repo, this.org, this.rosterOps, (id) => this.aiClubs.stance(id));
+    // 7a(D-155): AI 구단 운영 상태·긴축·AI 간 트레이드
+    this.aiClubs = new AiClubOps(repo, this.clubMap, this.trades, () => this.stanceRanks());
+    this.business.austere = (id) => this.aiClubs.stance(id) === 'austerity';
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -326,6 +332,7 @@ export class GameService {
       this.org.ensureStaff(meta, [...this.clubMap.keys()]);
       this.org.ensureWeek(meta, weekIdFor(meta.currentDate));
       this.ensureScouting();
+      this.aiClubs.ensure(meta);
       // 2c 저장본: 시작 이전 기록이 없으면 시드로 만든다(D-079).
       if (repo.countHistory() === 0) repo.insertHistory(generateHistory(meta.seed, repo.getPlayers(), NEW_GAME.previousSeason));
       // 2c 이전 저장본: 고교·대학 선수 풀이 없으면 시드로 만든다(D-084).
@@ -386,6 +393,9 @@ export class GameService {
     inbox.push(...market.inbox);
     // 위임 업무 큐(운영팀·경영지원팀): 시장 처리(월요일 AI 제안) 뒤에 같은 도메인 로직으로 실행한다.
     inbox.push(...this.org.onDay(meta, date));
+    // 7a(D-155): 매월 1일 운영 상태 재평가·긴급 지원, 월요일 AI 구단 간 트레이드(경기·급여 계산 전에 소속을 바꾼다)
+    const ai = this.aiClubs.onDay(this.meta(), date);
+    inbox.push(...ai.inbox);
     // 4a 성장·노화 월간 반영(D-123): 시즌 3~10월 1일, 그날 경기 전에 반영한다.
     inbox.push(...this.growth.monthly(meta, date, (players) => this.training.strengths(date, players)));
     // 4b-1 건강(D-126): 복귀·1군 건강 인원 확보·휴식 지시 정리·주간 건강 보고(경기 전)
@@ -432,7 +442,7 @@ export class GameService {
     const obligations = this.repo.getObligations().filter((o) => o.seasons.includes(meta.season));
     // 직원 급여는 월말에만 지급하므로 그날만 합계를 낸다.
     const staffPayroll = addDays(date, 1).slice(8, 10) === '01' ? this.org.payrollByClub() : new Map<ClubId, number>();
-    const ledger: LedgerEntry[] = [...market.ledger];
+    const ledger: LedgerEntry[] = [...market.ledger, ...ai.ledger];
     // 6a(D-141): 정규시즌 홈경기 관중·입장수입·매점·관람료, 시설 공사 지급·완공·유지비·AI 투자
     ledger.push(...this.business.onGames(meta, date, fixtures, results));
     const biz = this.business.onDay(this.meta(), date);
@@ -1200,6 +1210,16 @@ export class GameService {
     return this.org.decideMany(this.meta(), approvalIds, approve);
   }
 
+  /** 운영 상태 기준 순위(D-155 (1)): 정규시즌 팀당 30경기 이상이면 현재 순위, 아니면 직전 시즌 최종 순위 */
+  private stanceRanks(): Map<ClubId, number> {
+    const meta = this.meta();
+    const cur = this.standings();
+    if (cur.length > 0 && cur.every((s) => s.games >= AI_CLUB.minGames)) return new Map(cur.map((s) => [s.club.id, s.rank]));
+    const prior = this.repo.getSeasonStandings(meta.mode === 'stove' ? meta.season : meta.season - 1);
+    const rows = prior.length ? prior : SEASON_2026_STANDINGS;
+    return new Map(rows.map((s) => [s.clubId, s.rank]));
+  }
+
   /** 우리 구단 모기업 지원금: 경고 삭감(bp)과 긴급 지원 차감을 반영한다(D-043). */
   private supportAdjusted(meta: GameMeta, club: ClubProfile): ClubProfile {
     const key = String(meta.season);
@@ -1207,7 +1227,7 @@ export class GameService {
     const factor = meta.supportBp?.[key]?.[String(club.id)] ?? 10_000;
     const mine = club.id === meta.userClubId;
     const cut = mine ? (meta.supportCutBp?.[key] ?? 0) : 0;
-    const deduction = mine ? (meta.supportDeduction?.[key] ?? 0) : 0;
+    const deduction = mine ? (meta.supportDeduction?.[key] ?? 0) : (meta.aiSupportDeduction?.[key]?.[String(club.id)] ?? 0);
     if (factor === 10_000 && !cut && !deduction) return club;
     const base = Math.round((club.parentSupport * factor) / 10_000);
     return { ...club, parentSupport: Math.max(0, Math.round((base * (10_000 - cut)) / 10_000) - deduction) };
@@ -1447,6 +1467,7 @@ export class GameService {
       mine,
       season,
       profile: { city: club.city, stadium: club.stadium, stadiumCapacity: club.stadiumCapacity, parentIndustry: club.parentIndustry, loyalty: club.loyalty },
+      stance: this.stanceView(clubId),
       standing: this.standings().find((s) => s.club.id === clubId) ?? null,
       team,
       recent,
@@ -1455,6 +1476,12 @@ export class GameService {
       comparison,
       note: this.clubNote(meta, clubId),
     };
+  }
+
+  /** 운영 기조(공개 정보, D-155): AI 구단만. 매월 1일 평가 */
+  private stanceView(clubId: ClubId): ClubView['stance'] {
+    const s = this.aiClubs.state(clubId);
+    return s ? { key: s.stance, label: STANCE_LABEL[s.stance], since: s.since } : null;
   }
 
   // ───────── 선수단 운영 (2d, D-119·D-120) ─────────

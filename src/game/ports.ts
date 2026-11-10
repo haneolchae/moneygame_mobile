@@ -1,6 +1,7 @@
 import type { ScoutingSnapshot } from '../engine/scouting';
 // 게임 진행 계층이 저장 계층에 요구하는 기능. SQLite 구현은 persistence에 있다.
 // 이 인터페이스 덕분에 게임 진행 로직은 저장 방식(SQLite 드라이버 등)을 모른다.
+import type { ClubStance } from '../engine/aiClub';
 import type { GameDate } from '../engine/calendar';
 import type { Campaign, ClubFacilities, FanState, TicketPolicy } from '../engine/business';
 import type { SponsorContract, SponsorOffer } from '../engine/sponsors';
@@ -50,6 +51,12 @@ export interface GameMeta {
   supportCutBp?: Record<string, number>;
   supportDeduction?: Record<string, number>;
   rebuild?: { declaredSeason: number; from: number; until: number };
+  /** 7a(D-155) AI 구단 운영 상태: 구단 ID → 상태. 매월 1일에만 바뀐다 */
+  clubStance?: Record<string, StanceState>;
+  /** 운영 상태 변경 기록(최근 400건) */
+  stanceLog?: Array<{ date: GameDate; clubId: ClubId; from: ClubStance; to: ClubStance }>;
+  /** AI 구단 긴급 지원 차감: 시즌 → 구단 ID → 원 */
+  aiSupportDeduction?: Record<string, Record<string, number>>;
   /** 해임·파산 */
   gameOver?: { kind: 'dismissed' | 'bankrupt'; date: GameDate; reason: string };
   cashCrisisSince?: GameDate | null;
@@ -126,9 +133,19 @@ export interface TradeTalk {
   counter: { pkg: TradePackage; weekId: string } | null;
 }
 
+export interface StanceState {
+  stance: ClubStance;
+  /** 이 상태가 시작된 평가일, 마지막 평가일 */
+  since: GameDate;
+  assessed: GameDate;
+}
+
 export interface TradeRecord {
   date: GameDate;
   season: number;
+  /** 7a: 거래 기간 구분과 AI 구단 간 거래 여부(이전 기록에는 없음) */
+  period?: 'stove' | 'season';
+  ai?: boolean;
   clubA: ClubId;
   clubB: ClubId;
   /** clubA → clubB 선수, clubB → clubA 선수, clubA가 낸 현금(음수면 받음) */

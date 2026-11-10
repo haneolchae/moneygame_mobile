@@ -18,6 +18,8 @@ export class BusinessOps {
   private priorCache: { season: number; pct: Map<ClubId, number> } | null = null;
   /** 그날 정규시즌 홈경기 관중(구단별). 굿즈 수요가 같은 날 읽는다(6d) */
   gateToday = new Map<ClubId, number>();
+  /** 7a(D-155): 재정 긴축 구단은 캠페인·시설 투자를 하지 않는다. 서비스가 연결한다 */
+  austere: (clubId: ClubId) => boolean = () => false;
 
   constructor(
     private readonly repo: GameRepository,
@@ -82,7 +84,7 @@ export class BusinessOps {
       const mine = club.id === meta.userClubId;
       let list = (meta.campaigns?.[id] ?? []).filter((c) => diffDays(date, c.end) <= 0);
       // AI 구단: 진행 캠페인이 없고 현금 여유가 있으면 가족 프로모션·온라인 콘텐츠(D-147 (5))
-      if (!mine && list.length === 0 && this.repo.cashBalance(club.id) >= club.startCash * MARKETING.aiCashFloor) {
+      if (!mine && list.length === 0 && !this.austere(club.id) && this.repo.cashBalance(club.id) >= club.startCash * MARKETING.aiCashFloor) {
         list = MARKETING.aiKinds.map((k) => this.newCampaign(meta, k as CampaignKind, date));
         for (const c of list) ledger.push({ clubId: club.id, date, category: 'marketing', amount: -c.costWon, memo: MARKETING.campaigns[c.kind].label });
         counts[id] = (counts[id] ?? 0) + list.length;
@@ -221,7 +223,7 @@ export class BusinessOps {
         ledger.push({ clubId: club.id, date, category: 'facilityUpkeep', amount: -Math.round((FACILITY.upkeepPerLevelWon * levels * inflation) / 12), memo: `시설 유지비(단계 합 ${levels})` });
       }
       // AI 구단: 월요일, 여유 현금이 있으면 가장 낮은 단계 시설부터(D-141 (6))
-      if (!mine && weekday(date) === 1) {
+      if (!mine && weekday(date) === 1 && !this.austere(club.id)) {
         const pick = this.investCandidate(meta, club.id, f, inflation, date);
         if (pick) {
           f.projects.push(pick);

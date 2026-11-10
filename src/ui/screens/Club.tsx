@@ -127,6 +127,13 @@ export function Club({ nav, clubId }: { nav: Nav; clubId: number }) {
           <div className="value">{s ? `${s.rank}위` : '—'}</div>
           {s ? `${s.wins}승 ${s.losses}패${s.ties ? ` ${s.ties}무` : ''}` : ''}
         </div>
+        {v.stance && (
+          <div className="card">
+            <div className="label">운영 기조</div>
+            <div className="value">{v.stance.label}</div>
+            {v.stance.since.slice(0, 7).replace('-', '.')}부터 · 매월 1일 재평가
+          </div>
+        )}
         <div className="card">
           <div className="label">모기업·팬</div>
           <div className="value">{v.profile.parentIndustry}</div>팬 충성도 {v.profile.loyalty}

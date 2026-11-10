@@ -2,6 +2,7 @@
 // 가치 = 남은 보유 기간 동안 (시장 가치(예상 능력) − 그해 연봉)의 할인 합. 예상 능력은 공개 나이 곡선만 쓰고
 // 히든 잠재력·정점 나이를 읽지 않는다. 다른 구단 선수는 결합 추정(구단 추정과 리그 공통 평가의 평균, D-133).
 // 판단은 결정론적이다: 같은 날 같은 조건이면 같은 응답(구단·선수·시즌 고정 오차만 쓰고 난수 흐름을 쓰지 않음).
+import type { ClubStance } from './aiClub';
 import { TRADE as T } from './config';
 import { publicOverall } from './contracts';
 import { stableNormal } from './rng';
@@ -103,7 +104,7 @@ export function needOf(roster: readonly PlayerTruth[]): ValueContext['need'] {
   return { pitcher: f(pitchers, T.needThin.pitchers, T.needThick.pitchers), hitter: f(hitters, T.needThin.hitters, T.needThick.hitters), catcher: f(catchers, T.needThin.catchers, T.needThick.catchers) };
 }
 
-export function phaseOf(rank: number | null): ClubPhase {
-  if (rank === null) return 'neutral';
-  return rank <= T.contenderRank ? 'contender' : rank >= T.rebuildRank ? 'rebuild' : 'neutral';
+/** 운영 상태(D-155) → 가치 평가의 경쟁 단계. 중위권·긴축·미평가는 중립 */
+export function phaseOf(stance: ClubStance | null): ClubPhase {
+  return stance === 'contend' ? 'contender' : stance === 'rebuild' ? 'rebuild' : 'neutral';
 }

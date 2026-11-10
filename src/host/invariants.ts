@@ -1,6 +1,8 @@
 // 규칙 위반 검사. 장기 실행·테스트·자체 점검에서 같은 검사를 쓴다.
 import { seasonKeyDates } from '../engine/schedule';
-import { DEVELOPMENT, FACILITY, LEAGUE, ROSTER_MOVE, SPONSOR, TRAINING } from '../engine/config';
+import { AI_CLUB, DEVELOPMENT, FACILITY, LEAGUE, ROSTER_MOVE, SPONSOR, TRADE, TRAINING } from '../engine/config';
+import { STANCES } from '../engine/aiClub';
+import { weekIdFor } from '../game/week';
 import { FACILITY_KINDS } from '../engine/business';
 import { activePlan, planError } from '../engine/training';
 import { devSnapshot, VELOCITY } from '../engine/development';
@@ -37,10 +39,21 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   errors.push(...checkHealthPlay(repo, season));
   errors.push(...checkTraining(repo));
   errors.push(...checkBusiness(repo));
+  errors.push(...checkAiClubs(repo));
 
   // 경기 기록 일관성: 득점 = 득점 기록 수, 타석 수 = 아웃 + 출루, 이닝 아웃 수
   const games = repo.getGames(season);
   const playerClub = new Map(players.map((p) => [p.id, p.clubId]));
+  // 시즌 중 트레이드로 옮긴 선수는 경기 날짜 기준 소속으로 본다(거래는 그날 경기 전에 반영된다)
+  const moves = new Map<number, Array<{ date: string; from: number }>>();
+  for (const h of repo.getMeta().tradeHistory ?? []) {
+    for (const id of h.aToB) moves.set(id, [...(moves.get(id) ?? []), { date: h.date, from: h.clubA }]);
+    for (const id of h.bToA) moves.set(id, [...(moves.get(id) ?? []), { date: h.date, from: h.clubB }]);
+  }
+  const clubOn = (id: number, date: string) => {
+    const first = moves.get(id)?.find((m) => m.date > date);
+    return first ? first.from : playerClub.get(id);
+  };
   for (const g of games) {
     const { pas, runs, fielding } = repo.getGameEvents(g.fixtureId);
     const homeRuns = runs.filter((r) => r.battingClub === g.home).length;
@@ -52,8 +65,8 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
     const rbi = pas.reduce((a, p) => a + p.rbi, 0);
     if (rbi > runs.length) errors.push(`경기 ${g.fixtureId} 타점(${rbi}) > 득점(${runs.length})`);
     for (const pa of pas) {
-      if (playerClub.get(pa.batterId) !== pa.battingClub) errors.push(`경기 ${g.fixtureId} 타자 소속 불일치 ${pa.batterId}`);
-      if (playerClub.get(pa.pitcherId) === pa.battingClub) errors.push(`경기 ${g.fixtureId} 투수가 같은 팀 타자 상대 ${pa.pitcherId}`);
+      if (clubOn(pa.batterId, g.date) !== pa.battingClub) errors.push(`경기 ${g.fixtureId} 타자 소속 불일치 ${pa.batterId}`);
+      if (clubOn(pa.pitcherId, g.date) === pa.battingClub) errors.push(`경기 ${g.fixtureId} 투수가 같은 팀 타자 상대 ${pa.pitcherId}`);
     }
     // 원정팀 아웃 수: 9이닝 이상 완료 경기는 이닝 수 × 3 (끝내기·말 공격 생략은 홈팀만 해당)
     const awayOuts = pas.filter((p) => p.half === 'T').reduce((a, p) => a + p.outsOnPlay, 0);
@@ -285,6 +298,43 @@ export function checkBusiness(repo: GameRepository): string[] {
 }
 
 /** 선수별 출전 불가 기간(부상 발생 다음 날 ~ 복귀일 전날) */
+/**
+ * 7a AI 구단(D-155·D-156 ①): 모든 AI 구단이 유효한 운영 상태를 가진다, 트레이드로 옮긴 선수는 60일 안에 다시 거래되지 않았다,
+ * AI 구단 간 거래는 리그 주 1건·구단별 기간(스토브리그·시즌)당 2건 이하다.
+ */
+export function checkAiClubs(repo: GameRepository): string[] {
+  const errors: string[] = [];
+  const meta = repo.getMeta();
+  for (const c of repo.getClubs()) {
+    if (c.id === meta.userClubId) continue;
+    const s = meta.clubStance?.[String(c.id)];
+    if (!s || !STANCES.includes(s.stance)) errors.push(`${c.name} 운영 상태 없음`);
+  }
+  const history = meta.tradeHistory ?? [];
+  const last = new Map<number, string>();
+  for (const h of history) {
+    for (const id of [...h.aToB, ...h.bToA]) {
+      const prev = last.get(id);
+      if (prev && diffDays(h.date, prev) < TRADE.retradeLockDays) errors.push(`재트레이드 제한 위반: 선수 ${id} ${prev} → ${h.date}`);
+      last.set(id, h.date);
+    }
+  }
+  const perWeek = new Map<string, number>();
+  const perClub = new Map<string, number>();
+  for (const h of history.filter((x) => x.ai)) {
+    const w = weekIdFor(h.date);
+    perWeek.set(w, (perWeek.get(w) ?? 0) + 1);
+    for (const club of [h.clubA, h.clubB]) {
+      const k = `${club}:${h.season}:${h.period}`;
+      perClub.set(k, (perClub.get(k) ?? 0) + 1);
+    }
+    if (h.clubA === meta.userClubId || h.clubB === meta.userClubId) errors.push(`AI 간 거래에 우리 구단 포함: ${h.date}`);
+  }
+  for (const [w, n] of perWeek) if (n > 1) errors.push(`AI 간 거래 주 ${n}건(${w})`);
+  for (const [k, n] of perClub) if (n > AI_CLUB.trade.maxPerClubPeriod) errors.push(`AI 간 거래 구단별 상한 초과: ${k} ${n}건`);
+  return errors;
+}
+
 function injuryWindows(repo: GameRepository): Map<number, Array<{ date: string; returnDate: string }>> {
   const out = new Map<number, Array<{ date: string; returnDate: string }>>();
   for (const p of repo.getPlayers()) {

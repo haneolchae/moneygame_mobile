@@ -5,6 +5,7 @@ import { addDays, ageOn, diffDays, type GameDate } from '../engine/calendar';
 import { FOREIGN, LEAGUE, ROSTER_COMPOSITION, ROSTER_MOVE, TRADE as T } from '../engine/config';
 import { rosterCounts } from '../engine/roster';
 import { TASK_WP } from '../engine/staff';
+import type { ClubStance } from '../engine/aiClub';
 import { clubMargin, decide, needOf, phaseOf, playerValue, ratingFor, type ValueContext } from '../engine/trade';
 import type { ClubId, PlayerId, PlayerTruth } from '../engine/types';
 import { overall } from '../engine/worldgen';
@@ -50,7 +51,8 @@ export class TradeOps {
     private readonly repo: GameRepository,
     private readonly org: Organization,
     private readonly roster: RosterOps,
-    private readonly rankOf: (clubId: ClubId) => number | null,
+    /** 7a(D-155): AI 구단 운영 상태(매월 1일 평가). 우리 구단·미평가는 null */
+    private readonly stanceOf: (clubId: ClubId) => ClubStance | null,
   ) {}
 
   // ───────── 기간·대상 ─────────
@@ -76,6 +78,9 @@ export class TradeOps {
     if (p.career.faEligible && p.contractYears === 0 && meta.mode === 'stove') return 'FA 자격으로 계약이 끝난 선수입니다.';
     if ((meta.retirementPending ?? []).some((x) => x.playerId === p.id)) return '은퇴를 고민 중인 선수입니다.';
     if (meta.mode === 'stove' && this.repo.getSalaryTalks(meta.season).some((t) => t.playerId === p.id && t.status === 'open')) return '연봉 협상 중인 선수입니다.';
+    // D-155 (5): 연쇄 교환 방지
+    const moved = (meta.tradeHistory ?? []).findLast((h) => h.aToB.includes(p.id) || h.bToA.includes(p.id));
+    if (moved && diffDays(meta.currentDate, moved.date) < T.retradeLockDays) return `최근 트레이드로 옮긴 선수입니다(${addDays(moved.date, T.retradeLockDays).slice(5).replace('-', '/')}부터 다시 거래 가능).`;
     return null;
   }
 
@@ -104,6 +109,12 @@ export class TradeOps {
     if (all.hitters < ROSTER_COMPOSITION.minHitters) out.push(`${label} 야수 ${all.hitters}명 < ${ROSTER_COMPOSITION.minHitters}명`);
     if (all.catchers < ROSTER_COMPOSITION.minCatchers) out.push(`${label} 포수 ${all.catchers}명 < ${ROSTER_COMPOSITION.minCatchers}명`);
     return out;
+  }
+
+  /** 두 구단 교환 뒤 양쪽 선수단 규칙 위반(40명·외국인·포지션 최소 인원). AI 간 거래와 공용 */
+  swapErrors(players: PlayerTruth[], clubA: ClubId, clubB: ClubId, aToB: number[], bToA: number[]): string[] {
+    const next = players.map((p) => (aToB.includes(p.id) ? { ...p, clubId: clubB } : bToA.includes(p.id) ? { ...p, clubId: clubA } : p));
+    return [...this.rosterErrors('A', next.filter((p) => p.clubId === clubA && !p.retired)), ...this.rosterErrors('B', next.filter((p) => p.clubId === clubB && !p.retired))];
   }
 
   /** 교환안 검증(무료). 상대 반응은 계산하지 않는다 */
@@ -142,12 +153,9 @@ export class TradeOps {
 
   // ───────── AI 평가 ─────────
 
-  /** 순위는 날짜마다 한 번만 계산한다(평가 반복 때 순위표 재계산 방지) */
-  private rankCache: { date: string; ranks: Map<ClubId, number | null> } | null = null;
-  private rank(date: string, clubId: ClubId): number | null {
-    if (!this.rankCache || this.rankCache.date !== date) this.rankCache = { date, ranks: new Map() };
-    if (!this.rankCache.ranks.has(clubId)) this.rankCache.ranks.set(clubId, this.rankOf(clubId));
-    return this.rankCache.ranks.get(clubId)!;
+  /** 평가 구단이 보는 현재 능력(자기 선수는 실제, 다른 구단 선수는 결합 추정) */
+  rating(meta: GameMeta, evaluator: ClubId | null, p: PlayerTruth): number {
+    return ratingFor(meta.seed, meta.season, evaluator, p);
   }
 
   private context(meta: GameMeta, evaluator: ClubId | null, roster: PlayerTruth[]): ValueContext {
@@ -162,7 +170,7 @@ export class TradeOps {
       evaluatorClubId: evaluator,
       inSeason: meta.mode === 'season',
       seasonShare: share,
-      phase: evaluator === null ? 'neutral' : phaseOf(this.rank(date, evaluator)),
+      phase: evaluator === null ? 'neutral' : phaseOf(this.stanceOf(evaluator)),
       need: evaluator === null ? { pitcher: 1, hitter: 1, catcher: 1 } : needOf(roster),
     };
   }
@@ -173,8 +181,7 @@ export class TradeOps {
   }
 
   /** 상대 구단 AI 평가. 같은 날 같은 교환안이면 같은 결과 */
-  evaluate(meta: GameMeta, clubId: ClubId, pkg: TradePackage): TradeEvaluation {
-    const players = this.repo.getPlayers();
+  evaluate(meta: GameMeta, clubId: ClubId, pkg: TradePackage, players: PlayerTruth[] = this.repo.getPlayers()): TradeEvaluation {
     const byId = new Map(players.map((p) => [p.id, p]));
     const theirs = players.filter((p) => p.clubId === clubId && !p.retired);
     const ctx = this.context(meta, clubId, theirs);
@@ -185,8 +192,16 @@ export class TradeOps {
     };
     const G = pkg.give.reduce((a, id) => a + val(id, 'get'), 0) + Math.max(0, pkg.cashWon);
     const L = pkg.get.reduce((a, id) => a + val(id, 'give'), 0) + Math.max(0, -pkg.cashWon);
-    const decision = decide(G, L, clubMargin(meta.seed, clubId, meta.season));
+    let decision = decide(G, L, clubMargin(meta.seed, clubId, meta.season));
     const reasons: string[] = [];
+    // D-155 (2): 재정 긴축 구단은 현금을 내거나 연봉 합계가 늘어나는 거래를 받지 않는다
+    if (this.stanceOf(clubId) === 'austerity') {
+      const salary = (ids: number[]) => ids.reduce((a, id) => a + (byId.get(id)?.salary ?? 0), 0);
+      if (pkg.cashWon < 0 || salary(pkg.give) > salary(pkg.get)) {
+        decision = { kind: 'reject', required: decision.required };
+        reasons.push('재정 긴축 중이라 현금을 내거나 연봉 합계가 늘어나는 거래는 받지 않습니다.');
+      }
+    }
     if (ctx.phase === 'contender') reasons.push('우승 경쟁 중이라 당장 쓸 전력을 중요하게 봅니다.');
     if (ctx.phase === 'rebuild') reasons.push('리빌딩 중이라 젊은 선수와 미래 가치를 중요하게 봅니다.');
     const needLabel = [ctx.need.pitcher > 1 ? '투수' : '', ctx.need.hitter > 1 ? '야수' : '', ctx.need.catcher > 1 ? '포수' : ''].filter(Boolean);
@@ -317,46 +332,14 @@ export class TradeOps {
 
   /** 양 구단 일괄 이적. 호출자가 트랜잭션을 연다. 우리 구단 기준 문장을 돌려준다 */
   execute(meta: GameMeta, clubId: ClubId, pkg: TradePackage): string {
-    const players = this.repo.getPlayers();
-    const byId = new Map(players.map((p) => [p.id, p]));
     const userClub = meta.userClubId;
-    const lostOurs = pkg.give.map((id) => byId.get(id)!).filter((p) => p.level === '1군');
-    const lostTheirs = pkg.get.map((id) => byId.get(id)!).filter((p) => p.level === '1군');
-    const moved: PlayerTruth[] = [];
-    for (const id of pkg.give) {
-      const p = byId.get(id)!;
-      p.clubId = clubId;
-      p.level = '2군';
-      delete p.training;
-      moved.push(p);
-    }
-    for (const id of pkg.get) {
-      const p = byId.get(id)!;
-      p.clubId = userClub;
-      p.level = '2군';
-      delete p.training;
-      moved.push(p);
-    }
-    this.repo.savePlayers(moved);
+    const { byId, fills } = this.executeBetween(meta, userClub, clubId, pkg.give, pkg.get, pkg.cashWon, false);
     // 휴식 지시 정리(떠난 우리 선수)
     const orders = { ...(meta.restOrders ?? {}) };
     for (const id of pkg.give) delete orders[String(id)];
     const club = this.repo.getClubs().find((c) => c.id === clubId)!;
-    const userShort = this.repo.getClubs().find((c) => c.id === userClub)!.shortName;
     const date = meta.currentDate;
-    if (pkg.cashWon !== 0) {
-      const memo = `트레이드 현금 ${userShort} → ${club.shortName}`;
-      this.repo.addLedger([
-        { clubId: userClub, date, category: 'tradeCash', amount: -pkg.cashWon, memo },
-        { clubId, date, category: 'tradeCash', amount: pkg.cashWon, memo },
-      ]);
-    }
-    const current = this.repo.getMeta();
-    this.repo.updateMeta({
-      restOrders: orders,
-      tradeHistory: [...(current.tradeHistory ?? []), { date, season: meta.season, clubA: userClub, clubB: clubId, aToB: pkg.give, bToA: pkg.get, cashAtoB: pkg.cashWon }],
-    });
-    const fills = [...this.refill(this.repo.getMeta(), userClub, lostOurs), ...this.refill(this.repo.getMeta(), clubId, lostTheirs)];
+    this.repo.updateMeta({ restOrders: orders });
     const names = (ids: number[]) => ids.map((id) => byId.get(id)!.name).join(', ') || '없음';
     const cash = pkg.cashWon > 0 ? ` · 현금 ${won(pkg.cashWon)} 지급` : pkg.cashWon < 0 ? ` · 현금 ${won(-pkg.cashWon)} 받음` : '';
     const text = `보냄 ${names(pkg.give)} / 받음 ${names(pkg.get)}${cash}`;
@@ -365,6 +348,46 @@ export class TradeOps {
     ];
     this.repo.addInbox(inbox);
     return text;
+  }
+
+  /**
+   * 두 구단 사이 일괄 이적(사용자 거래·AI 간 거래 공용): 소속·현금·거래 기록·1군 보충. 호출자가 트랜잭션을 연다.
+   * cashAtoB > 0이면 A가 B에게 낸다.
+   */
+  executeBetween(meta: GameMeta, clubA: ClubId, clubB: ClubId, aToB: number[], bToA: number[], cashAtoB: number, ai: boolean): { byId: Map<number, PlayerTruth>; fills: string[] } {
+    const players = this.repo.getPlayers();
+    const byId = new Map(players.map((p) => [p.id, p]));
+    const lostA = aToB.map((id) => byId.get(id)!).filter((p) => p.level === '1군');
+    const lostB = bToA.map((id) => byId.get(id)!).filter((p) => p.level === '1군');
+    const moved: PlayerTruth[] = [];
+    const move = (ids: number[], to: ClubId) => {
+      for (const id of ids) {
+        const p = byId.get(id)!;
+        p.clubId = to;
+        p.level = '2군';
+        delete p.training;
+        moved.push(p);
+      }
+    };
+    move(aToB, clubB);
+    move(bToA, clubA);
+    this.repo.savePlayers(moved);
+    const date = meta.currentDate;
+    if (cashAtoB !== 0) {
+      const clubs = this.repo.getClubs();
+      const short = (id: ClubId) => clubs.find((c) => c.id === id)!.shortName;
+      const memo = cashAtoB > 0 ? `트레이드 현금 ${short(clubA)} → ${short(clubB)}` : `트레이드 현금 ${short(clubB)} → ${short(clubA)}`;
+      this.repo.addLedger([
+        { clubId: clubA, date, category: 'tradeCash', amount: -cashAtoB, memo },
+        { clubId: clubB, date, category: 'tradeCash', amount: cashAtoB, memo },
+      ]);
+    }
+    const current = this.repo.getMeta();
+    this.repo.updateMeta({
+      tradeHistory: [...(current.tradeHistory ?? []), { date, season: meta.season, period: meta.mode === 'stove' ? 'stove' : 'season', ...(ai ? { ai: true } : {}), clubA, clubB, aToB, bToA, cashAtoB }],
+    });
+    const fills = [...this.refill(this.repo.getMeta(), clubA, lostA), ...this.refill(this.repo.getMeta(), clubB, lostB)];
+    return { byId, fills };
   }
 
   /** 1군 26명 보충: 빠진 1군 선수와 같은 쪽 건강한 최고 선수(우리 구단은 재등록 제한·포수 최소 인원) */

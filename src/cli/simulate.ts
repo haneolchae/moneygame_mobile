@@ -76,6 +76,7 @@ async function main() {
 
   let firstCoreMean: number | undefined;
   const tradeStats: Array<{ season: number; attempts: number; done: number }> = [];
+  let aiTradesBefore = 0;
   let extensions = 0;
   let prevCore = new Map<number, number>();
   for (let s = 1; s <= seasons; s++) {
@@ -296,6 +297,37 @@ async function main() {
     if (fanAvg !== null && (fanAvg < 40 || fanAvg > 60)) inv.push(`사전 등록 6b ② 위반: 리그 평균 만족도 ${fanAvg}`);
     const facLevels = Object.values(repo5.getMeta().facilities ?? {}).map((f) => Object.values(f.levels).reduce((a, b) => a + b, 0));
     if (!tradeStats.some((t) => t.season === s && t.attempts > 0)) inv.push(`사전 등록 5b ③: 시즌 ${s} 트레이드 시도 없음`);
+    // 7a 사전 등록 ②③(D-156): AI 구단 간 트레이드 시즌(스토브리그 + 시즌)마다 1건 이상, 시즌 종료 시 우승 경쟁·리빌딩 각 1개 이상,
+    // 2시즌 동안 운영 상태가 바뀐 AI 구단 2개 이상. ⑤⑥은 10시즌 이상 실행(최종 마일스톤)에서만 판정한다.
+    const meta7 = repo5.getMeta();
+    const aiTradeTotal = (meta7.tradeHistory ?? []).filter((h) => h.ai).length;
+    const aiTrades = aiTradeTotal - aiTradesBefore;
+    aiTradesBefore = aiTradeTotal;
+    const stanceNow = Object.values(meta7.clubStance ?? {}).map((x) => x.stance);
+    const stanceCount = (k: string) => stanceNow.filter((x) => x === k).length;
+    const stanceChanged = new Set((meta7.stanceLog ?? []).map((x) => x.clubId)).size;
+    if (aiTrades < 1) inv.push(`사전 등록 7a ② 위반: 시즌 ${s} AI 구단 간 트레이드 ${aiTrades}건`);
+    if (stanceCount('contend') < 1 || stanceCount('rebuild') < 1) inv.push(`사전 등록 7a ③ 위반: 우승 경쟁 ${stanceCount('contend')}·리빌딩 ${stanceCount('rebuild')}`);
+    if (s === seasons && seasons >= 2 && stanceChanged < 2) inv.push(`사전 등록 7a ③ 위반: 운영 상태가 바뀐 AI 구단 ${stanceChanged}개`);
+    if (milestone && s === seasons) {
+      const spans = repo5.getClubs().map((c) => {
+        const ranks: number[] = [];
+        for (let y = dash.season - seasons + 1; y <= dash.season; y++) {
+          const r = repo5.getSeasonStandings(y).find((x) => x.clubId === c.id)?.rank ?? standings.find((x) => x.club.id === c.id)?.rank;
+          if (r) ranks.push(r);
+        }
+        return ranks.length ? Math.max(...ranks) - Math.min(...ranks) : 0;
+      });
+      if (spans.filter((x) => x >= 4).length < 5) inv.push(`사전 등록 7a ⑤ 위반: 순위 변동 폭 4 이상 구단 ${spans.filter((x) => x >= 4).length}개`);
+      const cur = new Set<number>();
+      let maxAusterity = 0;
+      for (const x of meta7.stanceLog ?? []) {
+        if (x.to === 'austerity') cur.add(x.clubId);
+        else cur.delete(x.clubId);
+        maxAusterity = Math.max(maxAusterity, cur.size);
+      }
+      if (maxAusterity > 3) inv.push(`사전 등록 7a ⑥ 위반: 동시 긴축 구단 ${maxAusterity}개`);
+    }
     rows.push({
       season: dash.season,
       cashRatio,
@@ -311,6 +343,8 @@ async function main() {
       facilityLevelAvg: facLevels.length ? +(facLevels.reduce((a, b) => a + b, 0) / facLevels.length).toFixed(1) : null,
       userFacilityLevels: Object.values(repo5.getMeta().facilities?.['1']?.levels ?? {}).join('/'),
       trades: tradeStats.find((t) => t.season === s) ?? null,
+      aiTrades,
+      stances: `우승 경쟁 ${stanceCount('contend')}·중위권 ${stanceCount('middle')}·리빌딩 ${stanceCount('rebuild')}·긴축 ${stanceCount('austerity')} (변경 구단 ${stanceChanged})`,
       coreMean,
       coreP95,
       injuries: inj,

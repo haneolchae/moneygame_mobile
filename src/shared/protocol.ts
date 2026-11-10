@@ -570,6 +570,8 @@ export interface ClubView {
   mine: boolean;
   season: number;
   profile: { city: string; stadium: string; stadiumCapacity: number; parentIndustry: string; loyalty: string };
+  /** 7a 운영 기조(AI 구단, 매월 1일 평가). 우리 구단은 null */
+  stance: { key: string; label: string; since: string } | null;
   standing: StandingView | null;
   /** 팀 시즌 기록(공개). rank는 10개 구단 중 순위(1=가장 좋음) */
   team: Array<{ key: string; label: string; value: string; rank: number }>;

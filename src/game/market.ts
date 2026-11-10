@@ -1,6 +1,7 @@
 // 선수 시장: FA·연봉 협상·외국인 계약·방출 (08·09·22 문서, D-031·D-042·D-045·D-046·D-048·D-075).
 // 날짜 처리(onDay)는 하루 처리 트랜잭션 안에서 호출되고, 사용자 명령은 각각 하나의 트랜잭션으로 반영된다.
 import { addDays, diffDays, weekday, type GameDate } from '../engine/calendar';
+import type { ClubStance } from '../engine/aiClub';
 import { SEASON_2026_STANDINGS } from '../engine/clubs';
 import { CONTRACT, FOREIGN, LEAGUE, usdToWon, WORLDGEN, wonToUsd } from '../engine/config';
 import {
@@ -81,6 +82,8 @@ export class Market {
     private readonly repo: GameRepository,
     private readonly clubs: Map<ClubId, ClubProfile>,
     private readonly chargeWp: WpCharge = () => {},
+    /** 7a(D-155): AI 구단 운영 상태(매월 1일 평가) */
+    private readonly stanceOf: (clubId: ClubId) => ClubStance | null = () => null,
   ) {}
 
   private offseason(meta: GameMeta) {
@@ -99,12 +102,14 @@ export class Market {
     return stored?.rank ?? 5;
   }
 
+  // D-155 (3): FA 입찰 성향은 운영 상태로 정한다(계수는 그대로)
   private contender(club: ClubProfile) {
-    return this.rank(club.id) <= 5 || club.strength === '상';
+    return this.stanceOf(club.id) === 'contend';
   }
 
   private rebuilding(club: ClubProfile) {
-    return this.rank(club.id) >= 9 || club.strength === '하';
+    const s = this.stanceOf(club.id);
+    return s === 'rebuild' || s === 'austerity';
   }
 
   weeksSinceOpen(meta: GameMeta, date: GameDate = meta.currentDate): number {
@@ -207,6 +212,8 @@ export class Market {
       let cash = this.repo.cashBalance(club.id) - mine.reduce((a, o) => a + o.offer.bonus, 0);
       const candidates = fa
         .map((e) => ({ e, p: byId.get(e.playerId)!, est: clubEstimate(meta.seed, club.id, byId.get(e.playerId)!) }))
+        // D-155 (2): 재정 긴축 구단은 자기 FA 재계약만 한다
+        .filter(({ e }) => this.stanceOf(club.id) !== 'austerity' || e.originClub === club.id)
         .filter(({ e, est }) => !mine.some((o) => o.playerId === e.playerId) && (est >= 54 || (e.originClub === club.id && est >= 48)))
         .sort((a, b) => b.est - a.est || a.e.playerId - b.e.playerId);
       const roster = this.players().filter((p) => p.clubId === club.id);

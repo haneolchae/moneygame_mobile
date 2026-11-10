@@ -449,9 +449,7 @@ export const TRADE = {
   needThick: { pitchers: 24, hitters: 23, catchers: 5 },
   needUp: 1.15,
   needDown: 0.9,
-  /** 경쟁 단계: 순위 이하 상위권, 이상 하위권 */
-  contenderRank: 3,
-  rebuildRank: 8,
+  /** 경쟁 단계는 운영 상태(AI_CLUB, D-155)로 정한다 */
   contenderNow: 1.3,
   contenderLater: 0.8,
   rebuildNow: 0.7,
@@ -470,6 +468,30 @@ export const TRADE = {
   /** AI가 현금을 낼 때 남겨 둘 현금 */
   aiCashReserveWon: 3_000_000_000,
   actionLogMax: 300,
+  /** D-155 (5): 트레이드로 옮긴 선수의 재트레이드 제한(일) */
+  retradeLockDays: 60,
+} as const;
+
+/** 7a AI 구단 운영 상태·긴축·AI 간 트레이드(D-155 초기안) */
+export const AI_CLUB = {
+  /** 기준 순위: 이 순위 이내 우승 경쟁, 이 순위 이하 리빌딩 */
+  contendRank: 4,
+  rebuildRank: 8,
+  /** 현재 순위를 쓰는 최소 경기 수(팀당). 모자라면 직전 시즌 최종 순위 */
+  minGames: 30,
+  /** 재정 긴축: 현금 0 미만 진입, 이 금액 이상 회복 시 해제 */
+  austerityExitWon: 2_000_000_000,
+  /** 긴급 지원 = 부족액 + 여유분(억 단위 올림) */
+  emergencyBufferWon: 1_000_000_000,
+  stanceLogMax: 400,
+  trade: {
+    /** 구단별 기간(스토브리그·시즌)당 AI 간 거래 상한. 리그 전체는 주 1건 */
+    maxPerClubPeriod: 2,
+    veteranMinAge: 28,
+    prospectMaxAge: 25,
+    veteranCandidates: 5,
+    prospectCandidates: 8,
+  },
 } as const;
 
 /** 4b-2 집중 훈련(D-128). 효과·강도·코치 계수는 사용자 확정, 코치 배정·담당 한도·AI 계획 수는 초기안 */
