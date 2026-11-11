@@ -1,6 +1,6 @@
-# 검증 리포트: 7b-2
+# 검증 리포트: 4c-0
 
-- 일시: 2026. 11. 11. 오전 10:08:35
+- 일시: 2026. 11. 11. 오전 10:38:56
 - 단계: 차수 종료 검증 (--stage phase), 장기 실행 2시즌, 시드 verify-1
 - 환경: Node 24.18.0, win32/x64
 - **종합 판정: 조건부 통과(경고 있음)**
@@ -8,14 +8,14 @@
 | 단계 | 판정 | 시간(초) | 요약 |
 | --- | --- | --- | --- |
 | 실행 환경 | PASS | 0 | 준비됨 |
-| 타입 검사 | PASS | 1.3 | 오류 0건 |
-| 계층 경계 검사 | PASS | 0.6 | 계층 경계 검사 통과 (112개 파일) |
-| 자동 테스트 | PASS | 98.4 | 142/142개 통과 |
-| 빌드 | PASS | 1.2 | 완료 |
-| 실제 Electron 자체 점검 | WARN | 12.2 | 스토브리그 12주 1814ms, 시즌 720/720 6424ms, 화면 지연 35ms, 저장 242ms·불러오기 220ms, Steam mock |
-| 장기 실행 2시즌 (시드 verify-1) | WARN | 28 | 2시즌, 규칙 위반 0건, 마지막 시즌 저장 330ms·저장본 15.8MB, 불러오기 205ms, 현금 466억 → 638억 |
-| 문서 정합성 | PASS | 0.2 | 실패 0건, 경고 0건, 임시 가정 44건 |
-| 저장소 상태 | PASS | 0 | HEAD dab4681, 커밋되지 않은 변경 3개 |
+| 타입 검사 | PASS | 1.4 | 오류 0건 |
+| 계층 경계 검사 | PASS | 0.7 | 계층 경계 검사 통과 (112개 파일) |
+| 자동 테스트 | PASS | 114.6 | 143/143개 통과 |
+| 빌드 | PASS | 2.1 | 완료 |
+| 실제 Electron 자체 점검 | PASS | 16.4 | 스토브리그 12주 1646ms, 시즌 720/720 9986ms, 화면 지연 2ms, 저장 287ms·불러오기 272ms, Steam mock |
+| 장기 실행 2시즌 (시드 verify-1) | WARN | 34.4 | 2시즌, 규칙 위반 0건, 마지막 시즌 저장 349ms·저장본 15.8MB, 불러오기 242ms, 현금 466억 → 638억 |
+| 문서 정합성 | WARN | 0.2 | 실패 0건, 경고 1건, 임시 가정 44건 |
+| 저장소 상태 | PASS | 0 | HEAD 661dc05, 커밋되지 않은 변경 4개 |
 
 ## 상세
 
@@ -23,17 +23,18 @@
 
 - Node 24.18.0, win32/x64
 
-### 실제 Electron 자체 점검 (WARN)
-
-- 메인 프로세스 최대 지연 168ms
-
-로그: `verify-reports\logs\20261111-1006_7b-2\selftest.log`
-
 ### 장기 실행 2시즌 (시드 verify-1) (WARN)
 
-- 2028시즌 시즌 진행 8.42s (경고 7s)
+- 2027시즌 시즌 진행 8.12s (경고 7s)
+- 2028시즌 시즌 진행 11.4s (경고 7s)
 
-로그: `verify-reports\logs\20261111-1006_7b-2\sim.log`
+로그: `verify-reports\logs\20261111-1036_4c-0\sim.log`
+
+### 문서 정합성 (WARN)
+
+- [경고] 실제 테스트 143개 > 문서 기록 142개. 이번 차수 결과가 06_progress.md에 아직 없을 수 있음
+
+로그: `verify-reports\logs\20261111-1036_4c-0\docs.log`
 
 ### 저장소 상태 (PASS)
 
@@ -98,7 +99,7 @@
 - `src/engine/contracts.ts:11` (D-075) FA 협상 설정 (ASSUMPTION, D-075)
 - `src/engine/finance.ts:84` (D-038) 2026년 기준 금액 (17·21 문서, D-038). 직원 급여는 2c 조직 구현 전까지 임시 총액이다(ASSUMPTION).
 - `src/engine/finance.ts:90` (D-112) broadcastRenewalBpAssumed: 1500, // ASSUMPTION(D-112): 관중 추세 모델 전까지 10~20%의 중간값
-- `src/engine/gamesim.ts:4` (D-091) 첫 개발 단계의 단순화 (ASSUMPTION(D-091), 설정·후속 단계에서 확장). 타석 결과 확률은 probability.ts(10a):
+- `src/engine/gamesim.ts:8` (D-091) 첫 개발 단계의 단순화 (ASSUMPTION(D-091), 설정·후속 단계에서 확장). 타석 결과 확률은 probability.ts(10a):
 - `src/engine/history.ts:18` (D-079) ASSUMPTION(D-079): 출전량 기준. 능력 47 안팎이 주전 경계다.
 - `src/engine/probabilityConfig.ts:79` (D-107) defaultMorale: 기분(사기) 모델 전 임시값(ASSUMPTION(D-107)).
 - `src/engine/scoutingConfig.ts:1` (D-113) ASSUMPTION(D-113): 스카우팅 정확도·비용·공개 기준의 밸런스 초안.
