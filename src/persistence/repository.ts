@@ -446,6 +446,38 @@ export class SqliteGameRepository implements GameRepository {
     return pos.map((r) => ({ gameId: num(r.g), clubId: num(r.c), fieldOuts: num(r.f), dhOuts: num(r.dh), defOuts: def.get(`${num(r.g)}:${num(r.c)}`) ?? 0 }));
   }
 
+  /** 8d: 구단 타자 시즌 고의4구·희생번트·병살타·만루홈런·선두타자 홈런·경기 첫 타석 경기 수 */
+  batterExtras(season: number, clubId: ClubId, playerIds: PlayerId[]): Map<PlayerId, { IBB: number; SH: number; GDP: number; GS: number; leadHR: number; leadG: number }> {
+    const ids = this.idFilter('batter_id', playerIds);
+    const rows = this.db.prepare(`SELECT batter_id AS id, SUM(ibb) AS IBB, SUM(outcome = 'SH') AS SH, SUM(outcome = 'DP') AS GDP, SUM(outcome = 'HR' AND rbi = 4) AS GS FROM plate_appearances WHERE stage = 'regular' AND season = ? AND batting_club = ?${ids} GROUP BY batter_id`).all(season, clubId) as Row[];
+    const lead = new Map((this.db.prepare(
+      `SELECT p.batter_id AS id, COUNT(*) AS G, SUM(p.outcome = 'HR') AS HR FROM plate_appearances p
+         JOIN (SELECT game_id, MIN(seq) AS s FROM plate_appearances WHERE stage = 'regular' AND season = ?1 AND batting_club = ?2 GROUP BY game_id) f ON p.game_id = f.game_id AND p.seq = f.s
+        GROUP BY p.batter_id`,
+    ).all(season, clubId) as Row[]).map((r) => [num(r.id), r]));
+    return new Map(rows.map((r) => [num(r.id), { IBB: num(r.IBB), SH: num(r.SH), GDP: num(r.GDP), GS: num(r.GS), leadHR: num(lead.get(num(r.id))?.HR), leadG: num(lead.get(num(r.id))?.G) }]));
+  }
+
+  /** 8d: 투수 시즌 폭투 */
+  pitcherWildPitches(season: number, playerIds: PlayerId[]): Map<PlayerId, number> {
+    const rows = this.db.prepare(`SELECT pitcher_id AS id, COUNT(*) AS n FROM plays WHERE stage = 'regular' AND season = ? AND kind = 'WP'${this.idFilter('pitcher_id', playerIds)} GROUP BY pitcher_id`).all(season) as Row[];
+    return new Map(rows.map((r) => [num(r.id), num(r.n)]));
+  }
+
+  /** 8d: 지정 포수의 상대 도루 성공·저지·포일(압축 전 시즌) */
+  catcherStops(season: number, ids: PlayerId[]): Map<PlayerId, { SB: number; CS: number; PB: number }> {
+    const rows = this.db.prepare(`SELECT catcher_id AS id, SUM(kind = 'SB') AS SB, SUM(kind = 'CS') AS CS, SUM(kind = 'PB') AS PB FROM plays WHERE stage = 'regular' AND season = ? AND kind IN ('SB','CS','PB')${this.idFilter('catcher_id', ids)} GROUP BY catcher_id`).all(season) as Row[];
+    return new Map(rows.map((r) => [num(r.id), { SB: num(r.SB), CS: num(r.CS), PB: num(r.PB) }]));
+  }
+
+  /** 8d: 구단별 정규시즌 실책(한 번의 묶음 질의) */
+  clubErrors(season: number): Map<ClubId, number> {
+    const rows = (this.isCompressed(season)
+      ? this.stmt("SELECT club_id AS c, SUM(E) AS n FROM fielding_season WHERE stage = 'regular' AND season = ? GROUP BY club_id").all(season)
+      : this.stmt("SELECT club_id AS c, SUM(kind = 'E') AS n FROM fielding WHERE stage = 'regular' AND season = ? GROUP BY club_id").all(season)) as Row[];
+    return new Map(rows.map((r) => [num(r.c), num(r.n)]));
+  }
+
   /** 8c: 모든 주의 행동력 지급·사용 */
   apWeeks(): ApWeek[] {
     return (this.stmt('SELECT week_id, granted, used FROM ap_ledger ORDER BY week_id').all() as Row[]).map((r) => ({ weekId: String(r.week_id), granted: num(r.granted), used: num(r.used) }));

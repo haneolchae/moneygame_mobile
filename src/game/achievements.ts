@@ -7,12 +7,13 @@ import { addXp, xpToNext } from '../engine/owner';
 import { seasonKeyDates } from '../engine/schedule';
 import { computeStandings } from '../engine/standings';
 import { battingRates, pitchingRates, type BattingTotals, type PitchingTotals } from '../engine/stats';
-import type { ClubId } from '../engine/types';
+import type { ClubId, PlayerTruth } from '../engine/types';
 import { EOK } from '../engine/money';
 import { clubHistory } from '../engine/data/history';
 import { TEAMS } from '../engine/staff';
 import type { GameMeta, GameRepository, InboxMessage } from './ports';
 import { judgeOps, newMemo, type AchMemo } from './achievementsOps';
+import { judgePQAwards, judgePQGame, judgePQLeague, judgePQOps, judgePQSeason, newPQMemo, newPQState, type PQMemo, type PQState } from './achievementsPQ';
 import { addDays } from '../engine/calendar';
 import { AWARDS } from '../engine/config';
 
@@ -21,6 +22,7 @@ export type AchievementType = 'once' | 'season' | 'cumulative';
 export const CATEGORY_LABEL: Record<string, string> = {
   A: 'A 경기', B: 'B 타자 시즌', C: 'C 투수 시즌', D: 'D 통산', E: 'E 시즌 성적', F: 'F 왕조·연속',
   G: 'G 육성·드래프트', H: 'H 선수단 운영', I: 'I 시설', J: 'J 팬·관중', K: 'K 굿즈·스폰서', L: 'L 재무', M: 'M 조직·구단주', N: 'N 구단 역사', O: 'O 수상',
+  P: 'P 진기록', Q: 'Q 불명예',
 };
 
 interface SeriesDef {
@@ -255,8 +257,8 @@ export const SERIES: readonly SeriesDef[] = [
   one('M2_allround', 'M', '올라운더', 'once', 4, 'A~O 모든 분류에서 1개 이상 달성(비활성만 있는 분류 제외)'),
   s('M2_rate', 'M', '전체 업적 달성률', 'once', [25, 50, 75, 100], '활성 업적(P·Q 제외) 달성률(%)', { labels: ['25%', '50%', '75%', '100%'] }),
   s('M2_golden', 'M', '황금 시즌', 'season', [10, 20], '한 시즌 시즌형 업적 수'),
-  s('M2_collector', 'M', '진기록 수집가', 'cumulative', [5, 15, 30], 'P 분류 달성(개)', { inactive: 'P 분류(8d) 전' }),
-  one('M2_overcome', 'M', '흑역사 극복', 'once', 4, 'Q 기록 뒤 2시즌 안에 반대 업적', { inactive: 'Q 분류(8d) 전' }),
+  s('M2_collector', 'M', '진기록 수집가', 'cumulative', [5, 15, 30], 'P 분류 달성(개)'),
+  one('M2_overcome', 'M', '흑역사 극복', 'once', 4, '최하위·90패·승률 .350 이하 뒤 2시즌 안에 가을야구'),
   // N 구단 역사·기록 경신
   s('N_records', 'N', '구단 단일 시즌 기록', 'cumulative', [1, 5, 10, 20], '재임 중 세운 구단 단일 시즌 기록(부문)'),
   s('N_legend', 'N', '레전드 추월', 'cumulative', [1, 3, 5], '구단 통산 1위 등극(부문)', { inactive: '레전드 통산 비교 기능 없음' }),
@@ -300,6 +302,174 @@ export const SERIES: readonly SeriesDef[] = [
   s('O_allstarRun', 'O', '올스타 연속 선정', 'once', [5, 10], '같은 선수 올스타 연속 선정(회)', { inactive: '올스타전(8e) 전' }),
   s('O_allstarHr', 'O', '올스타전 홈런', 'cumulative', [1, 5], '올스타전 우리 선수 홈런(개)', { inactive: '올스타전(8e) 전' }),
   s('O_allstarHome', 'O', '올스타전 홈구장 개최', 'cumulative', [1, 3], '올스타전 홈구장 개최(회)', { inactive: '올스타전(8e) 전' }),
+  // ───── 8d(D-186) P 진기록(숨김, 1단계 경험치 기본) ─────
+  s('P_bigInning', 'P', '빅이닝', 'once', [7, 10, 13], '한 이닝 우리 팀 득점', { tiers: [1, 1, 1] }),
+  one('P_batAround', 'P', '타자 일순', 'once', 1, '한 이닝 우리 타자 10명 이상 타석'),
+  s('P_b2b', 'P', '연속 타자 홈런', 'once', [2, 3, 4], '우리 타자 연속 홈런(명)', { tiers: [1, 1, 1] }),
+  s('P_hrRun', 'P', '연타석 홈런', 'once', [3, 4], '한 선수 연속 타석 홈런(경기 걸침 허용)', { tiers: [1, 1] }),
+  one('P_inning2hr', 'P', '한 이닝 2홈런', 'once', 3, '한 선수가 한 이닝에 홈런 2개'),
+  one('P_woHR', 'P', '끝내기 홈런', 'once', 2, '끝내기 홈런'),
+  one('P_woGS', 'P', '끝내기 만루홈런', 'once', 4, '끝내기 만루홈런'),
+  one('P_woGSc', 'P', '역전 끝내기 만루홈런', 'once', 5, '지고 있다가 끝내기 만루홈런'),
+  one('P_woWalk', 'P', '밀어내기 끝내기', 'once', 1, '끝내기 볼넷·몸에 맞는 공'),
+  s('P_9th2out', 'P', '9회 2아웃 역전승', 'season', [1, 3], '9회 이후 2아웃에서 뒤지다가 이긴 경기(시즌)', { tiers: [1, 1] }),
+  s('P_1to0', 'P', '1-0 승리', 'season', [3, 5], '1-0 승리(시즌)', { tiers: [1, 1] }),
+  one('P_15inn', 'P', '연장 15회 승리', 'once', 1, '15회까지 간 경기 승리'),
+  one('P_allHit', 'P', '선발 전원 안타', 'once', 1, '선발 타자 9명 모두 안타'),
+  one('P_allRun', 'P', '선발 전원 득점', 'once', 1, '선발 타자 9명 모두 득점'),
+  one('P_teamSB5', 'P', '한 경기 팀 도루 5개', 'once', 1, '한 경기 우리 팀 도루 5개'),
+  s('P_indivSB', 'P', '한 경기 개인 도루', 'once', [3, 4], '한 선수 한 경기 도루', { tiers: [1, 2] }),
+  one('P_homeSteal', 'P', '홈스틸', 'once', 3, '홈스틸 성공', { inactive: '주루 모델에 홈스틸 시도 없음' }),
+  one('P_tp', 'P', '수비 삼중살', 'once', 3, '우리 수비 삼중살'),
+  one('P_utp', 'P', '무보살 삼중살', 'once', 5, '무보살 삼중살', { inactive: '수비 기록이 한 사람 삼중살을 만들지 않음' }),
+  one('P_dp4', 'P', '한 경기 병살 4개', 'once', 1, '한 경기 우리 수비 병살 4개'),
+  one('P_noBBsho', 'P', '무4사구 완봉', 'once', 3, '볼넷·몸에 맞는 공 없는 완봉승'),
+  one('P_maddux', 'P', '매덕스', 'once', 4, '100구 이하 완봉승'),
+  s('P_qsRun', 'P', '선발 연속 QS', 'once', [10, 15, 20], '우리 선발 투수 연속 퀄리티 스타트', { tiers: [1, 1, 1] }),
+  one('P_debutHR', 'P', '데뷔 첫 타석 홈런', 'once', 3, '1군 첫 경기 첫 타석 홈런'),
+  one('P_debutWin', 'P', '데뷔전 승리 투수', 'once', 3, '1군 첫 경기 승리 투수'),
+  one('P_debutK', 'P', '데뷔전 10탈삼진', 'once', 3, '1군 첫 경기 10탈삼진'),
+  one('P_age40', 'P', '불혹의 활약', 'once', 3, '만 40세 이상 20홈런·10승·20세이브(시즌 종료)'),
+  one('P_swing', 'P', '스윙맨', 'once', 1, '같은 시즌 10승-10세이브 또는 10승-20홀드'),
+  one('P_noErr', 'P', '무실책 시즌', 'once', 3, '규정 타석·포지션 720이닝 무실책(포수·1루수 제외)'),
+  one('P_cs50', 'P', '강견 포수', 'once', 3, '도루 시도 40회 이상 저지율 50% 이상'),
+  s('P_ofA', 'P', '외야 보살', 'once', [10, 15], '외야수 시즌 보살', { tiers: [1, 1] }),
+  s('P_hbp', 'P', '몸에 맞는 공', 'once', [20, 25], '타자 시즌 몸에 맞는 공', { tiers: [1, 1] }),
+  s('P_ibb', 'P', '가장 피하고 싶은 타자', 'once', [10, 15], '타자 시즌 고의4구', { tiers: [1, 1] }),
+  s('P_sh', 'P', '희생번트 장인', 'once', [25, 35], '타자 시즌 희생번트', { tiers: [1, 1] }),
+  s('P_obRun', 'P', '연속 타석 출루', 'once', [10, 12], '한 선수 연속 타석 출루', { tiers: [1, 1] }),
+  one('P_wo3', 'P', '끝내기 사나이', 'once', 3, '한 시즌 같은 선수 끝내기 3회'),
+  one('P_3pos', 'P', '한 경기 3포지션', 'once', 1, '한 선수 한 경기 3포지션 수비'),
+  one('P_7pos', 'P', '만능 야수', 'once', 1, '한 시즌 투수·포수 외 7포지션 모두 수비'),
+  one('P_16_0', 'P', '16전 전승', 'season', 4, '같은 상대 시즌 전승(16경기 이상)'),
+  s('P_ties', 'P', '무승부 시즌', 'season', [8, 10], '시즌 무승부', { tiers: [1, 1] }),
+  one('P_lowHits', 'P', '투수전 승리', 'once', 1, '양 팀 합계 안타 2개 이하 경기 승리'),
+  one('P_30runs', 'P', '난타전 승리', 'once', 1, '양 팀 합계 30득점 경기 승리'),
+  one('P_revenge', 'P', '복수전', 'once', 1, '영봉패 다음 경기 15득점'),
+  one('P_10hr', 'P', '홈런 축제', 'once', 1, '한 경기 양 팀 홈런 10개'),
+  one('P_hanmandu', 'P', '한만두', 'once', 5, '한 이닝 우리 팀 만루홈런 2개'),
+  one('P_2gs', 'P', '한 경기 만루홈런 2개', 'once', 5, '한 선수 한 경기 만루홈런 2개'),
+  one('P_gsRun', 'P', '연타석 만루홈런', 'once', 5, '한 선수 연속 타석 만루홈런'),
+  s('P_gsIndiv', 'P', '만루홈런 시즌(개인)', 'once', [3, 4, 5], '한 선수 시즌 만루홈런', { tiers: [1, 1, 1] }),
+  s('P_gsTeam', 'P', '만루홈런 시즌(팀)', 'season', [8, 12], '팀 시즌 만루홈런', { tiers: [1, 1] }),
+  one('P_gs3', 'P', '한 경기 팀 만루홈런 3개', 'once', 5, '한 경기 우리 팀 만루홈런 3개'),
+  s('P_leadHR', 'P', '선두타자 홈런', 'once', [8, 12], '한 선수 시즌 경기 첫 타석 홈런', { tiers: [1, 1] }),
+  one('P_natCycle', 'P', '내추럴 사이클', 'once', 4, '단타→2루타→3루타→홈런 순서'),
+  one('P_6for6', 'P', '6타수 6안타', 'once', 4, '한 경기 6타수 6안타'),
+  one('P_two5', 'P', '5안타 타자 2명', 'once', 1, '한 경기 5안타 타자 2명'),
+  one('P_everyInn', 'P', '전 이닝 득점', 'once', 4, '1~8회 매 이닝 득점'),
+  one('P_by20', 'P', '20점 차 승리', 'once', 1, '20점 차 이상 승리'),
+  one('P_20to0', 'P', '20-0', 'once', 1, '20점 이상 영봉승'),
+  one('P_9th7', 'P', '9회 7점 차 역전승', 'once', 4, '9회 공격 시작 때 7점 이상 뒤지다 승리'),
+  one('P_noHitWin', 'P', '무안타 승리', 'once', 5, '팀 안타 0개로 승리'),
+  one('P_noHitLoss', 'P', '노히트 패배', 'once', 1, '상대에게 안타 0개를 주고 패배'),
+  one('P_6hrLoss', 'P', '6홈런 패배', 'once', 1, '팀 홈런 6개 이상 친 경기 패배'),
+  one('P_20hLoss', 'P', '20안타 패배', 'once', 1, '팀 20안타 경기 패배'),
+  one('P_woTP', 'P', '끝내기 삼중살', 'once', 3, '수비 삼중살로 경기 종료(승리)'),
+  one('P_woDP', 'P', '끝내기 병살', 'once', 1, '수비 병살로 경기 종료(승리)'),
+  one('P_woSF', 'P', '끝내기 희생플라이', 'once', 1, '끝내기 희생플라이'),
+  one('P_woInf', 'P', '끝내기 내야 안타', 'once', 1, '끝내기 내야 안타'),
+  one('P_woSqz', 'P', '끝내기 스퀴즈', 'once', 1, '끝내기 스퀴즈'),
+  one('P_phWoHR', 'P', '대타 끝내기 홈런', 'once', 3, '대타 끝내기 홈런'),
+  one('P_phGS', 'P', '대타 만루홈런', 'once', 3, '대타 만루홈런'),
+  s('P_phHR', 'P', '대타 홈런 시즌', 'once', [3, 5], '한 선수 시즌 대타 홈런', { tiers: [1, 1] }),
+  s('P_oneRun', 'P', '1점 차 승부사', 'season', [25, 30], '1점 차 승리(시즌)', { tiers: [1, 1] }),
+  one('P_extraUnb', 'P', '연장 무패', 'season', 1, '연장 5경기 이상 연장 패배 0(시즌)'),
+  s('P_openRun', 'P', '개막 연승', 'season', [5, 8, 10], '개막 뒤 연승(시즌)', { tiers: [1, 1, 1] }),
+  one('P_wire', 'P', '와이어 투 와이어', 'season', 5, '개막일부터 마지막 날까지 단독 1위'),
+  s('P_clinch', 'P', '조기 1위 확정', 'season', [10, 15, 20], '정규시즌 N경기 남기고 1위 확정', { tiers: [1, 1, 1] }),
+  s('P_turn', 'P', '후반기 대역전', 'season', [1, 2], '전반기 8위 이하 → 정규시즌 1위 · 한국시리즈 우승', { labels: ['정규시즌 1위', '우승'], tiers: [1, 1] }),
+  s('P_roadPct', 'P', '원정 승률', 'season', [0.6, 0.65], '원정 승률', { labels: ['.600', '.650'], tiers: [1, 1] }),
+  s('P_relZero', 'P', '불펜 연속 무실점', 'once', [20, 30, 40], '구원 투수 연속 경기 무실점', { tiers: [1, 1, 1] }),
+  s('P_svRun', 'P', '연속 세이브', 'once', [20, 30, 40], '블론 없는 연속 세이브', { tiers: [1, 1, 1] }),
+  one('P_noBlown', 'P', '완벽한 마무리', 'season', 4, '20세이브 이상 블론세이브 0'),
+  one('P_5sp10', 'P', '10승 선발 5명', 'season', 4, '선발 5명 모두 10승'),
+  one('P_5sp30', 'P', '완벽한 마운드', 'season', 5, '선발 5명 10승 + 마무리 30세이브'),
+  one('P_hr20x5', 'P', '20홈런 타자 5명', 'season', 1, '같은 시즌 20홈런 타자 5명'),
+  one('P_hr30x3', 'P', '30홈런 타자 3명', 'season', 1, '같은 시즌 30홈런 타자 3명'),
+  s('P_300s', 'P', '3할 타선', 'season', [4, 5], '규정 3할 타자 수', { tiers: [1, 1] }),
+  one('P_teamTriple', 'P', '팀 트리플 크라운', 'season', 5, '팀 타율·홈런·평균자책 리그 1위'),
+  s('P_batCrown', 'P', '타격 다관왕', 'once', [5, 7], '한 선수 타자 타이틀 수', { tiers: [4, 5] }),
+  one('P_pitCrown', 'P', '투수 4관왕', 'once', 5, '한 선수 투수 타이틀 4개'),
+  one('P_lead30', 'P', '1번 타자 30홈런', 'once', 3, '주로 1번 타자로 나선 선수 30홈런'),
+  one('P_c20', 'P', '공격형 포수', 'once', 3, '포수 20홈런·규정 3할'),
+  one('P_ss30', 'P', '거포 유격수', 'once', 3, '유격수 30홈런'),
+  one('P_age20', 'P', '스무 살의 활약', 'once', 3, '만 20세 이하 10승 또는 20홈런'),
+  one('P_royGG', 'P', '신인 골든글러브', 'once', 4, '같은 시즌 신인왕과 골든글러브'),
+  one('P_fMVP', 'P', '외국인 MVP', 'once', 1, '우리 외국인 선수 MVP'),
+  one('P_dom20', 'P', '국내 20승 투수', 'once', 1, '국내 투수 20승'),
+  s('P_run300', 'P', '연속 시즌 3할', 'once', [5, 7, 10], '우리 구단 소속 연속 시즌 규정 3할', { tiers: [1, 1, 1] }),
+  s('P_run10w', 'P', '연속 시즌 10승', 'once', [5, 7, 10], '우리 구단 소속 연속 시즌 10승', { tiers: [1, 1, 1] }),
+  s('P_run100h', 'P', '연속 시즌 100안타', 'once', [7, 10, 15], '우리 구단 소속 연속 시즌 100안타', { tiers: [1, 1, 1] }),
+  s('P_iron', 'P', '철인', 'once', [500, 1000], '우리 구단 연속 경기 출전', { tiers: [1, 1] }),
+  one('P_up5', 'P', '5시즌 연속 승수 증가', 'once', 3, '재임 중 5시즌 연속 승수 증가'),
+  s('P_clubWins', 'P', '구단 통산 승', 'once', [1000, 2000, 3000], '구단 통산 승(실제 역사 포함, 재임 중 도달)', { tiers: [1, 1, 1] }),
+  // ───── 8d(D-186) Q 실수·불명예(숨김, 경험치 0) ─────
+  s('Q_err', 'Q', '한 경기 팀 실책', 'once', [4, 5, 6], '한 경기 우리 팀 실책'),
+  one('Q_err3', 'Q', '개인 한 경기 3실책', 'once', 1, '한 선수 한 경기 실책 3개'),
+  one('Q_woErr', 'Q', '끝내기 실책 패', 'once', 1, '상대 끝내기가 우리 실책으로'),
+  one('Q_woWP', 'Q', '끝내기 폭투 패', 'once', 1, '끝내기 폭투로 패배'),
+  one('Q_woBK', 'Q', '끝내기 보크 패', 'once', 1, '끝내기 보크로 패배'),
+  one('Q_woWalk', 'Q', '밀어내기 끝내기 패', 'once', 1, '밀어내기로 끝내기 패배'),
+  s('Q_seasonErr', 'Q', '시즌 팀 실책', 'season', [110, 130], '시즌 팀 실책'),
+  one('Q_errMost', 'Q', '리그 최다 실책', 'season', 1, '시즌 팀 실책 리그 최다'),
+  s('Q_lossRun', 'Q', '연패', 'once', [7, 10, 15], '팀 연패'),
+  s('Q_runsA', 'Q', '한 경기 실점', 'once', [15, 20, 25], '한 경기 실점'),
+  one('Q_innA', 'Q', '한 이닝 10실점', 'once', 1, '한 이닝 10실점'),
+  s('Q_blownLead', 'Q', '리드 날린 역전패', 'once', [7, 10], '가장 크게 앞섰던 점수 차를 뒤집힌 패배'),
+  one('Q_9th2out', 'Q', '9회 2아웃 역전패', 'once', 1, '9회 이후 2아웃에서 앞서다 패배'),
+  one('Q_woGS', 'Q', '끝내기 만루홈런 패', 'once', 1, '끝내기 만루홈런을 맞고 패배'),
+  one('Q_noHit', 'Q', '노히트 노런 당함', 'once', 1, '안타 0개로 패배'),
+  one('Q_perfect', 'Q', '퍼펙트 당함', 'once', 1, '한 명도 출루하지 못하고 패배'),
+  s('Q_k', 'Q', '한 경기 팀 삼진', 'once', [15, 18], '한 경기 우리 타자 삼진'),
+  s('Q_gdp', 'Q', '한 경기 병살타', 'once', [4, 5], '한 경기 우리 병살타'),
+  one('Q_lob', 'Q', '잔루 15개', 'once', 1, '한 경기 잔루 15개 이상', { inactive: '잔루 기록 없음' }),
+  one('Q_bb12', 'Q', '4사구 12개', 'once', 1, '한 경기 투수진 볼넷·몸에 맞는 공 12개 이상'),
+  s('Q_losses', 'Q', '시즌 패', 'season', [90, 100], '시즌 패'),
+  s('Q_pct', 'Q', '시즌 승률', 'season', [0.35, 0.3], '시즌 승률 이하', { lower: true, labels: ['.350', '.300'] }),
+  s('Q_last', 'Q', '최하위', 'season', [1, 2, 3], '연속 최하위 시즌'),
+  one('Q_fall', 'Q', '꼴찌 추락', 'season', 1, '전 시즌 가을야구 → 10위'),
+  one('Q_mendoza', 'Q', '멘도사 라인', 'season', 1, '규정 타석 타율 .200 이하'),
+  one('Q_era7', 'Q', '평균자책 7점대', 'season', 1, '규정 이닝 평균자책 7.00 이상'),
+  one('Q_0and10', 'Q', '0승 10패', 'season', 1, '선발 투수 0승 10패'),
+  s('Q_so', 'Q', '삼진왕(불명예)', 'season', [150, 180], '타자 시즌 삼진'),
+  one('Q_cs15', 'Q', '도루 실패 15개', 'season', 1, '타자 시즌 도루 실패 15개'),
+  one('Q_sb50', 'Q', '도루 성공률 50% 미만', 'season', 1, '도루 시도 10회 이상 성공률 50% 미만'),
+  one('Q_gdp25', 'Q', '병살타 25개', 'season', 1, '타자 시즌 병살타 25개'),
+  one('Q_wp20', 'Q', '폭투 20개', 'season', 1, '투수 시즌 폭투 20개'),
+  one('Q_noHR', 'Q', '무홈런 거포 포지션', 'season', 1, '1루·지명·좌우익수 규정 타석 무홈런'),
+  one('Q_relStar', 'Q', '놓친 대어', 'once', 1, '방출한 선수가 그 시즌 다른 구단에서 타이틀·골든글러브·MVP'),
+  one('Q_tradeStar', 'Q', '트레이드 후회', 'once', 1, '트레이드로 내준 선수가 다음 시즌 타이틀·MVP'),
+  one('Q_tradeBust', 'Q', '받은 선수 미출전', 'once', 1, '트레이드로 받은 선수가 그 시즌 1군 미출전'),
+  one('Q_faBust', 'Q', 'FA 먹튀', 'once', 1, '3년 이상 FA 영입 첫 시즌 규정 미달·타율 .230 이하·평균자책 6.00 이상'),
+  one('Q_fSwap', 'Q', '외국인 연쇄 교체', 'once', 1, '외국인 선수 같은 시즌 2명 이상 교체', { inactive: '외국인 중도 교체 기록 없음' }),
+  one('Q_draftRel', 'Q', '1라운드 지명 방출', 'once', 1, '1라운드 지명 선수 1군 데뷔 없이 방출'),
+  one('Q_posting', 'Q', '포스팅 무응찰', 'once', 1, '포스팅 무응찰', { inactive: '포스팅 기능 없음' }),
+  s('Q_capPenalty', 'Q', '샐러리캡 제재', 'once', [1, 2], '샐러리캡 초과 제재', { inactive: '샐러리캡 제재 기능 없음' }),
+  s('Q_emergency', 'Q', '긴급 지원 요청', 'once', [1, 3], '모기업 긴급 지원'),
+  one('Q_crisis', 'Q', '자금 위기', 'once', 1, '현금 0 미만 위기 상태'),
+  one('Q_brink', 'Q', '파산 직전', 'once', 1, '현금 마이너스 4주'),
+  one('Q_warn', 'Q', '해임 경고', 'once', 1, '성적 목표 연속 미달 경고'),
+  one('Q_backlash', 'Q', '팬 반발', 'once', 1, '팬 반발 상태 돌입'),
+  one('Q_vacancy', 'Q', '공석 방치', 'once', 1, '팀장 공석 8주 이상'),
+  one('Q_facility', 'Q', '낡은 구장', 'once', 1, '시설 상태 30 미만 개막·고장 좌석 폐쇄', { inactive: '시설 노후도 기능 없음' }),
+  s('Q_disposal', 'Q', '굿즈 폐기', 'season', [30, 50], '굿즈 재고 폐기율(%)', { inactive: '재고 폐기 기능 없음' }),
+  one('Q_sponsorCut', 'Q', '스폰서 해지', 'once', 1, '의무 불이행 스폰서 해지', { inactive: '스폰서 해지 기능 없음' }),
+  one('Q_persuadeFail', 'Q', '간판의 은퇴', 'once', 1, '간판 선수가 재임 중 은퇴'),
+  s('Q_expired', 'Q', '결재 기한 만료', 'once', [5, 20], '결재 기한 만료(건)'),
+  s('Q_openLoss', 'Q', '개막 연패', 'season', [5, 8, 10], '개막 뒤 연패(시즌)'),
+  s('Q_homeLoss', 'Q', '홈 연패', 'once', [7, 10], '홈 경기 연패'),
+  one('Q_0_16', 'Q', '0-16', 'season', 1, '같은 상대 시즌 전패(16경기 이상)'),
+  s('Q_blown', 'Q', '불지르는 마무리', 'season', [8, 12], '한 투수 시즌 블론세이브'),
+  one('Q_oneRunL', 'Q', '1점 차 25패', 'season', 1, '1점 차 패배 25(시즌)'),
+  one('Q_collapse', 'Q', '후반기 추락', 'season', 1, '전반기 1위 → 가을야구 탈락'),
+  one('Q_allK', 'Q', '선발 전원 삼진', 'once', 1, '선발 타자 9명 모두 삼진'),
+  one('Q_1stExit', 'Q', '1회 강판 5회', 'season', 1, '선발 투수 1회 강판 시즌 5회'),
+  one('Q_injury5', 'Q', '부상 병동', 'season', 1, '주전 30일 이상 부상 5명', { inactive: '주전 판정 기준 없음' }),
+  one('Q_champLast', 'Q', '우승 다음 해 꼴찌', 'season', 1, '우승 다음 시즌 최하위'),
+  one('Q_topPaid', 'Q', '최고 연봉 부진', 'season', 1, '최고 연봉 선수 규정 미달'),
+  s('Q_apWaste', 'Q', '행동력 소멸', 'once', [100, 500], '쓰지 않고 넘긴 행동력 누적'),
+  one('Q_lowLevel', 'Q', '느린 성장', 'once', 1, '재임 10시즌 레벨 10 미만'),
 ];
 
 /** 화면·기록용 업적 정의(단계마다 하나) */
@@ -325,7 +495,8 @@ export interface AchievementDef {
 const stageLabel = (sd: SeriesDef, i: number) => sd.labels?.[i] ?? String(sd.stages[i]);
 export const ACHIEVEMENTS: readonly AchievementDef[] = SERIES.flatMap((sd) =>
   sd.stages.map((_, i) => {
-    const tier = sd.tiers?.[i] ?? i + 1;
+    // P는 기본 1단계(D-186 (1)), Q는 경험치 0
+    const tier = sd.tiers?.[i] ?? (sd.cat === 'P' ? 1 : i + 1);
     const label = stageLabel(sd, i);
     return {
       key: `${sd.id}.${i + 1}`,
@@ -336,7 +507,7 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = SERIES.flatMap((sd) =>
       title: label ? `${sd.title} ${label}` : sd.title,
       category: CATEGORY_LABEL[sd.cat] ?? sd.cat,
       description: sd.desc,
-      xp: X.byTier[tier - 1] ?? X.byTier[0]!,
+      xp: sd.cat === 'Q' ? 0 : (X.byTier[tier - 1] ?? X.byTier[0]!),
       repeat: sd.type === 'season',
       type: sd.type,
       inactive: sd.inactive ?? null,
@@ -396,8 +567,10 @@ export class Achievements {
     const season = meta.season;
     const club = meta.userClubId;
     // 선수 목록은 이름이 필요할 때만 읽는다(매일 전체를 해석하지 않는다)
+    let playerList: PlayerTruth[] | null = null;
+    const allPlayers = () => (playerList ??= this.repo.getPlayers());
     let playerMap: Map<number, { name: string; career: { franchise: boolean } }> | null = null;
-    const players = () => (playerMap ??= new Map(this.repo.getPlayers().map((p) => [p.id, p])));
+    const players = () => (playerMap ??= new Map(allPlayers().map((p) => [p.id, p])));
     const name = (id: number) => players().get(id)?.name ?? `#${id}`;
     const hits: Hit[] = [];
     /** 계열 판정: 값이 넘은 모든 단계(아래 단계 포함)를 한 번에 */
@@ -416,6 +589,12 @@ export class Achievements {
     const flag = (series: string, cond: boolean, detail: string) => cond && judge(series, 1, () => detail);
 
     const st = this.state(meta);
+    // 8d(D-186): P·Q 상태
+    const pqRaw = this.repo.getMetaValue<PQState>('pqState');
+    const pqSt: PQState = pqRaw && pqRaw.season === season ? { ...newPQState(season), ...pqRaw } : newPQState(season);
+    const pqMemo: PQMemo = { ...newPQMemo(), ...(this.repo.getMetaValue<PQMemo>('pqMemo') ?? {}) };
+    const pqBefore = JSON.stringify([pqSt, pqMemo]);
+    const pq = { repo: this.repo, meta, date, judge, flag, name, st: pqSt, memo: pqMemo, tenureFirst: this.tenureFirstSeason(meta) };
     // ───── A 경기(우리 경기가 있던 날만) ─────
     const ourGames = results.filter((g) => g.home === club || g.away === club);
     const todays = ourGames.length ? new Map(this.repo.getFixturesOn(date).map((f) => [f.id, f])) : new Map<number, { stage?: string; seriesId: number }>();
@@ -423,6 +602,7 @@ export class Achievements {
       const home = g.home === club;
       const fx = todays.get(g.fixtureId);
       const regular = !fx?.stage || fx.stage === 'regular';
+      judgePQGame(pq, g, regular, this.debuts(meta, g));
       const mine = home ? g.homeRuns : g.awayRuns;
       const opp = home ? g.awayRuns : g.homeRuns;
       const won = mine > opp;
@@ -519,11 +699,16 @@ export class Achievements {
       judge('A_sweep', st.sweep, (l) => `${season} 3연전 스윕 ${l}회`);
     }
 
+    // 8d: 리그 승패표(정규시즌 경기가 있던 날)
+    if (meta.mode === 'season' && results.length) {
+      const fx = this.repo.getFixturesOn(date).filter((f) => !f.stage || f.stage === 'regular').map((f) => f.id);
+      if (fx.length) judgePQLeague(pq, results, new Set(fx), this.teamGames(season));
+    }
     // ───── B·C·D 선수(매주 일요일, 정규시즌 마지막 날) ─────
     const regEnd = seasonKeyDates(season).regularSeasonEnd;
     const end = date === regEnd;
     // 정규시즌이 끝나면 기록이 더 바뀌지 않는다(포스트시즌 일요일은 건너뛴다)
-    if (meta.mode === 'season' && (end || (weekday(date) === 0 && date < regEnd))) this.players(meta, date, end, judge, name, st);
+    if (meta.mode === 'season' && (end || (weekday(date) === 0 && date < regEnd))) this.players(meta, date, end, judge, name, st, allPlayers);
 
     // ───── E·F 시즌(정규시즌 마지막 날), 포스트시즌(한국시리즈 종료일) ─────
     if (meta.mode === 'season' && end) this.seasonEnd(meta, judge, flag);
@@ -545,20 +730,31 @@ export class Achievements {
       };
       const memo: AchMemo = { ...newMemo(), ...(this.repo.getMetaValue<AchMemo>('achMemo') ?? {}) };
       const before = JSON.stringify(memo);
-      if (Object.values(when).some((v) => v !== false && v !== null)) judgeOps({ repo: this.repo, meta, date, judge, flag, memo, career: () => this.career(meta), tenureFirst: this.tenureFirstSeason(meta), ...when });
+      if (Object.values(when).some((v) => v !== false && v !== null)) judgeOps({ repo: this.repo, meta, date, judge, flag, memo, players: allPlayers, career: () => this.career(meta), tenureFirst: this.tenureFirstSeason(meta), ...when });
+      // 8d P·Q: 시즌 끝·수상 날·일요일
+      if (when.seasonEnd) judgePQSeason(pq, allPlayers(), this.teamTotals(season));
+      this.teamCache = null;
+      // 수상 계열 P·Q는 그날 시상이 있었을 때만
+      if (when.awardDay && this.repo.getAwards({ season }).some((a) => a.date === date)) judgePQAwards(pq, allPlayers());
+      if (when.sunday) judgePQOps(pq, allPlayers(), this.repo.getMeta());
       // M-2 메타: 올라운더·달성률·황금 시즌(오늘 판정 포함)
       const doneKeys = new Set([...have.map((a) => a.key), ...hits.map((h) => h.key)]);
-      const active = ACHIEVEMENTS.filter((a) => !a.inactive);
+      // 올라운더·달성률은 A~O만(P·Q 제외, D-186)
+      const active = ACHIEVEMENTS.filter((a) => !a.inactive && a.cat !== 'P' && a.cat !== 'Q');
       const cats = [...new Set(active.map((a) => a.cat))];
       flag('M2_allround', cats.every((c) => active.some((a) => a.cat === c && doneKeys.has(a.key))), `${date} 모든 분류(${cats.join('')}) 달성`);
       const rate = (active.filter((a) => doneKeys.has(a.key)).length / active.length) * 100;
       judge('M2_rate', rate, (l) => `${date} 업적 달성률 ${rate.toFixed(1)}%(${l})`);
       const golden = new Set([...have.filter((a) => a.season === season).map((a) => a.key), ...hits.filter((h) => DEF.get(h.key)?.repeat).map((h) => h.key)].filter((k) => k.split('.')[0] !== 'M2_golden')).size;
       judge('M2_golden', golden, (l) => `${season} 시즌형 업적 ${l}개`);
+      judge('M2_collector', [...doneKeys].filter((k) => k.startsWith('P_')).length, (l) => `${date} 진기록 ${l}개`);
+      const shame = (y: number) => have.some((a) => a.season === y && /^(Q_losses|Q_last|Q_pct)\./.test(a.key));
+      flag('M2_overcome', doneKeys.has('E_post.1') && [...have, ...hits.map((h) => ({ ...h, season }))].some((a) => a.key === 'E_post.1' && (a as { season: number }).season === season) && (shame(season - 1) || shame(season - 2)), `${season} 흑역사 뒤 가을야구`);
       if (JSON.stringify(memo) !== before) this.repo.updateMeta({ achMemo: memo });
     }
 
     if (ourGames.length || st.season !== (meta.achState as AchState | undefined)?.season) this.repo.updateMeta({ achState: st });
+    if (JSON.stringify([pqSt, pqMemo]) !== pqBefore) this.repo.updateMeta({ pqState: pqSt, pqMemo });
     this.record(meta, date, hits, have);
   }
 
@@ -611,16 +807,17 @@ export class Achievements {
     return this.careerCache;
   }
 
-  private players(meta: GameMeta, date: GameDate, end: boolean, judge: (s: string, v: number, d: (l: string) => string) => void, name: (id: number) => string, st: AchState) {
+  private players(meta: GameMeta, date: GameDate, end: boolean, judge: (s: string, v: number, d: (l: string) => string) => void, name: (id: number) => string, st: AchState, all: () => PlayerTruth[]) {
     const season = meta.season;
     const club = meta.userClubId;
     // 우리 구단 소속 기록만: 지금 선수단 + 이번 시즌 트레이드로 떠난 선수(선수별 색인으로 읽는다)
     const left = (meta.tradeHistory ?? []).filter((t) => t.season === season && (t.clubA === club || t.clubB === club)).flatMap((t) => (t.clubA === club ? t.aToB : t.bToA));
-    const ids = [...new Set([...this.repo.getPlayers().filter((p) => p.clubId === club).map((p) => p.id), ...left])];
+    const ids = [...new Set([...all().filter((p) => p.clubId === club).map((p) => p.id), ...left])];
     const bat = this.repo.battingTotals(season, ids, club);
     const pit = this.repo.pitchingTotals(season, ids, club);
     const flags = this.repo.flagTotals(season, club);
-    const games = Math.round((this.repo.getGames(season, 'regular').length * 2) / Math.max(1, this.repo.getClubs().length));
+    // 규정·전 경기 출전은 정규시즌 마지막 날만 쓴다(매주 경기 목록 전체를 읽지 않는다)
+    const games = end ? Math.round((this.repo.getGames(season, 'regular').length * 2) / Math.max(1, this.repo.getClubs().length)) : 0;
     const qualPa = games * QUALIFY_PA_PER_GAME;
     const qualOuts = games * 3;
     for (const [id, t] of bat) {
@@ -691,7 +888,7 @@ export class Achievements {
     }
     // D 통산(우리 구단 소속)
     const c = this.career(meta);
-    const players = new Map(this.repo.getPlayers().map((p) => [p.id, p]));
+    const players = new Map(all().map((p) => [p.id, p]));
     const careerIds = new Set([...bat.keys(), ...pit.keys(), ...c.bat.keys(), ...c.pit.keys()]);
     for (const id of careerIds) {
       const b0 = c.bat.get(id);
@@ -735,6 +932,34 @@ export class Achievements {
     return new Map([...cur].map(([id, x]) => [id, { hit: x.bestH, ob: x.bestO }]));
   }
 
+  /** 8d: 그 경기가 1군 첫 출전인 우리 선수(생성 기록·지난 시즌·이번 시즌 앞 경기에 출전 없음) */
+  private debuts(meta: GameMeta, g: GameResult): Set<number> {
+    const club = meta.userClubId;
+    const ids = [...new Set([...g.events.filter((e) => e.battingClub === club).map((e) => e.batterId), ...g.events.filter((e) => e.battingClub !== club).map((e) => e.pitcherId)])];
+    const c = this.career(meta);
+    const fresh = ids.filter((id) => !c.seasons.has(id) && !c.otherClub.has(id));
+    if (fresh.length === 0) return new Set();
+    const bat = this.repo.battingTotals(meta.season, fresh);
+    const pit = this.repo.pitchingTotals(meta.season, fresh);
+    return new Set(fresh.filter((id) => Math.max(bat.get(id)?.G ?? 0, pit.get(id)?.G ?? 0) === 1));
+  }
+
+  /** 시즌 끝 날 팀 합계(팀 시즌 계열과 P·Q가 함께 쓴다) */
+  private teamCache: { season: number; v: ReturnType<GameRepository['teamTotals']> } | null = null;
+  teamTotals(season: number) {
+    if (this.teamCache?.season !== season) this.teamCache = { season, v: this.repo.teamTotals(season) };
+    return this.teamCache.v;
+  }
+
+  private gamesCache: { season: number; n: number } | null = null;
+  /** 팀당 정규시즌 경기 수 */
+  private teamGames(season: number): number {
+    if (this.gamesCache?.season === season) return this.gamesCache.n;
+    const n = Math.round((this.repo.getFixtures(season).filter((f) => !f.stage || f.stage === 'regular').length * 2) / Math.max(1, this.repo.getClubs().length));
+    this.gamesCache = { season, n };
+    return n;
+  }
+
   /** 재임 시즌(현재 구단): 지금 구단 재임 시작 뒤 시즌만 */
   tenureFirstSeason(meta: GameMeta): number {
     const t = (meta.tenures ?? []).filter((x) => x.clubId === meta.userClubId && x.to === null).at(-1);
@@ -768,7 +993,7 @@ export class Achievements {
     flag('E_h2h', h2h, `${season} 9개 구단 상대 전적 모두 우세`);
     const prevRank = this.rankOf(season - 1, club);
     if (prevRank === 10 && me.rank <= 5) judge('E_rise', 1, () => `${season - 1} 10위 → ${season} ${me.rank}위`);
-    const team = this.repo.teamTotals(season);
+    const team = this.teamTotals(season);
     const t = team.find((x) => x.clubId === club);
     if (t) {
       const br = battingRates(t.bat);
@@ -783,9 +1008,9 @@ export class Achievements {
       judge('E_tk', t.pit.K, () => `${season} 팀 ${t.pit.K}탈삼진`);
       flag('E_minra', t.runsAgainst <= Math.min(...team.map((x) => x.runsAgainst)), `${season} 리그 최소 ${t.runsAgainst}실점`);
       flag('E_maxr', t.runsFor >= Math.max(...team.map((x) => x.runsFor)), `${season} 리그 최다 ${t.runsFor}득점`);
-      const errors = (c: ClubId) => [...this.repo.fieldingByClub(season, c).values()].reduce((a, x) => a + x.E, 0);
-      const myE = errors(club);
-      flag('E_mine', clubIds.every((c) => myE <= errors(c)), `${season} 리그 최소 ${myE}실책`);
+      const errors = this.repo.clubErrors(season);
+      const myE = errors.get(club) ?? 0;
+      flag('E_mine', clubIds.every((c) => myE <= (errors.get(c) ?? 0)), `${season} 리그 최소 ${myE}실책`);
     }
     // F 재임 연속(정규시즌 항목)
     const first = this.tenureFirstSeason(meta);
@@ -862,7 +1087,7 @@ export class Achievements {
         date,
         kind: 'report',
         sender: '비서',
-        title: `업적 달성: ${d.title}`,
+        title: d.cat === 'Q' ? `기록: ${d.title}` : `업적 달성: ${d.title}`,
         body: `${d.category} · ${d.description}\n${a.detail}\n구단주 경험치 +${gained}${gained < base ? ` (시즌 업적 경험치 상한 ${X.seasonCap})` : ''}${level > before ? ` → 레벨 ${level} 달성! 다음 주부터 행동력이 늘어납니다.` : ` (다음 레벨까지 ${xpToNext(level) - xp})`}`,
       });
     }

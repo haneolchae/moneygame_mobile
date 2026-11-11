@@ -165,6 +165,7 @@ function AchievementBoard({ list }: { list: AchievementView[] }) {
                     {first.seriesTitle}
                     {TYPE_LABEL[first.type] && <span className="muted small"> · {TYPE_LABEL[first.type]}</span>}
                     {first.inactive && <span className="badge" title={first.inactive} style={{ marginLeft: 6 }}>비활성</span>}
+                    {first.masked && <span className="badge" style={{ marginLeft: 6 }}>숨김</span>}
                   </td>
                   <td>
                     <div className="seg" style={{ flexWrap: 'wrap' }}>

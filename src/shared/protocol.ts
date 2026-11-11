@@ -365,6 +365,9 @@ export interface AchievementView {
   type: 'once' | 'season' | 'cumulative' | 'legacy';
   /** 8c: 원천 기능이 없어 판정하지 않는 계열의 사유 */
   inactive?: string | null;
+  /** 8d 분류 글자(A~Q), 가린 업적(P·Q: 달성 전 이름·조건을 보내지 않는다) */
+  cat?: string;
+  masked?: boolean;
   title: string;
   category: string;
   description: string;

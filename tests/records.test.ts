@@ -132,6 +132,24 @@ describe('업적 (D-080·D-182·D-183)', () => {
     expect(list(a)).toBe(list(b));
     const team = await call(a, 'game.team');
     expect(team.achievements.filter((x) => x.achieved.length).length).toBe(new Set(got.map((x) => x.key)).size);
+    // 8d(D-187 ①): 달성 전 P·Q는 이름·조건·키가 응답에 없다
+    const hiddenItems = team.achievements.filter((x) => x.masked && x.achieved.length === 0);
+    expect(hiddenItems.length).toBeGreaterThan(50);
+    for (const x of hiddenItems) expect([x.title, x.seriesTitle, x.key.startsWith('hidden-')]).toEqual(['???', '???', true]);
+    const json = JSON.stringify(team.achievements.filter((x) => x.achieved.length === 0));
+    for (const word of ['한만두', '퍼펙트 당함', 'P_hanmandu', 'Q_perfect']) expect(json).not.toContain(word);
+    // ③ 경기 계열 표본: 판정 값이 그날 우리 경기 기록과 같다
+    const games7 = a.saves.repository().getGames(2027).filter((g) => g.home === 7 || g.away === 7);
+    let checked = 0;
+    for (const x of got.filter((y) => /^(P_bigInning|Q_runsA)\./.test(y.key))) {
+      const date = x.detail.slice(0, 10);
+      const day = games7.filter((g) => g.date === date);
+      expect(day.length, x.detail).toBeGreaterThan(0);
+      if (x.key.startsWith('P_bigInning')) expect(day.some((g) => x.detail.includes(`한 이닝 ${Math.max(...(g.home === 7 ? g.lineScore.home : g.lineScore.away))}득점`)), x.detail).toBe(true);
+      else expect(day.some((g) => x.detail.includes(` ${g.home === 7 ? g.awayRuns : g.homeRuns}실점`)), x.detail).toBe(true);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(0);
     a.close();
     b.close();
   });

@@ -70,6 +70,9 @@ export interface GameMeta {
   achState?: unknown;
   /** 8c(D-184 (3)) 누적 집합·상태 */
   achMemo?: unknown;
+  /** 8d(D-186) P·Q 상태 */
+  pqState?: unknown;
+  pqMemo?: unknown;
   achievementXp?: Record<string, number>;
   /** 8a(D-180): 시즌 → 구단 ID → 개막 때 기대 순위(감독상 예상 승수) */
   awardBase?: Record<string, Record<string, number>>;
@@ -625,6 +628,10 @@ export interface GameRepository {
   insertAwards(rows: AwardRecord[]): void;
   /** 8b 업적(D-182) */
   apWeeks(): ApWeek[];
+  clubErrors(season: number): Map<ClubId, number>;
+  catcherStops(season: number, ids: PlayerId[]): Map<PlayerId, { SB: number; CS: number; PB: number }>;
+  batterExtras(season: number, clubId: ClubId, playerIds: PlayerId[]): Map<PlayerId, { IBB: number; SH: number; GDP: number; GS: number; leadHR: number; leadG: number }>;
+  pitcherWildPitches(season: number, playerIds: PlayerId[]): Map<PlayerId, number>;
   scoutingObservations(clubId: ClubId): number;
   flagTotals(season: number, clubId: ClubId): Map<PlayerId, { HLD: number; BS: number; QS: number }>;
   clubBatterGames(season: number, clubId: ClubId, playerIds?: PlayerId[]): Array<{ gameId: number; date: GameDate; batterId: PlayerId; H: number; OB: number }>;

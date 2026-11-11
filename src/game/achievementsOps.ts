@@ -48,6 +48,8 @@ export interface OpsCtx {
   judge: Judge;
   flag: Flag;
   memo: AchMemo;
+  /** 선수 목록(하루에 한 번만 읽는다) */
+  players: () => PlayerTruth[];
   /** 우리 구단 소속 통산과 다른 구단 경력 여부(시즌 시작 전까지) */
   career: () => { seasons: Map<number, Set<number>>; otherClub: Set<number> };
   tenureFirst: number;
@@ -71,8 +73,7 @@ export function judgeOps(c: OpsCtx): void {
   // 저장본 메타 전체는 판정하는 날에만 읽는다
   let freshCache: GameMeta | null = null;
   const F = () => (freshCache ??= repo.getMeta());
-  let players: PlayerTruth[] | null = null;
-  const all = () => (players ??= repo.getPlayers());
+  const all = c.players;
   const games = () => Math.round((repo.getGames(season, 'regular').length * 2) / Math.max(1, repo.getClubs().length));
 
   // ───── 매주 일요일 ─────

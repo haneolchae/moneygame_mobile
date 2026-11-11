@@ -240,7 +240,13 @@ export class Records {
     const got = isUser ? this.repo.getAchievements() : [];
     const known = new Set(ACHIEVEMENTS.map((a) => a.key));
     const achievements: AchievementView[] = [
-      ...ACHIEVEMENTS.map((a) => ({ ...a, achieved: got.filter((g) => g.key === a.key).map((g) => ({ season: g.season, date: g.date, detail: g.detail, xp: g.xp })) })),
+      ...ACHIEVEMENTS.map((a, i) => {
+        const achieved = got.filter((g) => g.key === a.key).map((g) => ({ season: g.season, date: g.date, detail: g.detail, xp: g.xp }));
+        const masked = a.cat === 'P' || a.cat === 'Q';
+        // 8d(D-186 (1)): 달성 전 숨김 업적은 이름·조건·키를 응답에 넣지 않는다
+        if (masked && achieved.length === 0) return { key: `hidden-${i}`, series: `hidden-${a.cat}-${i}`, seriesTitle: '???', stage: 1, stageLabel: '', type: a.type, inactive: a.inactive ? '원천 기능 없음' : null, cat: a.cat, masked: true, title: '???', category: a.category, description: '달성하면 공개됩니다', xp: a.xp, repeat: a.repeat, achieved };
+        return { ...a, masked, achieved };
+      }),
       // 이전 개발 빌드의 업적 키(D-182 (6)): 정의가 없어도 달성 기록은 보인다
       ...[...new Set(got.filter((g) => !known.has(g.key)).map((g) => g.key))].map((key) => ({ key, series: 'legacy', seriesTitle: key, stage: 1, stageLabel: '', type: 'legacy' as const, title: key, category: '이전 업적', description: '이전 개발 빌드에서 달성한 업적', xp: 0, repeat: false, achieved: got.filter((g) => g.key === key).map((g) => ({ season: g.season, date: g.date, detail: g.detail, xp: g.xp })) })),
     ];

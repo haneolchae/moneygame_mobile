@@ -48,7 +48,9 @@ export function HallOfFame({ nav, initialClubId }: { nav: Nav; initialClubId?: n
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId]);
 
-  const mineCount = v ? v.timeline.filter((t) => t.mine).length + v.history.filter((h) => h.mine).length + v.records.filter((r) => r.mine).length + v.achievements.filter((a) => a.achieved.length).length : 0;
+  // 8d: Q(불명예)는 구단주 달성에 넣지 않고 흑역사 구역에만
+  const mineCount = v ? v.timeline.filter((t) => t.mine).length + v.history.filter((h) => h.mine).length + v.records.filter((r) => r.mine).length + v.achievements.filter((a) => a.achieved.length && a.cat !== 'Q').length : 0;
+  const shame = v ? v.achievements.filter((a) => a.cat === 'Q' && a.achieved.length) : [];
   return (
     <div className="page">
       <h1>명예의 전당</h1>
@@ -333,7 +335,7 @@ export function HallOfFame({ nav, initialClubId }: { nav: Nav; initialClubId?: n
                         </tr>
                       ))}
                     {v.achievements
-                      .filter((a) => a.achieved.length)
+                      .filter((a) => a.achieved.length && a.cat !== 'Q')
                       .flatMap((a) => a.achieved.map((x, i) => ({ a, x, i })))
                       .map(({ a, x, i }) => (
                         <tr key={`a${a.key}${i}`}>
@@ -346,6 +348,32 @@ export function HallOfFame({ nav, initialClubId }: { nav: Nav; initialClubId?: n
                     {mineCount === 0 && (
                       <tr>
                         <td className="muted">아직 없습니다. 2027 시즌부터 구단주로서 이룬 성과가 여기에 쌓입니다.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </section>
+              <section className="panel">
+                <div className="panel-head">
+                  <h2>흑역사</h2>
+                  <span className="meta">실수·불명예 기록(경험치 없음) · 우리 구단만</span>
+                </div>
+                <table className="grid dense">
+                  <tbody>
+                    {shame
+                      .flatMap((a) => a.achieved.map((x, i) => ({ a, x, i })))
+                      .sort((p, q) => (p.x.date < q.x.date ? 1 : -1))
+                      .map(({ a, x, i }) => (
+                        <tr key={`q${a.key}${i}`}>
+                          <td>{x.date.slice(0, 4)}</td>
+                          <td>
+                            {a.title} — {x.detail}
+                          </td>
+                        </tr>
+                      ))}
+                    {shame.length === 0 && (
+                      <tr>
+                        <td className="muted">아직 없습니다.</td>
                       </tr>
                     )}
                   </tbody>

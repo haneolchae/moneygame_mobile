@@ -561,5 +561,11 @@ export function checkAchievements(repo: GameRepository): string[] {
     }
   }
   for (const [season, xp] of Object.entries(repo.getMeta().achievementXp ?? {})) if (xp > ACHIEVEMENT_XP.seasonCap) errors.push(`업적 경험치 상한 초과: ${season} ${xp}`);
+  // 8d(D-187 ②): Q는 경험치 0, 비활성 계열은 기록 없음
+  for (const a of got) {
+    const d = def.get(a.key);
+    if (d?.cat === 'Q' && a.xp !== 0) errors.push(`Q 경험치 지급: ${a.key} ${a.xp}`);
+    if (d?.inactive) errors.push(`비활성 계열 기록: ${a.key}`);
+  }
   return errors;
 }
