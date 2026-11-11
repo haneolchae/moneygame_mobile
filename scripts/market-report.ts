@@ -20,7 +20,7 @@ async function main() {
   for (;;) {
     const dash = await d.respond('game.dashboard', undefined as never);
     if (!dash.ok || dash.result.phase !== 'stove') break;
-    const a = await d.respond('game.advance', { mode: 'week' });
+    const a = await d.respond('game.advance', { mode: 'week', autoCards: true });
     if (!a.ok) throw new Error(a.error.message);
     weeks++;
     if (a.result.stoppedReason && !a.result.stoppedReason.startsWith('스토브리그 종료')) console.log('멈춤:', a.result.stoppedReason);

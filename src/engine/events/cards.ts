@@ -15,17 +15,21 @@ export const TEAMS = ['medical', 'pr', 'partnership', 'operations', 'marketing']
 export const TEAM_LABEL: Record<string, string> = { medical: '컨디셔닝·메디컬팀', pr: '홍보팀', partnership: '사업제휴팀', operations: '운영팀', marketing: '마케팅팀' };
 
 /** 26 4장 효과 전체 */
-export const EFFECT_TYPES = ['CASH', 'RECUR', 'DEMAND', 'MERCH', 'FAN_NOW', 'FAN_TARGET', 'PRESS', 'MOOD', 'COND', 'INJ_RISK', 'REST', 'SUSPEND', 'GROWTH', 'TRUST', 'CLUBHOUSE', 'FLAG', 'SPAWN', 'CONTRACT'] as const;
+export const EFFECT_TYPES = ['CASH', 'RECUR', 'DEMAND', 'MERCH', 'FAN_NOW', 'FAN_TARGET', 'PRESS', 'MOOD', 'COND', 'INJ_RISK', 'REST', 'SUSPEND', 'GROWTH', 'TRUST', 'CLUBHOUSE', 'FLAG', 'SPAWN', 'CONTRACT', 'HEAL'] as const;
 export type EffectType = (typeof EFFECT_TYPES)[number];
 /** 실제 모델에 연결한 효과(EV-1 6종 + EV-2 10종). SUSPEND·CONTRACT는 EV-4에서 연결한다 */
-export const CONNECTED: ReadonlySet<EffectType> = new Set<EffectType>(['CASH', 'FAN_NOW', 'REST', 'TRUST', 'FLAG', 'SPAWN', 'MOOD', 'CLUBHOUSE', 'COND', 'INJ_RISK', 'DEMAND', 'MERCH', 'RECUR', 'FAN_TARGET', 'PRESS', 'GROWTH']);
+export const CONNECTED: ReadonlySet<EffectType> = new Set<EffectType>(['CASH', 'FAN_NOW', 'REST', 'TRUST', 'FLAG', 'SPAWN', 'MOOD', 'CLUBHOUSE', 'COND', 'INJ_RISK', 'DEMAND', 'MERCH', 'RECUR', 'FAN_TARGET', 'PRESS', 'GROWTH', 'HEAL']);
 /** 기간(주)이 필요한 효과 */
 export const TIMED: ReadonlySet<EffectType> = new Set<EffectType>(['COND', 'INJ_RISK', 'DEMAND', 'MERCH', 'RECUR', 'FAN_TARGET']);
 export const COST_GRADES = ['small', 'medium', 'large'] as const;
 
 /** 조건식에서 쓸 수 있는 변수(flag.이름은 따로 허용) */
-export const CLUB_VARS = ['club.rank', 'club.streak', 'club.fan', 'club.cashEok', 'club.week', 'season.half'] as const;
-export const PLAYER_VARS = ['player.injuryDays', 'player.starter', 'player.age', 'player.fatigue', 'player.pitcher', 'player.active'] as const;
+export const CLUB_VARS = ['club.rank', 'club.streak', 'club.fan', 'club.cashEok', 'club.week', 'season.half', 'club.subSlotsFree', 'club.feat', 'club.tradeRecent'] as const;
+export const PLAYER_VARS = ['player.injuryDays', 'player.starter', 'player.age', 'player.fatigue', 'player.pitcher', 'player.active', 'player.slump', 'player.awardRecent'] as const;
+
+/** EV-3(D-207 (2)): 분류별 담당 팀(D-199). 시상·기록과 감독·코치는 담당 팀이 없어 위임할 수 없다 */
+export const CATEGORY_TEAM: Record<CardCategory, (typeof TEAMS)[number] | null> = { injury: 'medical', personal: 'pr', positive: 'pr', sponsor: 'partnership', transfer: 'operations', ops: 'marketing', award: null, coach: null };
+export const LINKS = ['market', 'trade', 'org'] as const;
 
 export interface CardEffect {
   type: EffectType;
@@ -40,12 +44,16 @@ export interface CardEffect {
   /** FLAG 이름, SPAWN 카드 */
   name?: string;
   card?: string;
-  /** GROWTH·MOOD 대상: 카드 대상 선수(기본) 또는 우리 1군 전원 */
-  who?: 'target' | 'club';
+  /** GROWTH·MOOD 대상: 카드 대상 선수(기본), 우리 1군 전원, 대상이 아닌 1군 주전 1명(MOOD) */
+  who?: 'target' | 'club' | 'other';
+  /** CASH·RECUR 비용 등급 금액을 수입으로 */
+  income?: boolean;
 }
 
 export interface CardOutcome {
   p: number;
+  /** 카드 화면에 위험 등급과 함께 보이는 짧은 설명 */
+  hint?: string;
   effects: CardEffect[];
   text: string;
 }
@@ -59,6 +67,8 @@ export interface CardChoice {
   elseText?: string;
   /** 선택하면 바로 알리는 처리 문장 */
   text: string;
+  /** 선택 뒤 열 화면 */
+  link?: (typeof LINKS)[number];
 }
 
 export interface EventCard {
@@ -97,7 +107,8 @@ function effectErrors(e: unknown, where: string, cardIds: Set<string>): string[]
   if (TIMED.has(x.type) && !(Number.isInteger(x.weeks) && x.weeks! >= 1)) bad.push(`${where}: ${x.type} weeks 필요`);
   if (['INJ_RISK', 'DEMAND', 'MERCH', 'GROWTH'].includes(x.type) && !(typeof x.value === 'number' && x.value > 0)) bad.push(`${where}: ${x.type} 배율 value 필요`);
   if (x.type === 'RECUR' && !(Number.isInteger(x.won) || within(COST_GRADES, x.grade))) bad.push(`${where}: RECUR는 won 또는 grade`);
-  if (x.who !== undefined && x.who !== 'target' && x.who !== 'club') bad.push(`${where}: who 오류`);
+  if (x.who !== undefined && x.who !== 'target' && x.who !== 'club' && x.who !== 'other') bad.push(`${where}: who 오류`);
+  if (x.type === 'HEAL' && !(Number.isInteger(x.days) && x.days !== 0)) bad.push(`${where}: HEAL days 필요`);
   if (x.type === 'FLAG' && !isText(x.name)) bad.push(`${where}: FLAG name 필요`);
   if (x.type === 'SPAWN' && !(isText(x.card) && cardIds.has(x.card) && Number.isInteger(x.weeks) && x.weeks! >= 1)) bad.push(`${where}: SPAWN card·weeks 오류`);
   return bad;
@@ -125,10 +136,12 @@ export function parseCards(input: unknown): { cards: LoadedCard[]; errors: strin
     if (!(Number.isInteger(c?.cooldownWeeks) && c.cooldownWeeks >= 1)) bad.push('cooldownWeeks');
     if (!(Number.isInteger(c?.seasonCap) && c.seasonCap >= 1)) bad.push('seasonCap');
     if (!(c?.delegateTeam === null || within(TEAMS, c?.delegateTeam))) bad.push('delegateTeam');
+    else if (within(CARD_CATEGORIES, c?.category) && c.delegateTeam !== CATEGORY_TEAM[c.category]) bad.push('delegateTeam(분류 담당 팀과 다름)');
     if (!Array.isArray(c?.texts) || c.texts.length < 3 || !c.texts.every(isText)) bad.push('texts(변형 3종 이상)');
     if (!Array.isArray(c?.choices) || c.choices.length < 2 || c.choices.length > 3) bad.push('choices(2~3개)');
     else {
       for (const ch of c.choices) {
+        if (ch?.link !== undefined && !within(LINKS, ch.link)) bad.push(`choice ${ch?.id ?? '?'} link`);
         if (!isText(ch?.id) || !isText(ch?.label) || !isText(ch?.text) || !Array.isArray(ch?.effects)) {
           bad.push(`choice ${ch?.id ?? '?'} 필드`);
           continue;

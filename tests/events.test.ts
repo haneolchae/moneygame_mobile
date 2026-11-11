@@ -30,7 +30,7 @@ describe('이벤트 엔진·턴 브리핑 (EV-1)', () => {
     expect(CARDS.find((c) => c.id === 'FAN-01')!.inactive).toBeNull();
     // EV-2에서 기분·컨디션 등이 연결돼 켜졌고, 계약 효과(EV-4)를 쓰는 카드는 아직 비활성
     expect(CARDS.find((c) => c.id === 'PRV-04')!.inactive).toBeNull();
-    expect(CARDS.find((c) => c.id === 'INJ-01')!.inactive).toContain('CONTRACT');
+    expect(CARDS.find((c) => c.id === 'MGR-04')!.inactive).toContain('CONTRACT');
     const bad = parseCards([{ ...CARDS[0], id: 'X', trigger: 'secret.hidden > 1' }, { ...CARDS[0], id: 'Y', delegateDefault: 'nope' }]);
     expect(bad.errors.length).toBe(2);
 
@@ -80,12 +80,12 @@ describe('이벤트 엔진·턴 브리핑 (EV-1)', () => {
       repo.updateMeta({ eventState: { ...st, queue: [...st.queue, { week: weekNumber(addDays(mid, 7)), cardId: 'TEST', playerId: null, effects: [{ type: 'FAN_NOW', value: 1 }], text: '시험 지연 결과' }], spawns: [{ week: weekNumber(addDays(mid, 7)), cardId: 'FAN-01', playerId: null }] } });
       await advanceTo(d, addDays(mid, 14));
       expect(repo.getNews({ weekId: addDays(mid, 7) }).some((n) => n.kind === 'result' && n.text.startsWith('시험 지연 결과'))).toBe(true);
-      // 연쇄로 예약한 카드는 그 주에 발생하고 담당 팀이 위임 기본 선택지로 처리, 결과는 다음 브리핑에
+      // 연쇄로 예약한 카드는 그 주에 발생한다. EV-3부터 기본은 직접 받기라 시험(자동 실행)이 위임 기본 선택지를 고르고, 결과는 다음 브리핑에
       const fan = repo.getEventLog().find((e) => e.cardId === 'FAN-01')!;
       expect(fan.weekId).toBe(addDays(mid, 7));
-      expect(fan.by).toBe('delegate');
+      expect(fan.by).toBe('owner');
       expect(fan.choiceId).toBe('statement');
-      expect(repo.getNews({ weekId: addDays(mid, 14) }).some((n) => n.kind === 'result' && n.text.includes('마케팅팀') && n.text.includes('입장문'))).toBe(true);
+      expect(repo.getNews({ weekId: addDays(mid, 14) }).some((n) => n.kind === 'result' && n.text.includes('구단주') && n.text.includes('입장문'))).toBe(true);
       await call(d, 'save.load', { slot: 'ev' });
       await advanceTo(d, check);
       const snap = (r: typeof repo) => JSON.stringify({ news: r.getNews({ season: 2027 }).filter((n) => n.weekId <= check), log: r.getEventLog({ season: 2027 }).filter((e) => e.date <= check) });
@@ -122,7 +122,7 @@ describe('이벤트 엔진·턴 브리핑 (EV-1)', () => {
 
       // EV-2(D-206 ⑧): 켜진 카드가 한 시즌에 실제로 나온다(위임 기본 선택지)
       expect(log.length).toBeGreaterThan(0);
-      expect(log.every((e) => e.by === 'delegate' && e.choiceId === CARDS.find((c) => c.id === e.cardId)!.delegateDefault)).toBe(true);
+      expect(log.every((e) => e.choiceId === CARDS.find((c) => c.id === e.cardId)!.delegateDefault)).toBe(true);
       // ⑤ 효과
       const svc2 = svcOf(d);
       const meta = r2.getMeta();

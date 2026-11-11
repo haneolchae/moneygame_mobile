@@ -47,7 +47,7 @@ import { CareerOps } from './career';
 import { AwardOps, goldenGloveDate } from './awards';
 import { AllStarOps, lineText } from './allStar';
 import { conditionLogits, EventOps, growthMultiplier, weekNumber } from './events';
-import { CATEGORY_LABEL as CARD_CATEGORY_LABEL } from '../engine/events/cards';
+import { CARD_CATEGORIES, CARDS, CATEGORY_LABEL as CARD_CATEGORY_LABEL, CATEGORY_TEAM, TEAM_LABEL as CARD_TEAM_LABEL, type CardCategory } from '../engine/events/cards';
 import { allStarDates, SLOT_LABEL, SLOT_SIZE, TEAM_LABEL } from '../engine/allStar';
 import { awardTitle } from '../engine/awards';
 import { BudgetOps } from './budget';
@@ -111,6 +111,8 @@ import {
   type BudgetPlanInput,
   type AllStarView,
   type BriefingView,
+  type CardDelegationView,
+  type CardView,
   type NewsLogView,
   type AwardsView,
   type BudgetView,
@@ -386,7 +388,7 @@ export class GameService {
     this.awards = new AwardOps(repo, this.clubMap, (m, c, s) => this.seasonClose.expectedRank(m, c, s));
     // 8e(D-189·D-190): 올스타전
     // EV-1(D-203): 턴 브리핑·결정 카드
-    this.events = new EventOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), fatigue: (d, ps) => this.health.fatigueMap(d, ps), adjustTrust: (c, v, d, s) => this.managers.adjustTrust(c, v, d, s), prQuality: (c) => this.org.teamQuality(c, 'pr') });
+    this.events = new EventOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), fatigue: (d, ps) => this.health.fatigueMap(d, ps), adjustTrust: (c, v, d, s) => this.managers.adjustTrust(c, v, d, s), prQuality: (c) => this.org.teamQuality(c, 'pr'), spendWp: (w, t, wp) => { try { this.repo.spendWp(w, t, wp); return true; } catch { return false; } } });
     this.allStar = new AllStarOps(repo, this.clubMap, (id) => this.managers.profileOf(id), (s, d, ps, env) => this.forms.formsFor(s, d, ps, env), this.budget);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -709,7 +711,7 @@ export class GameService {
   }
 
   /** 진행. 스토브리그는 1주 단위만(D-062). 시즌은 1일·1주·정규시즌 끝까지. */
-  advance(mode: 'day' | 'week' | 'untilSeasonEnd', onProgress?: (p: AdvanceProgress) => void, shouldStop?: () => boolean) {
+  advance(mode: 'day' | 'week' | 'untilSeasonEnd', onProgress?: (p: AdvanceProgress) => void, shouldStop?: () => boolean, autoCards = false) {
     const start = this.meta();
     if (start.mode === 'stove' && mode !== 'week') throw new GameError('STOVE_WEEKLY_ONLY', '스토브리그는 1주 단위로 진행합니다.');
     let daysProcessed = 0;
@@ -718,6 +720,16 @@ export class GameService {
     const startWeek = weekIdFor(start.currentDate);
     const startPhase = this.phase();
     while (this.phase() !== 'seasonComplete') {
+      // EV-3(D-207 (1)): 대기 결정 카드가 있으면 진행하지 않는다(화면 없는 자동 실행은 위임 기본 선택지)
+      const pend = this.meta().eventState?.pendingCard;
+      if (pend) {
+        if (autoCards) this.events.choose(this.meta(), CARDS.find((c) => c.id === pend.cardId)!.delegateDefault);
+        else if (daysProcessed === 0) throw new GameError('DECISION_PENDING', '이번 주 결정 카드를 먼저 고르세요.');
+        else {
+          stoppedReason = '결정 카드가 도착했습니다';
+          break;
+        }
+      }
       const before = this.meta();
       const { gamesPlayed: g } = this.advanceOneDay();
       daysProcessed++;
@@ -1005,6 +1017,7 @@ export class GameService {
       pendingApprovals: this.org.approvals().length,
       approvals: this.approvalViews(),
       briefing: this.briefingView(weekIdFor(meta.currentDate)),
+      card: this.cardView(),
       upcomingEvents: this.calendar(meta.currentDate, addDays(meta.currentDate, 45)),
       keyPlayers,
       canAdvanceDay: meta.mode === 'season' && phase !== 'seasonComplete' && !meta.gameOver,
@@ -1475,6 +1488,56 @@ export class GameService {
     const rows = this.repo.getNews({ weekId });
     if (!rows.length) return null;
     return { weekId, date: rows[0]!.date, season: rows[0]!.season, lines: rows.map((r) => ({ kind: r.kind as BriefingView['lines'][number]['kind'], text: r.text })) };
+  }
+
+  /** EV-3(D-207 (1)) 대기 결정 카드 화면: 확정 효과 숫자, 확률 효과 위험 등급, 히든 값 없음 */
+  cardView(): CardView | null {
+    const meta = this.meta();
+    const pend = meta.eventState?.pendingCard;
+    if (!pend) return null;
+    const card = CARDS.find((c) => c.id === pend.cardId);
+    if (!card) return null;
+    const p = pend.playerId !== null ? this.repo.getPlayer(pend.playerId) : null;
+    return {
+      cardId: card.id,
+      category: card.category,
+      categoryLabel: CARD_CATEGORY_LABEL[card.category],
+      priority: card.priority,
+      date: pend.date,
+      player: p ? { id: p.id, name: p.name } : null,
+      text: pend.text,
+      choices: card.choices.map((c) => ({
+        id: c.id,
+        label: c.label,
+        effects: c.effects.map((e) => this.events.describe(meta, e)).filter((x): x is string => !!x),
+        risks: (c.outcomes ?? []).map((o) => ({ grade: this.events.riskGrade(o.p), hint: o.hint ?? '변수 있음' })),
+        isDefault: c.id === card.delegateDefault,
+        link: c.link ?? null,
+      })),
+    };
+  }
+
+  chooseCard(choiceId: string): { message: string; link: string | null } {
+    return this.events.choose(this.meta(), choiceId);
+  }
+
+  cardDelegation(): CardDelegationView {
+    const meta = this.meta();
+    return CARD_CATEGORIES.map((c: CardCategory) => ({ category: c, label: CARD_CATEGORY_LABEL[c], team: CATEGORY_TEAM[c] ? CARD_TEAM_LABEL[CATEGORY_TEAM[c]!]! : null, delegable: !!CATEGORY_TEAM[c], delegate: !!meta.cardDelegation?.[c] && !!CATEGORY_TEAM[c] }));
+  }
+
+  setCardDelegation(category: string, delegate: boolean): CardDelegationView {
+    if (!CARD_CATEGORIES.includes(category as CardCategory)) throw new GameError('INVALID', '없는 카드 분류입니다.');
+    if (!CATEGORY_TEAM[category as CardCategory]) throw new GameError('NOT_AVAILABLE', '이 분류는 담당 팀이 없어 맡길 수 없습니다.');
+    const meta = this.meta();
+    this.repo.updateMeta({ cardDelegation: { ...(meta.cardDelegation ?? {}), [category]: delegate } });
+    return this.cardDelegation();
+  }
+
+  /** 개발 모드 강제 발생(26a D1) */
+  forceCard(cardId: string, playerId: number | null): CardView | null {
+    this.events.force(this.meta(), cardId, playerId);
+    return this.cardView();
   }
 
   newsLog(season?: number): NewsLogView {

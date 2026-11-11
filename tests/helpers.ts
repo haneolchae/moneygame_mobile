@@ -22,7 +22,9 @@ export function makeDispatcher(dir: string): Dispatcher {
 }
 
 export async function call<K extends RequestName>(d: Dispatcher, name: K, payload?: RequestMap[K]['payload']): Promise<RequestMap[K]['result']> {
-  const r = await d.respond(name, payload as RequestMap[K]['payload']);
+  // EV-3(D-207 (2)): 시험은 화면 없는 자동 실행이라 대기 결정 카드를 위임 기본 선택지로 처리한다
+  const p = name === 'game.advance' && payload && (payload as { autoCards?: boolean }).autoCards === undefined ? { ...(payload as object), autoCards: true } : payload;
+  const r = await d.respond(name, p as RequestMap[K]['payload']);
   if (!r.ok) throw new Error(`${name}: [${r.error.code}] ${r.error.message}`);
   return r.result;
 }

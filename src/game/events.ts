@@ -4,7 +4,11 @@ import { allStarDates } from '../engine/allStar';
 import { startSatisfaction } from '../engine/business';
 import { addDays, ageOn, diffDays, type GameDate } from '../engine/calendar';
 import { EVENTS as E, MARKETING, TRADE } from '../engine/config';
-import { CARDS, CATEGORY_LABEL, CONNECTED, passesLimits, pickCandidate, TEAM_LABEL, type CardEffect, type Candidate, type CardPhase, type LoadedCard } from '../engine/events/cards';
+import { CARDS, CATEGORY_LABEL, CATEGORY_TEAM, CONNECTED, passesLimits, pickCandidate, TEAM_LABEL, type CardEffect, type Candidate, type CardPhase, type LoadedCard } from '../engine/events/cards';
+import { ops as opsOf } from '../engine/awards';
+import { SPONSOR } from '../engine/config';
+import type { TeamKey } from '../engine/staff';
+import { GameError } from '../shared/protocol';
 import { isTrue, type ExprValue } from '../engine/events/expr';
 import { FINANCE_BASE, inflate, stadiumFee, type LedgerEntry } from '../engine/finance';
 import { EOK } from '../engine/money';
@@ -60,7 +64,12 @@ export interface EventDeps {
   adjustTrust: (clubId: ClubId, delta: number, date: GameDate, source: string) => void;
   /** 홍보팀 역량 0~1 */
   prQuality: (clubId: ClubId) => number;
+  /** EV-3: 담당 팀 처리량을 쓴다(모자라면 false, 비용 없음) */
+  spendWp: (weekId: GameDate, team: TeamKey, wp: number) => boolean;
 }
+
+/** 카드 담당 팀 → 조직 팀 키 */
+const TEAM_KEY: Record<string, TeamKey> = { medical: 'medical', pr: 'pr', partnership: 'partnership', operations: 'ops', marketing: 'marketing' };
 
 export interface ApplyCtx {
   meta: GameMeta;
@@ -105,7 +114,7 @@ export class EventOps {
         let amount = e.won ?? 0;
         if (e.grade) {
           const [lo, hi] = E.costBp[e.grade]!;
-          amount = -Math.max(1_000_000, round1m((this.baseBudget(c.meta, c.clubId) * c.rng.int(lo, hi)) / 10_000));
+          amount = (e.income ? 1 : -1) * Math.max(1_000_000, round1m((this.baseBudget(c.meta, c.clubId) * c.rng.int(lo, hi)) / 10_000));
         }
         const entry: LedgerEntry = { clubId: c.clubId, date: c.date, category: 'event', amount, memo: `이벤트 ${c.cardId}` };
         this.repo.addLedger([entry]);
@@ -139,7 +148,13 @@ export class EventOps {
         c.state.spawns.push({ week: c.week + (e.weeks ?? 1), cardId: e.card!, playerId: c.playerId });
       } else if (e.type === 'MOOD' || e.type === 'CLUBHOUSE') {
         // 선수단 분위기 = 우리 1군 전원 기분 ±n/2(D-202 (1))
-        const ids = e.type === 'CLUBHOUSE' || e.who === 'club' ? this.repo.getPlayers().filter((p) => p.clubId === c.clubId && p.level === '1군').map((p) => p.id) : c.playerId !== null ? [c.playerId] : [];
+        const first = this.repo.getPlayers().filter((p) => p.clubId === c.clubId && p.level === '1군');
+        let ids = e.type === 'CLUBHOUSE' || e.who === 'club' ? first.map((p) => p.id) : c.playerId !== null ? [c.playerId] : [];
+        if (e.who === 'other') {
+          // 대상이 아닌 우리 1군 주전 1명(이벤트 난수)
+          const pool = [...this.starters(first)].filter((id) => id !== c.playerId).sort((a, b) => a - b);
+          ids = pool.length ? [pool[c.rng.int(0, pool.length - 1)]!] : [];
+        }
         const d = e.type === 'CLUBHOUSE' ? Math.round((e.value ?? 0) / 2) : (e.value ?? 0);
         this.changeMood(ids, d);
         out.push(`${e.type === 'CLUBHOUSE' ? '선수단 분위기' : '기분'} ${d >= 0 ? '▲' : '▼'}`);
@@ -158,10 +173,21 @@ export class EventOps {
         out.push(`${e.type === 'DEMAND' ? '관중 수요' : e.type === 'MERCH' ? '굿즈 수요' : '팬 만족도 목표'} ${up ? '▲' : '▼'}(${e.weeks}주)`);
       } else if (e.type === 'RECUR') {
         // 반복 수입·지출: 지금 한 번, 이후 주 시작마다 남은 횟수만큼
-        const amount = this.recurAmount(c, e.won, e.grade);
+        const amount = this.recurIncome(c, e);
         this.repo.addLedger([{ clubId: c.clubId, date: c.date, category: 'event', amount, memo: `이벤트 ${c.cardId}(반복)` }]);
         if ((e.weeks ?? 1) > 1) (c.state.effects ??= []).push({ type: 'RECUR', clubId: c.clubId, playerId: null, value: 0, untilWeek: c.week + (e.weeks ?? 1), left: (e.weeks ?? 1) - 1, won: amount });
         out.push(`매주 ${amount < 0 ? '지출' : '수입'} ${eok(Math.abs(amount))}(${e.weeks}주)`);
+      } else if (e.type === 'HEAL') {
+        // 부상 복귀일·추정 범위 ±일(내일보다 앞당기지 않는다)
+        if (c.playerId === null) continue;
+        const p = this.repo.getPlayer(c.playerId);
+        const inj = p?.health?.injury;
+        if (!p || !inj || diffDays(c.date, inj.returnDate) >= 0) continue;
+        const floor = addDays(c.date, 1);
+        const shift = (d: GameDate) => { const x = addDays(d, e.days ?? 0); return x < floor ? floor : x; };
+        p.health!.injury = { ...inj, returnDate: shift(inj.returnDate), estimate: { from: shift(inj.estimate.from), to: shift(inj.estimate.to) } };
+        this.repo.savePlayers([p]);
+        out.push(`복귀 ${Math.abs(e.days ?? 0)}일 ${(e.days ?? 0) < 0 ? '앞당김' : '늦춤'}`);
       } else if (e.type === 'GROWTH') {
         const end = weekNumber(addDays(seasonKeyDates(c.meta.season).regularSeasonEnd, 40));
         (c.state.effects ??= []).push({ type: 'GROWTH', clubId: c.clubId, playerId: e.who === 'club' ? null : c.playerId, value: e.value ?? 1, untilWeek: end });
@@ -175,6 +201,11 @@ export class EventOps {
     if (won !== undefined) return won;
     const [lo, hi] = E.costBp[grade ?? 'small']!;
     return -Math.max(1_000_000, round1m((this.baseBudget(c.meta, c.clubId) * c.rng.int(lo, hi)) / 10_000));
+  }
+
+  private recurIncome(c: ApplyCtx, e: CardEffect): number {
+    const v = this.recurAmount(c, e.won, e.grade);
+    return e.income && e.won === undefined ? -v : v;
   }
 
   /** 기분 ±(0~100). 50이면 값을 지운다 */
@@ -272,14 +303,88 @@ export class EventOps {
       const parts = this.applyEffects(q.effects, { meta, date: monday, clubId: club, playerId: q.playerId, rng, week, cardId: q.cardId, state });
       results.push(`${q.text}${parts.length ? ` (${parts.join(', ')})` : ''}`);
     }
-    // 3) 브리핑
+    // 3) 결정 카드 추첨(그 주 1장) → 브리핑 → 맡긴 분류는 담당 팀 처리, 아니면 대기 카드(D-207)
     const fresh = this.repo.getMeta();
+    const card = state.pendingCard ? null : this.drawCard(fresh, monday, week, state, rng);
+    const text = card ? this.cardText(fresh, card.card, card.playerId, rng) : '';
+    const team = card ? CATEGORY_TEAM[card.card.category] : null;
+    const delegated = !!card && !!team && !!fresh.cardDelegation?.[card.card.category] && this.deps.spendWp(weekId, TEAM_KEY[team]!, E.delegateWp);
     const lines = this.briefingLines(fresh, monday, state, results);
+    if (card && !delegated) lines.push({ kind: 'decide', text: `결정할 일이 있습니다: [${CATEGORY_LABEL[card.card.category]}] ${text}` });
     this.repo.addNews(lines.map((l, i) => ({ weekId, season, date: monday, seq: i, kind: l.kind, text: l.text })));
-    // 4) 결정 카드(그 주 1장)
-    const card = this.drawCard(fresh, monday, week, state, rng);
-    if (card) this.resolveDelegated(fresh, monday, week, weekId, card.card, card.playerId, state, rng);
+    if (card && delegated) this.resolve(fresh, monday, week, weekId, card.card, card.playerId, text, card.card.delegateDefault, 'delegate', state, rng);
+    else if (card) state.pendingCard = { cardId: card.card.id, playerId: card.playerId, week, weekId, date: monday, text };
     this.repo.updateMeta({ eventState: state, rngStreams: { ...this.repo.getMeta().rngStreams, event: rng.state() } });
+  }
+
+  private cardText(meta: GameMeta, card: LoadedCard, playerId: PlayerId | null, rng: Rng): string {
+    const p = playerId !== null ? this.repo.getPlayer(playerId) : null;
+    return card.texts[rng.int(0, card.texts.length - 1)]!.replace(/\{player\}/g, p?.name ?? '').replace(/\{club\}/g, this.clubs.get(meta.userClubId)!.shortName);
+  }
+
+  // ───────── 구단주 선택·강제 발생(D-207 (1)(6)) ─────────
+
+  /** 대기 카드 선택(행동력 0). 효과는 바로, 확률 결과는 다음 주 시작에 공개 */
+  choose(meta: GameMeta, choiceId: string): { message: string; link: string | null } {
+    const state: EventState = structuredClone(meta.eventState ?? newEventState());
+    const pend = state.pendingCard;
+    if (!pend) throw new GameError('NOT_AVAILABLE', '고를 결정 카드가 없습니다.');
+    const card = CARDS.find((c) => c.id === pend.cardId);
+    const choice = card?.choices.find((c) => c.id === choiceId);
+    if (!card || !choice) throw new GameError('INVALID', '없는 선택지입니다.');
+    const rng = new Rng((meta.rngStreams.event as RngState | undefined) ?? Rng.derive(meta.seed, 'event').state());
+    return this.repo.transaction(() => {
+      state.pendingCard = null;
+      this.resolve(meta, meta.currentDate, pend.week, pend.weekId, card, pend.playerId, pend.text, choiceId, 'owner', state, rng);
+      this.repo.updateMeta({ eventState: state, rngStreams: { ...this.repo.getMeta().rngStreams, event: rng.state() } });
+      return { message: choice.text, link: choice.link ?? null };
+    });
+  }
+
+  /** 개발 모드 강제 발생(26a D1): 지금 대기 카드로 띄운다 */
+  force(meta: GameMeta, cardId: string, playerId: PlayerId | null): void {
+    const state: EventState = structuredClone(meta.eventState ?? newEventState());
+    if (state.pendingCard) throw new GameError('DUPLICATE', '이미 고를 결정 카드가 있습니다.');
+    const card = CARDS.find((c) => c.id === cardId);
+    if (!card) throw new GameError('INVALID', '없는 카드입니다.');
+    const rng = new Rng((meta.rngStreams.event as RngState | undefined) ?? Rng.derive(meta.seed, 'event').state());
+    const week = weekNumber(meta.currentDate);
+    state.pendingCard = { cardId, playerId, week, weekId: weekIdFor(meta.currentDate), date: meta.currentDate, text: this.cardText(meta, card, playerId, rng) };
+    this.repo.updateMeta({ eventState: state, rngStreams: { ...meta.rngStreams, event: rng.state() } });
+  }
+
+  /** 카드 화면용 효과 설명: 확정 효과는 숫자, 지표는 방향, 확률 효과는 위험 등급 */
+  describe(meta: GameMeta, e: CardEffect): string | null {
+    const up = (v: number | undefined, base = 0) => ((v ?? base) >= base ? '▲' : '▼');
+    const range = (grade: string) => {
+      const [lo, hi] = E.costBp[grade]!;
+      const b = this.baseBudget(meta);
+      return `${eok(round1m((b * lo) / 10_000))}~${eok(round1m((b * hi) / 10_000))}`;
+    };
+    switch (e.type) {
+      case 'CASH': return e.grade ? `${e.income ? '수입' : '비용'} 약 ${range(e.grade)}` : `${(e.won ?? 0) < 0 ? '비용' : '수입'} ${eok(Math.abs(e.won ?? 0))}`;
+      case 'RECUR': return `매주 ${e.income ? '수입' : '비용'} ${e.grade ? `약 ${range(e.grade)}` : eok(Math.abs(e.won ?? 0))} (${e.weeks}주)`;
+      case 'REST': return `${e.days}일 휴식(경기 제외)`;
+      case 'HEAL': return `복귀 ${Math.abs(e.days ?? 0)}일 ${(e.days ?? 0) < 0 ? '앞당김' : '늦춤'}`;
+      case 'COND': return `컨디션 ${up(e.value)} (${e.weeks}주)`;
+      case 'INJ_RISK': return `부상 위험 ▲ (${e.weeks}주)`;
+      case 'DEMAND': return `관중 수요 ${up(e.value, 1)} (${e.weeks}주)`;
+      case 'MERCH': return `굿즈 수요 ${up(e.value, 1)} (${e.weeks}주)`;
+      case 'FAN_NOW': return `팬 만족도 ${up(e.value)}`;
+      case 'FAN_TARGET': return `팬 만족도 흐름 ${up(e.value)} (${e.weeks}주)`;
+      case 'PRESS': return `언론 관계 ${up(e.value)}`;
+      case 'MOOD': return `${e.who === 'other' ? '다른 선수 ' : e.who === 'club' ? '1군 전원 ' : ''}기분 ${up(e.value)}`;
+      case 'CLUBHOUSE': return `선수단 분위기 ${up(e.value)}`;
+      case 'TRUST': return `감독 신뢰도 ${up(e.value)}`;
+      case 'GROWTH': return `훈련 효과 ${up(e.value, 1)} (시즌${e.who === 'club' ? ', 1군 전원' : ''})`;
+      case 'CONTRACT': return '계약 조치';
+      default: return null;
+    }
+  }
+
+  riskGrade(p: number): '낮음' | '보통' | '높음' {
+    const v = Math.max(E.outcomeMin, Math.min(E.outcomeMax, p));
+    return v < E.riskLow ? '낮음' : v < E.riskMid ? '보통' : '높음';
   }
 
   private drawCard(meta: GameMeta, date: GameDate, week: number, state: EventState, rng: Rng): { card: LoadedCard; playerId: PlayerId | null } | null {
@@ -300,7 +405,13 @@ export class EventOps {
       'club.cashEok': this.repo.cashBalance(club) / EOK,
       'club.week': Math.max(0, Math.floor(diffDays(date, k.openingWeekMonday) / 7) + 1),
       'season.half': date <= allStarDates(season).game ? 1 : 2,
+      // EV-3(D-207 (4))
+      'club.subSlotsFree': Math.max(0, SPONSOR.subSlots - (meta.sponsors?.[String(club)] ?? []).filter((c) => c.season === season && c.slot === 'sub').length),
+      'club.feat': this.repo.getAchievements().some((a) => (a.key.startsWith('A_nono') || a.key.startsWith('A_cycle')) && a.date >= addDays(date, -7) && a.date < date) ? 1 : 0,
+      'club.tradeRecent': (meta.tradeHistory ?? []).some((t) => !t.ai && (t.clubA === club || t.clubB === club) && t.date >= addDays(date, -14) && t.date < date) ? 1 : 0,
     };
+    let recent: Map<PlayerId, import('../engine/stats').BattingTotals> | null = null;
+    const awarded = new Set(this.repo.getAwards({ clubId: club, season }).filter((a) => a.playerId !== null && a.date >= addDays(date, -7) && a.date < date).map((a) => a.playerId!));
     const flagVar = (n: string) => (n.startsWith('flag.') ? (state.flags[n.slice(5)]?.value ?? 0) : undefined);
     const playerVars = (p: PlayerTruth): Record<string, ExprValue> => {
       fatigue ??= this.deps.fatigue(date, players);
@@ -313,6 +424,13 @@ export class EventOps {
         'player.fatigue': fatigue.get(p.id) ?? 0,
         'player.pitcher': p.isPitcher ? 1 : 0,
         'player.active': p.level === '1군' && !(inj && diffDays(date, inj.returnDate) < 0) ? 1 : 0,
+        'player.slump': (() => {
+          if (p.isPitcher) return 0;
+          recent ??= this.repo.awardLines(season, { from: addDays(date, -28), to: addDays(date, -1) }).batting;
+          const b = recent.get(p.id);
+          return b && b.PA >= E.slumpMinPa && (opsOf(b) || 0) < E.slumpOps ? 1 : 0;
+        })(),
+        'player.awardRecent': awarded.has(p.id) ? 1 : 0,
       };
     };
     const cands: Array<Candidate & { loaded: LoadedCard }> = [];
@@ -343,28 +461,28 @@ export class EventOps {
     return { card: chosen.loaded, playerId: chosen.playerId };
   }
 
-  /** 담당 팀이 위임 기본 선택지로 처리(D-199·D-203 (5)). 확률 결과는 지금 정하고 다음 주에 적용·공개 */
-  private resolveDelegated(meta: GameMeta, date: GameDate, week: number, weekId: GameDate, card: LoadedCard, playerId: PlayerId | null, state: EventState, rng: Rng): void {
-    const choice = card.choices.find((c) => c.id === card.delegateDefault)!;
+  /** 선택 처리(담당 팀·구단주 공용, D-199·D-207). 확률 결과는 지금 정하고 다음 주에 적용·공개 */
+  private resolve(meta: GameMeta, date: GameDate, week: number, weekId: GameDate, card: LoadedCard, playerId: PlayerId | null, text: string, choiceId: string, by: 'delegate' | 'owner', state: EventState, rng: Rng): void {
+    const choice = card.choices.find((c) => c.id === choiceId)!;
     const p = playerId !== null ? this.repo.getPlayer(playerId) : null;
-    const text = card.texts[rng.int(0, card.texts.length - 1)]!.replace(/\{player\}/g, p?.name ?? '').replace(/\{club\}/g, this.clubs.get(meta.userClubId)!.shortName);
+    const fill = (s: string) => s.replace(/\{player\}/g, p?.name ?? '');
     const parts = this.applyEffects(choice.effects, { meta, date, clubId: meta.userClubId, playerId, rng, week, cardId: card.id, state });
     let outcome: string | null = null;
     if (choice.outcomes?.length) {
       let r = rng.next();
       const hit = choice.outcomes.find((o) => (r -= Math.max(E.outcomeMin, Math.min(E.outcomeMax, o.p))) < 0);
       if (hit) {
-        outcome = hit.text;
-        state.queue.push({ week: week + 1, cardId: card.id, playerId, effects: hit.effects, text: hit.text });
+        outcome = fill(hit.text);
+        state.queue.push({ week: week + 1, cardId: card.id, playerId, effects: hit.effects, text: outcome });
       } else if (choice.elseText) {
-        outcome = choice.elseText;
-        state.queue.push({ week: week + 1, cardId: card.id, playerId, effects: [], text: choice.elseText });
+        outcome = fill(choice.elseText);
+        state.queue.push({ week: week + 1, cardId: card.id, playerId, effects: [], text: outcome });
       }
     }
-    const who = card.delegateTeam ? TEAM_LABEL[card.delegateTeam]! : '구단 운영진';
+    const who = by === 'owner' ? '구단주' : card.delegateTeam ? TEAM_LABEL[card.delegateTeam]! : '구단 운영진';
     state.pendingLines.push(`[${CATEGORY_LABEL[card.category]}] ${text} → ${who}: ${choice.text}${parts.length ? ` (${parts.join(', ')})` : ''}`);
     state.lastCategory = card.category;
-    const row: EventLogRow = { season: meta.season, weekId, week, date, cardId: card.id, category: card.category, playerId, choiceId: choice.id, by: 'delegate', outcome, text: `${text} → ${choice.text}` };
+    const row: EventLogRow = { season: meta.season, weekId, week, date, cardId: card.id, category: card.category, playerId, choiceId: choice.id, by, outcome, text: `${text} → ${choice.text}` };
     this.repo.addEventLog(row);
   }
 

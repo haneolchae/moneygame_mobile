@@ -130,6 +130,8 @@ export interface GameMeta {
   allStarCampaign?: Record<string, GameDate>;
   /** EV-1(D-203) 이벤트 진행 상태 */
   eventState?: EventState;
+  /** EV-3(D-207 (2)) 결정 카드 분류별 위임(true = 담당 팀에 맡김) */
+  cardDelegation?: Record<string, boolean>;
   /** EV-2(D-205 (4)) 구단 언론 관계 0~100(없으면 50) */
   press?: Record<string, number>;
   /** 우리 구단 티켓 가격 정책 */
@@ -212,6 +214,8 @@ export interface EventState {
   spawns: Array<{ week: number; cardId: string; playerId: PlayerId | null }>;
   /** EV-2(D-205 (7)) 기간 효과: 끝나는 주(그 주부터 없음), 반복 수입·지출은 남은 횟수 */
   effects?: Array<{ type: string; clubId: ClubId; playerId: PlayerId | null; value: number; untilWeek: number; left?: number; won?: number; grade?: string }>;
+  /** EV-3(D-207 (1)) 구단주가 고를 대기 카드(선택 전 진행 불가) */
+  pendingCard?: { cardId: string; playerId: PlayerId | null; week: number; weekId: GameDate; date: GameDate; text: string } | null;
   /** 다음 브리핑의 결과 회수 줄 */
   pendingLines: string[];
   lastCategory: string | null;

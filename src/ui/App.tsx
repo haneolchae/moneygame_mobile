@@ -4,6 +4,7 @@ import type { AppStatus, DashboardView, ProgressEvent } from '../shared/protocol
 import { api, ApiError, onProgress } from './api';
 import { ApprovalPopup } from './ApprovalPopup';
 import { BriefingPopup } from './BriefingPopup';
+import { CardPopup } from './CardPopup';
 import { NewsLog } from './screens/NewsLog';
 import { GameOverPanel } from './Career';
 import { Emblem } from './Emblem';
@@ -322,7 +323,8 @@ export function App() {
         </div>
       )}
       {d.briefing && d.briefing.weekId !== briefWeek && !busy && <BriefingPopup briefing={d.briefing} onClose={() => setBriefWeek(d.briefing!.weekId)} />}
-      {popupOpen && !busy && (!d.briefing || d.briefing.weekId === briefWeek) && <ApprovalPopup approvals={d.approvals} nav={nav} onClose={() => setPopupOpen(false)} />}
+      {d.card && !busy && (!d.briefing || d.briefing.weekId === briefWeek) && route.name !== 'player' && <CardPopup card={d.card} nav={nav} />}
+      {popupOpen && !busy && !d.card && (!d.briefing || d.briefing.weekId === briefWeek) && <ApprovalPopup approvals={d.approvals} nav={nav} onClose={() => setPopupOpen(false)} />}
       {toast && <div className={`toast ${toast.kind}`}>{toast.msg}</div>}
     </div>
   );

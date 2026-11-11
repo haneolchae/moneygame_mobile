@@ -24,7 +24,7 @@ async function main() {
   for (const t of v.teams) console.log(`  ${t.name.padEnd(10)} 팀장 ${t.leader ? t.leader.name : `공석(${t.actingName ?? '없음'})`} 팀원 ${t.members.length}/${t.defaultMembers} WP ${t.weeklyWp} 정기 ${t.upkeep} 남음 ${t.remainingWp}`);
   const ops = v.policies.find((p) => p.team === 'ops')!;
   await call('org.setPolicy', { ...ops, mode: 'auto' });
-  for (let i = 0; i < 2; i++) await call('game.advance', { mode: 'week' });
+  for (let i = 0; i < 2; i++) await call('game.advance', { mode: 'week', autoCards: true });
   const m = await call('market.view');
   const mine = m.fa.filter((f) => f.originClub.id === clubId && f.statusKey === 'approved');
   for (const f of mine) {
@@ -39,7 +39,7 @@ async function main() {
       console.log(`연봉 협상 위임: ${r.ok ? r.result.message : r.error.message}`);
       salaryDelegated = true;
     }
-    await call('game.advance', { mode: 'week' });
+    await call('game.advance', { mode: 'week', autoCards: true });
   }
   v = await call('org.view');
   const after = await call('market.view');

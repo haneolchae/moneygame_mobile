@@ -162,6 +162,8 @@ export interface DashboardView {
   approvals: ApprovalView[];
   /** EV-1 이번 주 턴 브리핑(시즌 모드, 결재 팝업보다 먼저) */
   briefing: BriefingView | null;
+  /** EV-3 고를 결정 카드(선택 전 진행 불가) */
+  card: CardView | null;
   upcomingEvents: CalendarEventView[];
   keyPlayers: PlayerListItem[];
   canAdvanceDay: boolean;
@@ -807,6 +809,20 @@ export interface BriefingView {
   lines: Array<{ kind: 'warn' | 'good' | 'game' | 'money' | 'health' | 'result' | 'league' | 'decide'; text: string }>;
 }
 
+/** EV-3 결정 카드 화면(D-207 (1)): 확정 효과는 숫자, 지표는 방향, 확률 효과는 위험 등급만 */
+export interface CardView {
+  cardId: string;
+  category: string;
+  categoryLabel: string;
+  priority: boolean;
+  date: string;
+  player: { id: number; name: string } | null;
+  text: string;
+  choices: Array<{ id: string; label: string; effects: string[]; risks: Array<{ grade: '낮음' | '보통' | '높음'; hint: string }>; isDefault: boolean; link: string | null }>;
+}
+
+export type CardDelegationView = Array<{ category: string; label: string; team: string | null; delegable: boolean; delegate: boolean }>;
+
 export interface NewsLogView {
   seasons: number[];
   season: number;
@@ -1204,7 +1220,7 @@ export interface RequestMap {
   'game.clubOptions': { payload: void; result: ClubOption[] };
   'game.new': { payload: { clubId: number; saveName: string; seed?: string }; result: DashboardView };
   'game.dashboard': { payload: void; result: DashboardView };
-  'game.advance': { payload: { mode: 'day' | 'week' | 'untilSeasonEnd' }; result: AdvanceResult };
+  'game.advance': { payload: { mode: 'day' | 'week' | 'untilSeasonEnd'; autoCards?: boolean }; result: AdvanceResult };
   'game.players': { payload: PlayerQuery; result: PlayerListItem[] };
   'game.player': { payload: { playerId: number }; result: PlayerDetailView };
   'player.note': { payload: { playerId: number; text: string; watched: boolean }; result: PlayerNoteView };
@@ -1241,6 +1257,10 @@ export interface RequestMap {
   'awards.list': { payload: { season?: number }; result: AwardsView };
   'allStar.view': { payload: { season?: number }; result: AllStarView };
   'events.news': { payload: { season?: number }; result: NewsLogView };
+  'events.choose': { payload: { choiceId: string }; result: { message: string; link: string | null } };
+  'events.delegation': { payload: void; result: CardDelegationView };
+  'events.setDelegation': { payload: { category: string; delegate: boolean }; result: CardDelegationView };
+  'events.force': { payload: { cardId: string; playerId?: number | null }; result: CardView | null };
   'allStar.campaign': { payload: Record<string, never>; result: { message: string; view: AllStarView } };
   'allStar.apply': { payload: Record<string, never>; result: { message: string; view: AllStarView } };
   'trade.respondOffer': { payload: { offerId: number; accept: boolean; commandId: string }; result: TradeOfferResultView };
@@ -1332,6 +1352,10 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'awards.list',
   'allStar.view',
   'events.news',
+  'events.choose',
+  'events.delegation',
+  'events.setDelegation',
+  'events.force',
   'allStar.campaign',
   'allStar.apply',
   'trade.respondOffer',

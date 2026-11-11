@@ -1,6 +1,6 @@
 // 조직·위임: 팀별 처리량, 직원 채용·해고, 위임 정책, 결재함, 업무 큐 (03 문서)
 import { Fragment, useEffect, useState } from 'react';
-import type { DelegationPolicyView, OfferResultView, OrganizationView, StaffView } from '../../shared/protocol';
+import type { CardDelegationView, DelegationPolicyView, OfferResultView, OrganizationView, StaffView } from '../../shared/protocol';
 import type { Nav } from '../App';
 import { api, ApiError } from '../api';
 import { won } from '../format';
@@ -444,6 +444,7 @@ export function Organization({ nav }: { nav: Nav }) {
 
       {tab === 'delegation' && (
         <>
+          <CardDelegationPanel nav={nav} />
           <section className="panel">
             <div className="panel-head">
               <h2>구단주 결정</h2>
@@ -568,5 +569,48 @@ export function Organization({ nav }: { nav: Nav }) {
         </>
       )}
     </div>
+  );
+}
+
+/** EV-3(D-207 (2)) 결정 카드 분류별 위임: 직접 받기 / 담당 팀에 맡기기 */
+function CardDelegationPanel({ nav }: { nav: Nav }) {
+  const [rows, setRows] = useState<CardDelegationView | null>(null);
+  useEffect(() => {
+    api('events.delegation').then(setRows).catch((e: Error) => nav.notify(e.message, 'error'));
+  }, [nav]);
+  if (!rows) return null;
+  const set = async (category: string, delegate: boolean) => {
+    try {
+      setRows(await api('events.setDelegation', { category, delegate }));
+    } catch (e) {
+      nav.notify(e instanceof ApiError ? e.message : String(e), 'error');
+    }
+  };
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <h2>결정 카드 위임</h2>
+        <span className="meta">맡긴 분류의 카드는 담당 팀이 처리량 4로 기본 선택지를 고르고 결과를 다음 주 브리핑으로 알립니다. 처리량이 모자라면 직접 받습니다. 중대 사건은 맡길 수 없습니다.</span>
+      </div>
+      <table className="grid">
+        <thead><tr><th>분류</th><th>담당 팀</th><th>처리</th></tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.category}>
+              <td>{r.label}</td>
+              <td>{r.team ?? '—'}</td>
+              <td>
+                {r.delegable ? (
+                  <select value={r.delegate ? 'team' : 'direct'} onChange={(e) => void set(r.category, e.target.value === 'team')}>
+                    <option value="direct">직접 받기</option>
+                    <option value="team">담당 팀에 맡기기</option>
+                  </select>
+                ) : <span className="muted small">직접 받기(담당 팀 없음)</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }

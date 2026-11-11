@@ -77,7 +77,7 @@ export class Dispatcher {
       case 'game.advance': {
         const p = payload as RequestMap['game.advance']['payload'];
         const started = Date.now();
-        const result = this.game().advance(p.mode, (prog) => this.opts.onEvent?.({ type: 'advanceProgress', ...prog }));
+        const result = this.game().advance(p.mode, (prog) => this.opts.onEvent?.({ type: 'advanceProgress', ...prog }), undefined, !!p.autoCards);
         const autosaveDue = this.saves.noteDaysAdvanced(result.daysProcessed);
         let autosaved = false;
         if (autosaveDue || result.stoppedReason?.startsWith('정규시즌 종료') || result.stoppedReason?.startsWith('스토브리그 종료')) {
@@ -110,6 +110,20 @@ export class Dispatcher {
         return this.game().setTicketPolicy((payload as RequestMap['business.setTicketPolicy']['payload']).policy) as R;
       case 'business.startFacility':
         return this.game().startFacility((payload as RequestMap['business.startFacility']['payload']).kind) as R;
+      case 'events.choose':
+        return this.game().chooseCard((payload as RequestMap['events.choose']['payload']).choiceId) as R;
+      case 'events.delegation':
+        return this.game().cardDelegation() as R;
+      case 'events.setDelegation': {
+        const q = payload as RequestMap['events.setDelegation']['payload'];
+        return this.game().setCardDelegation(q.category, q.delegate) as R;
+      }
+      case 'events.force': {
+        // 26a D1: 개발 모드(FO_DEV=1)에서만
+        if (process.env.FO_DEV !== '1') throw new GameError('NOT_AVAILABLE', '개발 모드에서만 쓸 수 있습니다.');
+        const q = payload as RequestMap['events.force']['payload'];
+        return this.game().forceCard(q.cardId, q.playerId ?? null) as R;
+      }
       case 'events.news':
         return this.game().newsLog((payload as RequestMap['events.news']['payload']).season) as R;
       case 'allStar.view':

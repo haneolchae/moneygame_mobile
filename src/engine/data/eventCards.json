@@ -1,33 +1,12 @@
 [
   {
-    "id": "FAN-01",
-    "type": "decision",
-    "category": "ops",
-    "priority": false,
-    "phases": ["regular"],
-    "target": "club",
-    "trigger": "club.streak <= -5 || club.fan <= 30",
-    "weight": 6,
-    "cooldownWeeks": 8,
-    "seasonCap": 1,
-    "delegateTeam": "marketing",
-    "delegateDefault": "statement",
-    "texts": [
-      "구장 앞에 팬 트럭시위가 열렸습니다. \"이대로는 안 된다\"는 문구가 전광판처럼 돌고 있습니다.",
-      "성난 팬들이 트럭 전광판으로 구단에 항의 메시지를 보내고 있습니다. 언론도 주목하기 시작했습니다.",
-      "팬 커뮤니티가 모금해 트럭시위를 열었습니다. 성적과 운영 방향에 대한 설명을 요구합니다."
-    ],
-    "choices": [
-      { "id": "statement", "label": "공식 입장문을 낸다", "effects": [{ "type": "FAN_NOW", "value": 2 }, { "type": "TRUST", "value": -3 }], "text": "공식 입장문을 냈다. 팬 여론이 조금 누그러졌지만, 감독에게 부담이 실렸다." },
-      { "id": "ignore", "label": "대응하지 않는다", "effects": [{ "type": "FAN_NOW", "value": -3 }], "text": "대응하지 않았다. 팬들의 실망이 커졌다." }
-    ]
-  },
-  {
     "id": "INJ-01",
     "type": "decision",
     "category": "injury",
     "priority": true,
-    "phases": ["regular"],
+    "phases": [
+      "regular"
+    ],
     "target": "ourPlayer",
     "trigger": "player.starter == 1 && player.injuryDays >= 28",
     "weight": 10,
@@ -41,8 +20,96 @@
       "{player}가 쓰러졌습니다. 공백을 어떻게 메울지 정해야 합니다."
     ],
     "choices": [
-      { "id": "external", "label": "외부 긴급 영입 협상을 시작한다", "effects": [{ "type": "CASH", "grade": "large" }, { "type": "CONTRACT" }], "text": "긴급 영입 협상을 시작했다." },
-      { "id": "internal", "label": "내부 대체로 버틴다", "effects": [{ "type": "GROWTH", "value": 1.1 }, { "type": "FAN_NOW", "value": -2 }], "text": "내부 대체 선수에게 기회를 주기로 했다." }
+      {
+        "id": "external",
+        "label": "외부 긴급 영입을 준비한다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "large"
+          }
+        ],
+        "text": "긴급 영입 예산을 배정했다. [계약·이적]에서 국내 무소속 선수와 협상할 수 있다.",
+        "link": "market"
+      },
+      {
+        "id": "internal",
+        "label": "내부 대체로 버틴다",
+        "effects": [
+          {
+            "type": "GROWTH",
+            "value": 1.05,
+            "who": "club"
+          },
+          {
+            "type": "FAN_NOW",
+            "value": -2
+          }
+        ],
+        "text": "내부 대체 선수들에게 기회를 주기로 했다."
+      }
+    ]
+  },
+  {
+    "id": "INJ-02",
+    "type": "decision",
+    "category": "injury",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.injuryDays >= 3 && player.injuryDays <= 14",
+    "weight": 6,
+    "cooldownWeeks": 8,
+    "seasonCap": 2,
+    "delegateTeam": "medical",
+    "delegateDefault": "deny",
+    "texts": [
+      "{player}가 예정보다 빨리 복귀하고 싶다고 합니다.",
+      "\"이제 괜찮습니다.\" {player}가 조기 복귀를 요청했습니다.",
+      "{player}가 재활을 서두르고 싶어 합니다. 메디컬팀은 신중론입니다."
+    ],
+    "choices": [
+      {
+        "id": "allow",
+        "label": "조기 복귀를 허락한다",
+        "effects": [
+          {
+            "type": "HEAL",
+            "days": -4
+          }
+        ],
+        "text": "조기 복귀를 허락했다.",
+        "outcomes": [
+          {
+            "p": 0.35,
+            "hint": "재부상 위험",
+            "effects": [
+              {
+                "type": "INJ_RISK",
+                "value": 2.5,
+                "weeks": 3
+              }
+            ],
+            "text": "서둘러 복귀한 {player}의 몸 상태가 불안하다는 보고가 올라왔다."
+          }
+        ],
+        "elseText": "{player}는 무리 없이 복귀 일정을 소화하고 있다."
+      },
+      {
+        "id": "deny",
+        "label": "예정대로 재활한다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": -8
+          }
+        ],
+        "text": "예정대로 재활하게 했다. 선수는 아쉬워했다."
+      }
     ]
   },
   {
@@ -50,7 +117,11 @@
     "type": "decision",
     "category": "injury",
     "priority": false,
-    "phases": ["regular"],
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
     "target": "ourPlayer",
     "trigger": "player.pitcher == 1 && player.active == 1 && player.fatigue >= 70",
     "weight": 6,
@@ -64,8 +135,575 @@
       "{player}, 최근 등판 간격이 짧았습니다. 부상 위험이 올라갔습니다."
     ],
     "choices": [
-      { "id": "rest", "label": "3일 휴식을 지시한다", "effects": [{ "type": "REST", "days": 3 }], "text": "3일 휴식을 지시했다." },
-      { "id": "keep", "label": "로테이션을 유지한다", "effects": [{ "type": "INJ_RISK", "value": 2, "weeks": 3 }], "text": "로테이션을 유지했다. 부상 위험이 커졌다." }
+      {
+        "id": "rest",
+        "label": "3일 휴식을 지시한다",
+        "effects": [
+          {
+            "type": "REST",
+            "days": 3
+          }
+        ],
+        "text": "3일 휴식을 지시했다."
+      },
+      {
+        "id": "keep",
+        "label": "로테이션을 유지한다",
+        "effects": [
+          {
+            "type": "INJ_RISK",
+            "value": 2,
+            "weeks": 3
+          }
+        ],
+        "text": "로테이션을 유지했다. 부상 위험이 커졌다."
+      }
+    ]
+  },
+  {
+    "id": "INJ-04",
+    "type": "decision",
+    "category": "injury",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.injuryDays >= 21",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "medical",
+    "delegateDefault": "domestic",
+    "texts": [
+      "해외 재활 기관이 {player}의 재활 프로그램을 제안했습니다.",
+      "{player}의 에이전트가 해외 재활을 요청했습니다.",
+      "메디컬팀이 {player}에게 해외 재활 프로그램을 검토 중입니다."
+    ],
+    "choices": [
+      {
+        "id": "abroad",
+        "label": "해외 재활을 보낸다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "medium"
+          }
+        ],
+        "text": "해외 재활을 보냈다.",
+        "outcomes": [
+          {
+            "p": 0.7,
+            "hint": "복귀 단축 가능성",
+            "effects": [
+              {
+                "type": "HEAL",
+                "days": -10
+              }
+            ],
+            "text": "해외 재활이 효과를 봐 {player}의 복귀가 앞당겨졌다."
+          }
+        ],
+        "elseText": "해외 재활의 효과는 기대만큼 크지 않았다."
+      },
+      {
+        "id": "domestic",
+        "label": "국내 재활을 이어 간다",
+        "effects": [],
+        "text": "국내에서 재활을 이어 가기로 했다."
+      }
+    ]
+  },
+  {
+    "id": "INJ-05",
+    "type": "decision",
+    "category": "injury",
+    "priority": false,
+    "phases": [
+      "regular"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.slump == 1 && player.starter == 1 && player.active == 1",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "medical",
+    "delegateDefault": "leave",
+    "texts": [
+      "{player}의 부진이 한 달 가까이 이어지고 있습니다.",
+      "{player}가 긴 슬럼프에 빠졌습니다. 표정도 어둡습니다.",
+      "전력분석팀 보고: {player}의 최근 4주 타격 지표가 크게 떨어졌습니다."
+    ],
+    "choices": [
+      {
+        "id": "mental",
+        "label": "멘탈 코칭을 지원한다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "small"
+          }
+        ],
+        "text": "멘탈 코칭을 지원했다.",
+        "outcomes": [
+          {
+            "p": 0.65,
+            "hint": "기분 회복 가능성",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 15
+              }
+            ],
+            "text": "멘탈 코칭이 효과를 봤다. {player}의 표정이 밝아졌다."
+          }
+        ],
+        "elseText": "멘탈 코칭에도 {player}는 아직 실마리를 찾지 못했다."
+      },
+      {
+        "id": "reset",
+        "label": "감독에게 2군 조정을 제안한다",
+        "effects": [
+          {
+            "type": "TRUST",
+            "value": -3
+          },
+          {
+            "type": "COND",
+            "value": 2,
+            "weeks": 3
+          }
+        ],
+        "text": "감독에게 조정 기간을 제안했다."
+      },
+      {
+        "id": "leave",
+        "label": "감독에게 맡긴다",
+        "effects": [],
+        "text": "감독에게 맡겼다."
+      }
+    ]
+  },
+  {
+    "id": "AWD-01",
+    "type": "decision",
+    "category": "award",
+    "priority": false,
+    "phases": [
+      "regular"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.awardRecent == 1",
+    "weight": 8,
+    "cooldownWeeks": 8,
+    "seasonCap": 2,
+    "delegateTeam": null,
+    "delegateDefault": "message",
+    "texts": [
+      "{player}가 상을 받았습니다. 선수단이 축하하고 있습니다.",
+      "{player}의 수상 소식에 팬들이 들떴습니다.",
+      "{player}, 수상의 영예를 안았습니다."
+    ],
+    "choices": [
+      {
+        "id": "bonus",
+        "label": "구단 포상금을 준다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "small"
+          },
+          {
+            "type": "MOOD",
+            "value": 12
+          }
+        ],
+        "text": "구단 포상금을 전달했다.",
+        "outcomes": [
+          {
+            "p": 0.25,
+            "hint": "다른 선수 서운함",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": -6,
+                "who": "other"
+              }
+            ],
+            "text": "포상 소식에 서운해하는 선수가 있다는 이야기가 들린다."
+          }
+        ]
+      },
+      {
+        "id": "message",
+        "label": "축하 메시지를 낸다",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": 1
+          }
+        ],
+        "text": "구단 공식 축하 메시지를 냈다."
+      }
+    ]
+  },
+  {
+    "id": "AWD-03",
+    "type": "decision",
+    "category": "award",
+    "priority": false,
+    "phases": [
+      "regular"
+    ],
+    "target": "club",
+    "trigger": "club.feat == 1",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": null,
+    "delegateDefault": "goods",
+    "texts": [
+      "대기록이 나왔습니다! 기념 상품을 만들자는 의견이 올라왔습니다.",
+      "역사적인 경기 직후, 상품팀이 한정판 굿즈를 제안했습니다.",
+      "팬들이 그 경기 기념품을 찾고 있습니다."
+    ],
+    "choices": [
+      {
+        "id": "goods",
+        "label": "한정판 굿즈를 만든다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "small"
+          },
+          {
+            "type": "MERCH",
+            "value": 1.1,
+            "weeks": 3
+          }
+        ],
+        "text": "기념 한정판 굿즈를 출시했다."
+      },
+      {
+        "id": "skip",
+        "label": "생략한다",
+        "effects": [],
+        "text": "따로 기념 상품을 만들지 않았다."
+      }
+    ]
+  },
+  {
+    "id": "SPN-01",
+    "type": "decision",
+    "category": "sponsor",
+    "priority": false,
+    "phases": [
+      "regular"
+    ],
+    "target": "club",
+    "trigger": "club.subSlotsFree >= 1",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "partnership",
+    "delegateDefault": "sign",
+    "texts": [
+      "비어 있는 서브 스폰서 자리에 단기 계약 제안이 들어왔습니다.",
+      "한 기업이 남은 시즌 동안만 서브 스폰서를 하고 싶어 합니다.",
+      "사업제휴팀: 잔여 시즌 단기 스폰서 제안이 있습니다."
+    ],
+    "choices": [
+      {
+        "id": "sign",
+        "label": "잔여 시즌 계약을 맺는다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "medium",
+            "income": true
+          }
+        ],
+        "text": "잔여 시즌 단기 스폰서 계약을 맺었다."
+      },
+      {
+        "id": "decline",
+        "label": "거절한다",
+        "effects": [],
+        "text": "제안을 거절했다."
+      }
+    ]
+  },
+  {
+    "id": "SPN-03",
+    "type": "decision",
+    "category": "sponsor",
+    "priority": false,
+    "phases": [
+      "regular"
+    ],
+    "target": "club",
+    "trigger": "club.subSlotsFree >= 1",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "partnership",
+    "delegateDefault": "decline",
+    "texts": [
+      "논란이 있는 업종의 기업이 고액 스폰서를 제안했습니다.",
+      "금액은 일반 제안의 1.6배. 다만 업종을 두고 말이 나올 수 있습니다.",
+      "사업제휴팀: 수익은 크지만 이미지 부담이 있는 제안입니다."
+    ],
+    "choices": [
+      {
+        "id": "sign",
+        "label": "계약한다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "large",
+            "income": true
+          },
+          {
+            "type": "FAN_TARGET",
+            "value": -3,
+            "weeks": 20
+          }
+        ],
+        "text": "고액 스폰서 계약을 맺었다.",
+        "outcomes": [
+          {
+            "p": 0.3,
+            "hint": "논란 확산 가능성",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -4
+              },
+              {
+                "type": "PRESS",
+                "value": -3
+              }
+            ],
+            "text": "논란 업종 스폰서에 대한 비판 기사가 이어졌다."
+          }
+        ]
+      },
+      {
+        "id": "decline",
+        "label": "거절한다",
+        "effects": [
+          {
+            "type": "PRESS",
+            "value": 2
+          }
+        ],
+        "text": "제안을 거절했다. 구단 이미지를 지켰다는 평이 나왔다."
+      }
+    ]
+  },
+  {
+    "id": "SPN-05",
+    "type": "decision",
+    "category": "sponsor",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "club",
+    "trigger": "club.week >= 4",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "partnership",
+    "delegateDefault": "sign",
+    "texts": [
+      "한 브랜드가 콜라보 굿즈를 함께 만들자고 제안했습니다.",
+      "패션 브랜드와의 협업 상품 제안이 들어왔습니다.",
+      "사업제휴팀: 브랜드 콜라보 상품 계약 제안입니다."
+    ],
+    "choices": [
+      {
+        "id": "sign",
+        "label": "콜라보 계약을 맺는다",
+        "effects": [
+          {
+            "type": "MERCH",
+            "value": 1.15,
+            "weeks": 20
+          }
+        ],
+        "text": "브랜드 콜라보 상품 계약을 맺었다."
+      },
+      {
+        "id": "decline",
+        "label": "거절한다",
+        "effects": [],
+        "text": "제안을 거절했다."
+      }
+    ]
+  },
+  {
+    "id": "CS-02",
+    "type": "decision",
+    "category": "sponsor",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.starter == 1 && player.active == 1",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "partnership",
+    "delegateDefault": "persuade",
+    "texts": [
+      "{player}의 개인 용품 계약이 구단 협찬사와 충돌합니다.",
+      "협찬사가 {player}의 다른 브랜드 장비 사용에 항의했습니다.",
+      "{player}의 개인 광고와 구단 협찬 조건이 겹쳤습니다."
+    ],
+    "choices": [
+      {
+        "id": "allow",
+        "label": "예외를 허용한다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "small"
+          },
+          {
+            "type": "MOOD",
+            "value": 6
+          }
+        ],
+        "text": "예외를 허용하고 협찬사에 보상했다."
+      },
+      {
+        "id": "persuade",
+        "label": "선수를 설득한다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": -6
+          }
+        ],
+        "text": "선수를 설득해 구단 협찬 조건을 지키게 했다."
+      }
+    ]
+  },
+  {
+    "id": "MGR-02",
+    "type": "decision",
+    "category": "coach",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "club",
+    "trigger": "club.week >= 3",
+    "weight": 2,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": null,
+    "delegateDefault": "decline",
+    "texts": [
+      "타 구단 출신 코치를 데려올 기회가 생겼습니다.",
+      "능력 있는 코치가 새 팀을 찾고 있습니다.",
+      "감독이 함께 일하고 싶은 코치를 추천했습니다."
+    ],
+    "choices": [
+      {
+        "id": "hire",
+        "label": "영입한다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "medium"
+          },
+          {
+            "type": "GROWTH",
+            "value": 1.05,
+            "who": "club"
+          }
+        ],
+        "text": "코치를 영입했다."
+      },
+      {
+        "id": "decline",
+        "label": "거절한다",
+        "effects": [],
+        "text": "이번에는 영입하지 않았다."
+      }
+    ]
+  },
+  {
+    "id": "MGR-03",
+    "type": "decision",
+    "category": "coach",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "club",
+    "trigger": "club.week >= 8",
+    "weight": 2,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": null,
+    "delegateDefault": "release",
+    "texts": [
+      "우리 코치에게 타 구단 감독 제의가 들어왔습니다.",
+      "코치 한 명이 감독으로 갈 기회를 얻었습니다.",
+      "타 구단이 우리 코치를 감독 후보로 원합니다."
+    ],
+    "choices": [
+      {
+        "id": "keep",
+        "label": "연봉을 올려 붙잡는다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "small"
+          }
+        ],
+        "text": "연봉 인상으로 잔류를 설득했다.",
+        "outcomes": [
+          {
+            "p": 0.4,
+            "hint": "이직 가능성",
+            "effects": [
+              {
+                "type": "GROWTH",
+                "value": 0.95,
+                "who": "club"
+              }
+            ],
+            "text": "붙잡으려 했지만 코치는 결국 떠났다."
+          }
+        ],
+        "elseText": "코치가 잔류를 결정했다."
+      },
+      {
+        "id": "release",
+        "label": "축하하며 보낸다",
+        "effects": [
+          {
+            "type": "PRESS",
+            "value": 1
+          }
+        ],
+        "text": "코치의 새 출발을 축하하며 보냈다."
+      }
     ]
   },
   {
@@ -73,7 +711,9 @@
     "type": "decision",
     "category": "coach",
     "priority": true,
-    "phases": ["regular"],
+    "phases": [
+      "regular"
+    ],
     "target": "club",
     "trigger": "club.streak <= -10 || (season.half == 2 && club.rank >= 8 && club.fan <= 30)",
     "weight": 10,
@@ -87,9 +727,310 @@
       "모기업이 감독 문제에 대한 구단주의 판단을 묻습니다."
     ],
     "choices": [
-      { "id": "back", "label": "재신임한다", "effects": [{ "type": "TRUST", "value": 8 }, { "type": "FAN_NOW", "value": -5 }], "text": "감독을 재신임했다." },
-      { "id": "fire", "label": "경질한다", "effects": [{ "type": "CONTRACT" }, { "type": "FAN_NOW", "value": 4 }, { "type": "CLUBHOUSE", "value": -10 }], "text": "감독을 경질했다." },
-      { "id": "wait", "label": "시즌 끝까지 판단을 미룬다", "effects": [{ "type": "FAN_NOW", "value": -2 }], "text": "판단을 시즌 뒤로 미뤘다." }
+      {
+        "id": "back",
+        "label": "재신임한다",
+        "effects": [
+          {
+            "type": "TRUST",
+            "value": 8
+          },
+          {
+            "type": "FAN_NOW",
+            "value": -5
+          }
+        ],
+        "text": "감독을 재신임했다."
+      },
+      {
+        "id": "fire",
+        "label": "경질한다",
+        "effects": [
+          {
+            "type": "CONTRACT"
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 4
+          },
+          {
+            "type": "CLUBHOUSE",
+            "value": -10
+          }
+        ],
+        "text": "감독을 경질했다.",
+        "link": "org"
+      },
+      {
+        "id": "wait",
+        "label": "시즌 끝까지 판단을 미룬다",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": -2
+          }
+        ],
+        "text": "판단을 시즌 뒤로 미뤘다."
+      }
+    ]
+  },
+  {
+    "id": "CS-01",
+    "type": "decision",
+    "category": "coach",
+    "priority": false,
+    "phases": [
+      "regular"
+    ],
+    "target": "club",
+    "trigger": "club.rank >= 4 && club.week >= 6",
+    "weight": 2,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": null,
+    "delegateDefault": "hold",
+    "texts": [
+      "감독이 약한 포지션 보강을 요청했습니다.",
+      "\"이대로는 버티기 어렵습니다.\" 감독이 보강을 원합니다.",
+      "감독이 전력 보강 예산을 요청했습니다."
+    ],
+    "choices": [
+      {
+        "id": "accept",
+        "label": "보강 예산을 준다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "medium"
+          },
+          {
+            "type": "TRUST",
+            "value": 4
+          }
+        ],
+        "text": "감독 요청대로 보강 예산을 배정했다. [계약·이적]에서 영입할 수 있다.",
+        "link": "market"
+      },
+      {
+        "id": "hold",
+        "label": "보류한다",
+        "effects": [
+          {
+            "type": "TRUST",
+            "value": -4
+          }
+        ],
+        "text": "보강을 보류했다. 감독이 아쉬워했다."
+      }
+    ]
+  },
+  {
+    "id": "TRD-02",
+    "type": "decision",
+    "category": "transfer",
+    "priority": false,
+    "phases": [
+      "regular"
+    ],
+    "target": "club",
+    "trigger": "club.week >= 4 && club.week <= 18",
+    "weight": 8,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "operations",
+    "delegateDefault": "ignore",
+    "texts": [
+      "스카우트 보고: 타 구단 유망주 한 명이 출전 기회에 불만이 크다고 합니다.",
+      "다른 구단의 유망주가 이적을 원한다는 소문이 돕니다.",
+      "운영팀: 트레이드로 데려올 만한 불만 유망주가 있습니다."
+    ],
+    "choices": [
+      {
+        "id": "contact",
+        "label": "접촉을 지시한다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "small"
+          }
+        ],
+        "text": "접촉을 지시했다. [트레이드]에서 협상을 열 수 있다.",
+        "link": "trade"
+      },
+      {
+        "id": "ignore",
+        "label": "무시한다",
+        "effects": [],
+        "text": "이번에는 움직이지 않았다."
+      }
+    ]
+  },
+  {
+    "id": "FAN-01",
+    "type": "decision",
+    "category": "ops",
+    "priority": false,
+    "phases": [
+      "regular"
+    ],
+    "target": "club",
+    "trigger": "club.streak <= -5 || club.fan <= 30",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "marketing",
+    "delegateDefault": "statement",
+    "texts": [
+      "구장 앞에 팬 트럭시위가 열렸습니다. \"이대로는 안 된다\"는 문구가 전광판처럼 돌고 있습니다.",
+      "성난 팬들이 트럭 전광판으로 구단에 항의 메시지를 보내고 있습니다. 언론도 주목하기 시작했습니다.",
+      "팬 커뮤니티가 모금해 트럭시위를 열었습니다. 성적과 운영 방향에 대한 설명을 요구합니다."
+    ],
+    "choices": [
+      {
+        "id": "statement",
+        "label": "공식 입장문을 낸다",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": 2
+          },
+          {
+            "type": "TRUST",
+            "value": -3
+          }
+        ],
+        "text": "공식 입장문을 냈다. 팬 여론이 조금 누그러졌지만, 감독에게 부담이 실렸다."
+      },
+      {
+        "id": "ignore",
+        "label": "대응하지 않는다",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": -3
+          }
+        ],
+        "text": "대응하지 않았다. 팬들의 실망이 커졌다."
+      }
+    ]
+  },
+  {
+    "id": "CS-03",
+    "type": "decision",
+    "category": "ops",
+    "priority": false,
+    "phases": [
+      "regular"
+    ],
+    "target": "club",
+    "trigger": "club.tradeRecent == 1",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "marketing",
+    "delegateDefault": "explain",
+    "texts": [
+      "최근 트레이드를 두고 팬 여론이 엇갈립니다.",
+      "팬들이 이번 트레이드의 이유를 묻고 있습니다.",
+      "커뮤니티에 트레이드 평가 글이 쏟아지고 있습니다."
+    ],
+    "choices": [
+      {
+        "id": "explain",
+        "label": "설명 자료를 발표한다",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": 2
+          },
+          {
+            "type": "PRESS",
+            "value": 1
+          }
+        ],
+        "text": "트레이드 배경을 설명하는 자료를 발표했다."
+      },
+      {
+        "id": "none",
+        "label": "대응하지 않는다",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": -2
+          }
+        ],
+        "text": "따로 설명하지 않았다."
+      }
+    ]
+  },
+  {
+    "id": "PRV-03",
+    "type": "decision",
+    "category": "personal",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.active == 1 && player.age >= 22 && player.age <= 34",
+    "weight": 5,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "pr",
+    "delegateDefault": "nocomment",
+    "texts": [
+      "{player}의 열애설이 보도됐습니다.",
+      "연예 매체가 {player}의 데이트 사진을 내보냈습니다.",
+      "{player}에게 열애설이 났습니다. 기자들의 문의가 이어집니다."
+    ],
+    "choices": [
+      {
+        "id": "support",
+        "label": "공식 인정을 돕는다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": 8
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 1
+          }
+        ],
+        "text": "선수의 뜻에 따라 공식 인정을 도왔다."
+      },
+      {
+        "id": "nocomment",
+        "label": "노코멘트한다",
+        "effects": [],
+        "text": "구단은 사생활이라며 말을 아꼈다.",
+        "outcomes": [
+          {
+            "p": 0.4,
+            "hint": "루머 확대 가능성",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": -6
+              }
+            ],
+            "text": "열애설 보도가 이어지며 {player}가 부담을 느끼고 있다."
+          }
+        ]
+      },
+      {
+        "id": "restrain",
+        "label": "사생활 자제를 요청한다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": -10
+          }
+        ],
+        "text": "사생활 자제를 요청했다."
+      }
     ]
   },
   {
@@ -97,10 +1038,14 @@
     "type": "decision",
     "category": "personal",
     "priority": false,
-    "phases": ["regular"],
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
     "target": "ourPlayer",
     "trigger": "player.active == 1 && player.age >= 26",
-    "weight": 2,
+    "weight": 5,
     "cooldownWeeks": 8,
     "seasonCap": 1,
     "delegateTeam": "pr",
@@ -111,8 +1056,32 @@
       "{player}의 가족에게 기쁜 일이 생겼습니다. 며칠 곁에 있고 싶어 합니다."
     ],
     "choices": [
-      { "id": "leave", "label": "경조 휴가 3일과 축하를 건넨다", "effects": [{ "type": "REST", "days": 3 }, { "type": "MOOD", "value": 15 }], "text": "경조 휴가를 주고 축하했다." },
-      { "id": "play", "label": "축하만 하고 출전은 유지한다", "effects": [{ "type": "MOOD", "value": 5 }], "text": "축하를 전하고 출전을 이어 갔다." }
+      {
+        "id": "leave",
+        "label": "경조 휴가 3일과 축하를 건넨다",
+        "effects": [
+          {
+            "type": "REST",
+            "days": 3
+          },
+          {
+            "type": "MOOD",
+            "value": 15
+          }
+        ],
+        "text": "경조 휴가를 주고 축하했다."
+      },
+      {
+        "id": "play",
+        "label": "축하만 하고 출전은 유지한다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": 5
+          }
+        ],
+        "text": "축하를 전하고 출전을 이어 갔다."
+      }
     ]
   },
   {
@@ -120,10 +1089,14 @@
     "type": "decision",
     "category": "personal",
     "priority": false,
-    "phases": ["regular"],
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
     "target": "ourPlayer",
     "trigger": "player.active == 1",
-    "weight": 1,
+    "weight": 5,
     "cooldownWeeks": 8,
     "seasonCap": 1,
     "delegateTeam": "pr",
@@ -134,8 +1107,273 @@
       "{player}에게 갑작스러운 부고가 전해졌습니다."
     ],
     "choices": [
-      { "id": "full", "label": "충분한 휴가를 준다", "effects": [{ "type": "REST", "days": 7 }, { "type": "CLUBHOUSE", "value": 3 }, { "type": "MOOD", "value": 8 }], "text": "충분한 휴가를 주었다." },
-      { "id": "rule", "label": "규정 휴가만 준다", "effects": [{ "type": "MOOD", "value": -8 }, { "type": "CLUBHOUSE", "value": -2 }], "text": "규정 휴가만 주었다." }
+      {
+        "id": "full",
+        "label": "충분한 휴가를 준다",
+        "effects": [
+          {
+            "type": "REST",
+            "days": 7
+          },
+          {
+            "type": "CLUBHOUSE",
+            "value": 3
+          },
+          {
+            "type": "MOOD",
+            "value": 8
+          }
+        ],
+        "text": "충분한 휴가를 주었다."
+      },
+      {
+        "id": "rule",
+        "label": "규정 휴가만 준다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": -8
+          },
+          {
+            "type": "CLUBHOUSE",
+            "value": -2
+          }
+        ],
+        "text": "규정 휴가만 주었다."
+      }
+    ]
+  },
+  {
+    "id": "GOOD-01",
+    "type": "decision",
+    "category": "positive",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.active == 1",
+    "weight": 2,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "pr",
+    "delegateDefault": "respect",
+    "texts": [
+      "{player}가 오래전부터 몰래 기부해 온 사실이 알려졌습니다.",
+      "한 복지 단체가 {player}의 익명 기부를 공개했습니다.",
+      "\"알리지 말아 달라\"던 {player}의 기부가 뒤늦게 알려졌습니다."
+    ],
+    "choices": [
+      {
+        "id": "promote",
+        "label": "구단 홍보와 매칭 기부를 한다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "medium"
+          },
+          {
+            "type": "FAN_TARGET",
+            "value": 3,
+            "weeks": 8
+          },
+          {
+            "type": "PRESS",
+            "value": 3
+          }
+        ],
+        "text": "구단이 공식 홍보하고 매칭 기부를 했다.",
+        "outcomes": [
+          {
+            "p": 0.3,
+            "hint": "선수가 불편해할 수 있음",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": -8
+              }
+            ],
+            "text": "{player}는 선행이 알려지는 것을 불편해했다."
+          }
+        ]
+      },
+      {
+        "id": "respect",
+        "label": "선수 뜻을 존중해 노코멘트한다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": 8
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 1
+          }
+        ],
+        "text": "선수의 뜻을 존중해 따로 알리지 않았다."
+      }
+    ]
+  },
+  {
+    "id": "GOOD-02",
+    "type": "decision",
+    "category": "positive",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.active == 1",
+    "weight": 2,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "pr",
+    "delegateDefault": "personal",
+    "texts": [
+      "{player}의 소아병동 봉사가 화제가 됐습니다.",
+      "{player}가 꾸준히 아동센터를 찾아왔다는 사실이 알려졌습니다.",
+      "{player}의 봉사 활동 영상이 퍼지고 있습니다."
+    ],
+    "choices": [
+      {
+        "id": "expand",
+        "label": "구단 정기 봉사 프로그램으로 넓힌다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "small"
+          },
+          {
+            "type": "FAN_TARGET",
+            "value": 2,
+            "weeks": 20
+          },
+          {
+            "type": "MOOD",
+            "value": 5
+          }
+        ],
+        "text": "구단 정기 봉사 프로그램을 시작했다."
+      },
+      {
+        "id": "personal",
+        "label": "개인 활동으로 둔다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": 3
+          }
+        ],
+        "text": "선수 개인 활동으로 두었다."
+      }
+    ]
+  },
+  {
+    "id": "GOOD-03",
+    "type": "decision",
+    "category": "positive",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.active == 1",
+    "weight": 2,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "pr",
+    "delegateDefault": "invite",
+    "texts": [
+      "{player}가 어린이 팬에게 배트를 선물하는 영상이 화제입니다.",
+      "경기 뒤 {player}가 꼬마 팬에게 배트를 건넸습니다.",
+      "{player}의 팬 서비스 영상 조회 수가 치솟고 있습니다."
+    ],
+    "choices": [
+      {
+        "id": "invite",
+        "label": "그 팬을 시구자로 초청한다",
+        "effects": [
+          {
+            "type": "DEMAND",
+            "value": 1.03,
+            "weeks": 1
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 2
+          }
+        ],
+        "text": "어린이 팬을 시구자로 초청했다."
+      },
+      {
+        "id": "goods",
+        "label": "선수 응원 굿즈를 낸다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "small"
+          },
+          {
+            "type": "MERCH",
+            "value": 1.1,
+            "weeks": 4
+          }
+        ],
+        "text": "선수 응원 굿즈를 출시했다."
+      }
+    ]
+  },
+  {
+    "id": "GOOD-04",
+    "type": "decision",
+    "category": "positive",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.active == 1 && player.age >= 24",
+    "weight": 2,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "pr",
+    "delegateDefault": "congrats",
+    "texts": [
+      "{player}가 모교에 장학금을 기탁했습니다.",
+      "{player}가 유소년 야구부에 장학금을 전달했습니다.",
+      "{player}의 장학금 소식이 지역 신문에 실렸습니다."
+    ],
+    "choices": [
+      {
+        "id": "fund",
+        "label": "구단 공동 장학 사업을 연다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "medium"
+          },
+          {
+            "type": "FAN_TARGET",
+            "value": 2,
+            "weeks": 20
+          }
+        ],
+        "text": "구단 공동 장학 사업을 열었다."
+      },
+      {
+        "id": "congrats",
+        "label": "축하만 한다",
+        "effects": [],
+        "text": "구단 차원의 축하를 전했다."
+      }
     ]
   },
   {
@@ -143,10 +1381,14 @@
     "type": "decision",
     "category": "positive",
     "priority": false,
-    "phases": ["regular"],
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
     "target": "ourPlayer",
     "trigger": "player.active == 1",
-    "weight": 1,
+    "weight": 2,
     "cooldownWeeks": 8,
     "seasonCap": 1,
     "delegateTeam": "pr",
@@ -157,8 +1399,92 @@
       "{player}가 위기에 처한 시민을 도운 사실이 알려졌습니다."
     ],
     "choices": [
-      { "id": "award", "label": "구단 표창과 상금을 준다", "effects": [{ "type": "CASH", "grade": "small" }, { "type": "FAN_NOW", "value": 4 }, { "type": "MOOD", "value": 10 }], "text": "구단 표창과 상금을 수여했다." },
-      { "id": "quiet", "label": "조용히 축하한다", "effects": [{ "type": "MOOD", "value": 5 }], "text": "조용히 축하를 전했다." }
+      {
+        "id": "award",
+        "label": "구단 표창과 상금을 준다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "small"
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 4
+          },
+          {
+            "type": "MOOD",
+            "value": 10
+          }
+        ],
+        "text": "구단 표창과 상금을 수여했다."
+      },
+      {
+        "id": "quiet",
+        "label": "조용히 축하한다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": 5
+          }
+        ],
+        "text": "조용히 축하를 전했다."
+      }
+    ]
+  },
+  {
+    "id": "GOOD-06",
+    "type": "decision",
+    "category": "positive",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "club",
+    "trigger": "club.week >= 2",
+    "weight": 2,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "pr",
+    "delegateDefault": "join",
+    "texts": [
+      "선수단이 재난 성금에 구단도 함께하자고 제안했습니다.",
+      "주장이 선수단 모금 소식을 전하며 구단의 동참을 요청했습니다.",
+      "재난 피해 소식에 선수들이 성금을 모으고 있습니다."
+    ],
+    "choices": [
+      {
+        "id": "join",
+        "label": "구단도 동참한다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "medium"
+          },
+          {
+            "type": "FAN_TARGET",
+            "value": 3,
+            "weeks": 8
+          },
+          {
+            "type": "CLUBHOUSE",
+            "value": 4
+          }
+        ],
+        "text": "구단도 성금에 동참했다."
+      },
+      {
+        "id": "personal",
+        "label": "선수 개인 기부로 둔다",
+        "effects": [
+          {
+            "type": "CLUBHOUSE",
+            "value": -2
+          }
+        ],
+        "text": "선수 개인 기부로 두었다."
+      }
     ]
   }
 ]

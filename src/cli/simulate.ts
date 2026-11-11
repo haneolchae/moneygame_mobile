@@ -35,7 +35,7 @@ async function main() {
   // 진행 정체 감시: 0일 진행이 연속 maxStall회면 원인(멈춘 이유·날짜)을 출력하고 실패로 끝낸다.
   let stall = 0;
   const advance = async (mode: 'day' | 'week' | 'untilSeasonEnd') => {
-    const r = await call<AdvanceResult>('game.advance', { mode });
+    const r = await call<AdvanceResult>('game.advance', { mode, autoCards: true });
     stall = r.daysProcessed === 0 ? stall + 1 : 0;
     if (stall >= maxStall) {
       const dash = await call<DashboardView>('game.dashboard');

@@ -891,4 +891,11 @@ export const EVENTS = {
   merchMax: 1.3,
   growthMin: 0.9,
   growthMax: 1.1,
+  /** EV-3(D-207): 맡긴 카드 담당 팀 처리량, 확률 위험 등급 경계 */
+  delegateWp: 4,
+  riskLow: 0.35,
+  riskMid: 0.6,
+  /** 슬럼프: 최근 28일 OPS 미만·최소 타석 */
+  slumpOps: 0.55,
+  slumpMinPa: 40,
 } as const;

@@ -290,7 +290,12 @@ export class AwardOps {
     for (const c of leaders(new Map([...front].map(([k, v]) => [k, Math.round(v * 1000) / 1000])))) rows.push({ season, award: 'front', slot: '', playerId: null, clubId: c, staffId: null, date, score: r1(front.get(c)!), detail: frontDetail.get(c)! });
     // 수비상 9
     const def = this.defenseScores(d);
-    for (const [pos, m] of def.byPos) add('defense', pos, leaders(new Map([...m].map(([k, v]) => [k, Math.round(v * 1000) / 1000]))), (id) => m.get(id)!, (id) => def.detail(id, pos));
+    for (const [pos, m] of def.byPos) {
+      let top = leaders(new Map([...m].map(([k, v]) => [k, Math.round(v * 1000) / 1000])));
+      // ASSUMPTION(D-180): 반올림 뒤에도 같으면 그 포지션 수비 이닝이 많은 선수, 그다음 선수 번호로 한 명만 뽑는다
+      if (top.length > 1) top = [[...top].sort((x, y) => (def.outs.get(y)?.get(pos) ?? 0) - (def.outs.get(x)?.get(pos) ?? 0) || x - y)[0]!];
+      add('defense', pos, top, (id) => m.get(id)!, (id) => def.detail(id, pos));
+    }
     // 기록 달성상
     for (const [id, b] of d.bat) {
       const pb = before.bat.get(id) ?? emptyBat();
