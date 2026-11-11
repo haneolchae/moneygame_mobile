@@ -68,6 +68,8 @@ export interface GameMeta {
   meetings?: MeetingRecord[];
   /** 8b(D-182): 경기한 날 쌓는 업적 상태(시즌 누적 수·투수 연속 상태), 시즌 → 업적 경험치 합 */
   achState?: unknown;
+  /** 8c(D-184 (3)) 누적 집합·상태 */
+  achMemo?: unknown;
   achievementXp?: Record<string, number>;
   /** 8a(D-180): 시즌 → 구단 ID → 개막 때 기대 순위(감독상 예상 승수) */
   awardBase?: Record<string, Record<string, number>>;
@@ -622,6 +624,8 @@ export interface GameRepository {
   positionOutChecks(season: number): Array<{ gameId: number; clubId: ClubId; fieldOuts: number; dhOuts: number; defOuts: number }>;
   insertAwards(rows: AwardRecord[]): void;
   /** 8b 업적(D-182) */
+  apWeeks(): ApWeek[];
+  scoutingObservations(clubId: ClubId): number;
   flagTotals(season: number, clubId: ClubId): Map<PlayerId, { HLD: number; BS: number; QS: number }>;
   clubBatterGames(season: number, clubId: ClubId, playerIds?: PlayerId[]): Array<{ gameId: number; date: GameDate; batterId: PlayerId; H: number; OB: number }>;
   getAwards(filter?: { season?: number; playerId?: PlayerId; clubId?: ClubId; award?: string }): AwardRecord[];

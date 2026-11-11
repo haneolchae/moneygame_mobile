@@ -61,7 +61,7 @@ export function TeamRecords({ nav }: { nav: Nav }) {
           <Icon name="trophy" size={24} />
           <span className="label">업적</span>
           <span className="value">
-            {achieved}/{v.achievements.length}
+            {achieved}/{v.achievements.filter((a) => !a.inactive && a.type !== 'legacy').length}
           </span>
         </div>
         <div className="kpi">
@@ -137,7 +137,7 @@ function AchievementBoard({ list }: { list: AchievementView[] }) {
         <div className="seg" style={{ flexWrap: 'wrap', marginBottom: 8 }}>
           {cats.map((c) => {
             const n = list.filter((a) => a.category === c && a.achieved.length > 0).length;
-            const t = list.filter((a) => a.category === c).length;
+            const t = list.filter((a) => a.category === c && !a.inactive).length;
             return (
               <button key={c} className={cat === c ? 'active' : ''} onClick={() => setCat(c)}>
                 {c} <span className="muted small">{n}/{t}</span>
@@ -160,10 +160,11 @@ function AchievementBoard({ list }: { list: AchievementView[] }) {
               const first = stages[0]!;
               const got = stages.flatMap((a) => a.achieved.map((x) => ({ ...x, title: a.title }))).sort((a, b) => (a.date < b.date ? 1 : -1));
               return (
-                <tr key={id} className={got.length ? 'mine' : ''}>
+                <tr key={id} className={got.length ? 'mine' : first.inactive ? 'muted' : ''}>
                   <td>
                     {first.seriesTitle}
                     {TYPE_LABEL[first.type] && <span className="muted small"> · {TYPE_LABEL[first.type]}</span>}
+                    {first.inactive && <span className="badge" title={first.inactive} style={{ marginLeft: 6 }}>비활성</span>}
                   </td>
                   <td>
                     <div className="seg" style={{ flexWrap: 'wrap' }}>
@@ -175,7 +176,10 @@ function AchievementBoard({ list }: { list: AchievementView[] }) {
                       ))}
                     </div>
                   </td>
-                  <td className="small" style={{ whiteSpace: 'normal' }}>{first.description}</td>
+                  <td className="small" style={{ whiteSpace: 'normal' }}>
+                    {first.description}
+                    {first.inactive && <div className="muted">판정하지 않음: {first.inactive}</div>}
+                  </td>
                   <td className="small" style={{ whiteSpace: 'normal' }}>{got.length ? `${got[0]!.detail} (+${got[0]!.xp})` : <span className="muted">미달성</span>}</td>
                 </tr>
               );

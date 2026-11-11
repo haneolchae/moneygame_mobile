@@ -12,12 +12,15 @@ import { EOK } from '../engine/money';
 import { clubHistory } from '../engine/data/history';
 import { TEAMS } from '../engine/staff';
 import type { GameMeta, GameRepository, InboxMessage } from './ports';
+import { judgeOps, newMemo, type AchMemo } from './achievementsOps';
+import { addDays } from '../engine/calendar';
+import { AWARDS } from '../engine/config';
 
 export type AchievementType = 'once' | 'season' | 'cumulative';
 
 export const CATEGORY_LABEL: Record<string, string> = {
   A: 'A 경기', B: 'B 타자 시즌', C: 'C 투수 시즌', D: 'D 통산', E: 'E 시즌 성적', F: 'F 왕조·연속',
-  H: 'H 선수단 운영', L: 'L 재무', M: 'M 조직·구단주',
+  G: 'G 육성·드래프트', H: 'H 선수단 운영', I: 'I 시설', J: 'J 팬·관중', K: 'K 굿즈·스폰서', L: 'L 재무', M: 'M 조직·구단주', N: 'N 구단 역사', O: 'O 수상',
 };
 
 interface SeriesDef {
@@ -33,10 +36,12 @@ interface SeriesDef {
   tiers?: readonly number[];
   lower?: boolean;
   desc: string;
+  /** 8c(D-184): 원천 기능이 없어 판정하지 않는 계열의 사유 */
+  inactive?: string;
 }
 
 const s = (id: string, cat: string, title: string, type: AchievementType, stages: readonly number[], desc: string, extra: Partial<SeriesDef> = {}): SeriesDef => ({ id, cat, title, type, stages, desc, ...extra });
-const one = (id: string, cat: string, title: string, type: AchievementType, tier: number, desc: string): SeriesDef => s(id, cat, title, type, [1], desc, { tiers: [tier], labels: [''] });
+const one = (id: string, cat: string, title: string, type: AchievementType, tier: number, desc: string, extra: Partial<SeriesDef> = {}): SeriesDef => s(id, cat, title, type, [1], desc, { tiers: [tier], labels: [''], ...extra });
 
 /** 계열 목록(8b: A~F, 8c 전 임시 운영 계열) */
 export const SERIES: readonly SeriesDef[] = [
@@ -137,11 +142,164 @@ export const SERIES: readonly SeriesDef[] = [
   s('F_500', 'F', '연속 승률 5할 이상', 'season', [5, 10, 15], '재임 중 연속 승률 5할 이상 시즌'),
   s('F_titles', 'F', '재임 중 우승', 'cumulative', [1, 3, 5, 10], '재임 중 한국시리즈 우승 횟수'),
   s('F_psn', 'F', '재임 중 가을야구', 'cumulative', [5, 10, 20], '재임 중 가을야구 진출 횟수'),
-  // 8c 전 임시 운영 계열(D-182 (6))
+  // ───── 8c(D-184) G~O. inactive: 원천 기능이 없어 판정하지 않는 계열 ─────
+  // G 육성·드래프트(우리 구단 지명 선수, 누적형)
+  s('G_debut', 'G', '지명 선수 1군 데뷔', 'cumulative', [1, 5, 10, 20], '우리 구단 지명 선수의 1군 첫 출전(명)'),
+  s('G_qual', 'G', '지명 선수 규정 진입', 'cumulative', [1, 5, 10], '우리 구단 지명 선수가 규정 타석·이닝을 채운 수(명)'),
+  s('G_late', 'G', '5라운드 이하 주전 정착', 'cumulative', [1, 3], '5라운드 이하 지명 선수 규정 진입(명)'),
+  s('G_roy', 'G', '지명 선수 신인왕', 'cumulative', [1, 3, 5], '우리 구단 지명 선수 신인왕(명)'),
+  s('G_title', 'G', '지명 선수 타이틀', 'cumulative', [1, 5, 10], '우리 구단 지명 선수 타이틀(개)'),
+  s('G_mvp', 'G', '지명 선수 MVP', 'cumulative', [1, 3], '우리 구단 지명 선수 정규시즌 MVP(회)'),
+  s('G_young', 'G', '1~3년차 활약', 'cumulative', [1, 3, 5], '지명 1~3년차 시즌 20홈런 또는 10승(명)'),
+  one('G_first1', 'G', '1순위의 증명', 'once', 3, '1라운드 1순위 지명 선수 규정 OPS .850 또는 15승 시즌'),
+  // H 선수단 운영
+  s('H_trade', 'H', '트레이드 성사', 'cumulative', [1, 5, 10, 25], '재임 중 트레이드 성사(건)'),
+  s('H_tradeTitle', 'H', '트레이드 영입 타이틀', 'cumulative', [1, 3], '트레이드로 데려온 선수가 그 시즌 타이틀(명)'),
+  s('H_trade300', 'H', '트레이드 영입 즉시 효과', 'cumulative', [1, 3], '트레이드 영입 시즌 규정 3할 또는 10승(명)'),
+  s('H_fa', 'H', '외부 FA 영입', 'cumulative', [1, 3, 5, 10], '다른 구단 FA 영입(명)'),
+  s('H_faTitle', 'H', 'FA 영입 타이틀', 'cumulative', [1, 3], '외부 FA로 데려온 선수의 타이틀(개)'),
+  s('H_stay', 'H', '내부 FA 잔류', 'cumulative', [1, 3, 5, 10], '우리 FA 선수 잔류 계약(명)'),
   one('H_franchise', 'H', '간판을 지켜라', 'once', 2, '간판 선수와 FA 잔류 계약'),
-  one('M_novacancy', 'M', '완성된 프런트', 'once', 2, '11개 팀 팀장 공석 0'),
-  s('M_approvals', 'M', '결재', 'cumulative', [50], '결재 승인 누적', { tiers: [2] }),
-  s('L_cash', 'L', '현금 보유', 'once', [500], '보유 현금(억 원)', { tiers: [3] }),
+  s('H_foreign', 'H', '외국인 연속 재계약', 'once', [2, 3, 5], '같은 외국인 선수 재계약 연차'),
+  one('H_f15', 'H', '외국인 투수 15승', 'once', 2, '외국인 투수 한 시즌 15승(우리 구단 소속)'),
+  one('H_f30', 'H', '외국인 타자 30홈런', 'once', 2, '외국인 타자 한 시즌 30홈런(우리 구단 소속)'),
+  s('H_posting', 'H', '포스팅 MLB 진출', 'cumulative', [1, 3], '포스팅으로 MLB 진출(명)', { inactive: '포스팅 기능 없음' }),
+  s('H_postingFee', 'H', '포스팅 이적료 누적', 'cumulative', [100, 300], '포스팅 이적료 누적(억)', { inactive: '포스팅 기능 없음' }),
+  s('H_multi', 'H', '다년 계약 완주', 'cumulative', [1, 5], '3년 이상 계약 완주(명)', { inactive: '계약 이력 기록 없음' }),
+  s('H_persuade', 'H', '은퇴 설득 성공', 'cumulative', [1, 3, 5], '은퇴를 설득해 한 시즌 더 뛴 선수(명)'),
+  s('H_oneclubRetire', 'H', '원클럽맨 은퇴', 'cumulative', [1, 3], '모든 경력을 우리 구단에서 보내고 은퇴(명)'),
+  one('H_noRelease', 'H', '방출 없는 시즌', 'season', 2, '그 시즌을 덮는 방출 잔여 연봉 의무 0건(정규시즌 종료)'),
+  // I 시설(누적형, 1단계 경험치)
+  one('I_start', 'I', '첫 착공', 'once', 1, '시설 공사를 처음 착공'),
+  one('I_done', 'I', '첫 완공', 'once', 1, '시설 공사를 처음 완공'),
+  s('I_levels', 'I', '시설 단계 완공 누적', 'cumulative', [3, 5, 10, 20], '완공한 시설 단계 합', { tiers: [1, 1, 1, 1] }),
+  one('I_max', 'I', '모든 시설 최고 단계', 'once', 5, '시설 4종 모두 최고 단계'),
+  s('I_approval', 'I', '지자체 승인 공사 완공', 'cumulative', [1, 3], '구장 편의시설(지자체 승인) 완공 단계', { tiers: [1, 1] }),
+  s('I_condition', 'I', '개막일 시설 상태 80 이상', 'cumulative', [1, 3, 5], '개막일 모든 시설 상태 80 이상(시즌)', { inactive: '시설 노후도 기능 없음', tiers: [1, 1, 1] }),
+  one('I_breakdown', 'I', '시설 고장 0 시즌', 'season', 1, '시설 고장 사건 없는 시즌', { inactive: '시설 고장 기능 없음' }),
+  // J 팬·마케팅·관중
+  s('J_att', 'J', '시즌 홈 관중', 'season', [60, 80, 100, 120, 150], '정규시즌 홈 관중(만 명)', { labels: ['60만', '80만', '100만', '120만', '150만'] }),
+  s('J_sellouts', 'J', '시즌 매진 경기', 'season', [10, 20, 36, 72], '정규시즌 홈 매진 경기 수'),
+  s('J_sellStreak', 'J', '연속 매진', 'once', [5, 10, 20], '홈 경기 연속 매진'),
+  s('J_sat', 'J', '시즌 종료 팬 만족도', 'season', [70, 80, 90], '정규시즌 마지막 날 팬 만족도'),
+  s('J_loyalty', 'J', '시즌 종료 팬 충성도', 'season', [70, 80, 90], '팬 충성도', { inactive: '팬 충성도 변화 모델 없음' }),
+  one('J_recover', 'J', '팬 반발 회복', 'once', 3, '팬 반발 상태를 8주 안에 회복'),
+  s('J_campaigns', 'J', '마케팅 캠페인 실행', 'cumulative', [5, 10, 25, 50], '재임 중 캠페인 실행(건)'),
+  s('J_seasonTicket', 'J', '시즌권 판매 목표', 'cumulative', [1, 3, 5], '시즌권 목표 달성 시즌', { inactive: '시즌권 기능 없음' }),
+  one('J_avgTop', 'J', '홈 평균 관중 1위', 'season', 3, '정규시즌 홈 평균 관중 리그 1위'),
+  // K 굿즈·스폰서·영업
+  s('K_merch', 'K', '굿즈 시즌 매출', 'season', [30, 50, 100, 200], '정규시즌 굿즈 매출(억)', { labels: ['30억', '50억', '100억', '200억'] }),
+  s('K_sku', 'K', '단일 상품 누적 판매', 'once', [10000, 50000, 100000], '한 상품군 누적 판매(개)', { labels: ['1만', '5만', '10만'] }),
+  s('K_launch', 'K', '굿즈 출시', 'cumulative', [10, 25, 50], '굿즈 종류 출시', { inactive: '상품 출시 기능 없음(상품군 3종 고정)' }),
+  s('K_disposal', 'K', '재고 폐기 관리', 'season', [1, 2], '폐기율 5% 이하 · 폐기 0', { inactive: '재고 폐기 기능 없음' }),
+  s('K_sponsorN', 'K', '스폰서 계약 체결', 'cumulative', [5, 10, 25], '재임 중 스폰서 계약(건)'),
+  s('K_brands', 'K', '계약 브랜드 수', 'cumulative', [10, 25, 50], '스폰서 계약을 맺은 서로 다른 브랜드 수'),
+  one('K_topBrand', 'K', '최상위 브랜드 메인 스폰서', 'once', 3, '최상위 제안 성향 브랜드와 메인 계약', { inactive: '브랜드 제안 성향 등급 없음' }),
+  s('K_sponsorRev', 'K', '시즌 스폰서 수입', 'season', [30, 50, 100, 150], '시즌 마감 정산 스폰서 수입(억)', { labels: ['30억', '50억', '100억', '150억'] }),
+  s('K_incentive', 'K', '스폰서 인센티브 전부 충족', 'cumulative', [1, 3], '인센티브 조건 전부 충족 시즌', { inactive: '정산 결과 기록 없음' }),
+  one('K_renew', 'K', '스폰서 재계약률 100%', 'season', 2, '스폰서 전원 재계약', { inactive: '스폰서 재계약 기능 없음(1년 계약)' }),
+  s('K_ticket', 'K', '티켓 시즌 수입', 'season', [100, 150, 200], '정규시즌 입장 수입(억)', { labels: ['100억', '150억', '200억'] }),
+  // L 재무
+  s('L_cash', 'L', '현금 잔고', 'once', [300, 500, 1000, 2000], '보유 현금(억)', { labels: ['300억', '500억', '1,000억', '2,000억'] }),
+  s('L_profitRun', 'L', '흑자 시즌 연속', 'once', [1, 3, 5, 10], '장부 시즌 흑자(기초 현금 제외) 연속'),
+  s('L_op', 'L', '시즌 영업이익', 'season', [50, 100, 200], '장부 시즌 영업이익(억, 기초 현금·모기업 지원 제외)', { labels: ['50억', '100억', '200억'] }),
+  s('L_noParent', 'L', '모기업 지원 없이 흑자', 'cumulative', [1, 3], '모기업 지원금을 빼고도 흑자인 장부 시즌'),
+  s('L_noEmergency', 'L', '긴급 지원 없이', 'once', [5, 10], '긴급 지원 없이 이어간 재임 시즌'),
+  one('L_crisis', 'L', '자금 위기 탈출', 'once', 3, '현금 0 미만 위기 상태 해제'),
+  one('L_capTitle', 'L', '샐러리캡 안에서 우승', 'season', 4, '국내 선수 연봉 총액이 샐러리캡 안에서 한국시리즈 우승'),
+  one('L_cheapPs', 'L', '저비용 가을야구', 'season', 4, '연봉 총액 리그 하위 3개 구단으로 가을야구'),
+  s('L_sales', 'L', '선수 매각·이적료 수입', 'cumulative', [50, 100, 300], '트레이드 현금·FA 보상금 수입 합(억)', { labels: ['50억', '100억', '300억'] }),
+  // M 조직·결재·구단주
+  s('M_approvals', 'M', '결재 처리', 'cumulative', [50, 100, 500, 1000, 5000], '결재 승인·반려 누적(건)'),
+  s('M_novacancy', 'M', '팀장 공석 0 유지', 'cumulative', [1, 3, 5], '정규시즌 마지막 날 팀장 공석 0인 시즌'),
+  s('M_hire', 'M', '직원 채용', 'cumulative', [10, 25, 50], '직원 채용(명)', { inactive: '채용 이력 기록 없음' }),
+  one('M_tenure3', 'M', '팀장 전원 3년 근속', 'once', 3, '팀장 전원 3년 이상 근속', { inactive: '직원 근속 기록 없음' }),
+  s('M_level', 'M', '구단주 레벨', 'once', [5, 10, 15, 20], '구단주 레벨 도달'),
+  s('M_seasons', 'M', '재임 시즌', 'once', [5, 10, 20, 30], '구단주 재임 시즌 합(정규시즌 종료 기준)'),
+  one('M_escape', 'M', '해임 위기 탈출', 'once', 3, '성적 목표 연속 미달 경고 뒤 해제'),
+  one('M_rebuildPs', 'M', '리빌딩 완성', 'once', 3, '리빌딩 선언 뒤 3시즌 안에 가을야구'),
+  one('M_hardTitle', 'M', '어려운 구단 우승', 'once', 5, '어려움 이상 난이도 구단으로 한국시리즈 우승'),
+  one('M_otherTitle', 'M', '두 번째 구단 우승', 'once', 4, '해임 뒤 다른 구단에서 한국시리즈 우승'),
+  s('M_interview', 'M', '인터뷰·면담 응대', 'cumulative', [10, 50, 100], '언론 인터뷰·면담(건)', { inactive: '인터뷰·면담 기능 없음' }),
+  // M-2 구단주 행동·메타
+  s('M2_ap', 'M', '행동력 누적 사용', 'cumulative', [100, 500, 1000, 5000], '재임 중 쓴 행동력'),
+  s('M2_full', 'M', '행동력 전부 쓴 주', 'cumulative', [10, 50, 100], '받은 행동력을 모두 쓴 주'),
+  s('M2_zero', 'M', '완전 위임 주', 'cumulative', [10, 50], '행동력을 하나도 쓰지 않고 넘긴 주'),
+  s('M2_chairman', 'M', '회장님 경영', 'season', [1, 2, 3], '전 팀 위임으로 시즌 완주 · 가을야구 · 우승', { inactive: '위임 상태 시즌 기록 없음', labels: ['완주', '가을야구', '우승'] }),
+  one('M2_micro', 'M', '마이크로매니저', 'season', 2, '시즌 중 위임 없이 모든 행동 직접', { inactive: '위임 상태 시즌 기록 없음' }),
+  s('M2_directFa', 'M', '직접 협상 FA 성사', 'cumulative', [1, 10, 25], '직접 협상 FA 계약(건)', { inactive: '제안 기록에 직접·위임 구분 없음' }),
+  s('M2_oneRound', 'M', '한 번에 성사', 'cumulative', [1, 5], '첫 제안 한 번으로 FA 계약 성사(건)'),
+  s('M2_scout', 'M', '직접 선수 조사', 'cumulative', [50, 200, 500], '직접 선수 조사(회)'),
+  s('M2_dispatch', 'M', '대회 파견', 'cumulative', [10, 25, 50], '직접 대회 파견(회)', { inactive: '대회 파견 기능 없음' }),
+  s('M2_draftScout', 'M', '발굴한 아마추어', 'cumulative', [1, 2], '직접 조사한 아마추어 지명 → 정착 · 타이틀', { inactive: '아마추어 직접 조사 기록 연결 없음' }),
+  s('M2_trainTitle', 'M', '집중 훈련의 결실', 'cumulative', [1, 3], '개인 집중 훈련 지정 선수 타이틀(명)', { inactive: '훈련 지정 이력 기록 없음' }),
+  s('M2_medical', 'M', '부상 조기 발견', 'cumulative', [5, 20], '특별 검사로 부상 조기 발견(건)', { inactive: '조기 발견 판정 기록 없음' }),
+  s('M2_camp', 'M', '캠프 직접 지휘', 'cumulative', [3, 5, 10], '캠프 직접 지휘(회)', { inactive: '캠프 지휘 기능 없음' }),
+  s('M2_talks', 'M', '선수·직원 면담', 'cumulative', [50, 100, 300], '면담(건)', { inactive: '면담 기능 없음' }),
+  s('M2_reject', 'M', '깐깐한 구단주', 'cumulative', [10, 50], '결재 반려(건)'),
+  one('M2_allHire', 'M', '팀장 전원 직접 채용', 'once', 3, '팀장 전원을 직접 채용', { inactive: '채용 이력 기록 없음' }),
+  one('M2_policy', 'M', '일관된 정책', 'once', 3, '팀 정책 변경 없이 3시즌', { inactive: '정책 변경 이력 없음' }),
+  s('M2_budget', 'M', '예산 안에서 시즌 완주', 'cumulative', [1, 3, 5], '정규시즌 마지막 날 재량 지출·연봉 총액이 예산 한도 안인 시즌'),
+  s('M2_capRaise', 'M', '샐러리캡 증액 승인', 'cumulative', [1, 3], '샐러리캡 증액 승인(회)', { inactive: '샐러리캡 증액 기능 없음' }),
+  s('M2_allstarHost', 'M', '올스타전 유치', 'cumulative', [1, 3], '올스타전 유치 성공(회)', { inactive: '올스타전(8e) 전' }),
+  s('M2_allstarVote', 'M', '투표 캠페인 베스트 12', 'cumulative', [1, 5], '올스타 투표 캠페인으로 베스트 12(명)', { inactive: '올스타전(8e) 전' }),
+  s('M2_loyal', 'M', '의리', 'cumulative', [1, 3], '다른 구단 영입 제안 거절(회)', { inactive: '재임 중 영입 제안 기능 없음(해임 뒤 제안만)' }),
+  one('M2_rebuildTitle', 'M', '리빌딩 끝 우승', 'once', 5, '리빌딩 선언 뒤 5시즌 안에 한국시리즈 우승'),
+  one('M2_dynasty2', 'M', '두 번째 왕조', 'once', 4, '우승 간격 5시즌 이상으로 다시 우승'),
+  one('M2_threeClubs', 'M', '세 구단 가을야구', 'once', 3, '서로 다른 세 구단에서 가을야구'),
+  one('M2_hard10', 'M', '어려운 구단 10시즌', 'once', 4, '어려움 이상 난이도 구단에서 10시즌 재임'),
+  one('M2_lv20in7', 'M', '초고속 성장', 'once', 4, '재임 7시즌 안에 레벨 20'),
+  one('M2_noWarn', 'M', '흔들림 없는 10년', 'once', 4, '재임 10시즌 동안 해임 경고 0'),
+  one('M2_50', 'M', '재임 50시즌', 'once', 5, '구단주 재임 50시즌'),
+  s('M2_farewell', 'M', '간판 은퇴 경기', 'cumulative', [1, 3], '간판 선수 은퇴 경기 개최(명)', { inactive: '은퇴 경기 기능 없음' }),
+  one('M2_allround', 'M', '올라운더', 'once', 4, 'A~O 모든 분류에서 1개 이상 달성(비활성만 있는 분류 제외)'),
+  s('M2_rate', 'M', '전체 업적 달성률', 'once', [25, 50, 75, 100], '활성 업적(P·Q 제외) 달성률(%)', { labels: ['25%', '50%', '75%', '100%'] }),
+  s('M2_golden', 'M', '황금 시즌', 'season', [10, 20], '한 시즌 시즌형 업적 수'),
+  s('M2_collector', 'M', '진기록 수집가', 'cumulative', [5, 15, 30], 'P 분류 달성(개)', { inactive: 'P 분류(8d) 전' }),
+  one('M2_overcome', 'M', '흑역사 극복', 'once', 4, 'Q 기록 뒤 2시즌 안에 반대 업적', { inactive: 'Q 분류(8d) 전' }),
+  // N 구단 역사·기록 경신
+  s('N_records', 'N', '구단 단일 시즌 기록', 'cumulative', [1, 5, 10, 20], '재임 중 세운 구단 단일 시즌 기록(부문)'),
+  s('N_legend', 'N', '레전드 추월', 'cumulative', [1, 3, 5], '구단 통산 1위 등극(부문)', { inactive: '레전드 통산 비교 기능 없음' }),
+  one('N_mostW', 'N', '창단 이래 최다승', 'once', 3, '구단 역사(실제 역사 포함) 최다승 시즌'),
+  one('N_bestPct', 'N', '창단 이래 최고 승률', 'once', 3, '구단 역사(실제 역사 포함) 최고 승률 시즌'),
+  one('N_teamHr', 'N', '창단 이래 최다 팀 홈런', 'once', 3, '구단 역사 최다 팀 홈런', { inactive: '실제 구단 시즌 팀 홈런 자료 없음' }),
+  one('N_firstTitle', 'N', '구단 최초 우승', 'once', 5, '구단 역사(실제 역사 포함) 첫 한국시리즈 우승'),
+  s('N_hof', 'N', '레전드 헌액', 'cumulative', [1, 3, 5], '레전드 헌액·영구결번(명)', { inactive: '헌액 기능 없음' }),
+  // O 수상(우리 구단 수상)
+  s('O_titles', 'O', '타이틀 홀더', 'cumulative', [1, 5, 10, 25], '우리 구단 타이틀(개)'),
+  one('O_sweepBat', 'O', '타자 타이틀 독식', 'season', 3, '한 시즌 타자 타이틀 8개 중 4개 이상'),
+  one('O_sweepPit', 'O', '투수 타이틀 독식', 'season', 3, '한 시즌 투수 타이틀 6개 중 3개 이상'),
+  one('O_sweepAll', 'O', '타이틀 싹쓸이', 'season', 5, '한 시즌 타이틀 14개 중 8개 이상'),
+  s('O_gg', 'O', '골든글러브', 'cumulative', [1, 5, 10, 25], '우리 구단 골든글러브(명)'),
+  s('O_ggSeason', 'O', '한 시즌 골든글러브', 'season', [3, 5, 7], '한 시즌 우리 구단 골든글러브(명)'),
+  s('O_mvp', 'O', '정규시즌 MVP', 'cumulative', [1, 3], '우리 구단 MVP(회)'),
+  s('O_roy', 'O', '신인왕', 'cumulative', [1, 3, 5], '우리 구단 신인왕(회)'),
+  s('O_ksmvp', 'O', '한국시리즈 MVP', 'cumulative', [1, 3], '우리 구단 한국시리즈 MVP(회)'),
+  one('O_mvpRoy', 'O', 'MVP·신인왕 동시', 'season', 3, '한 시즌 MVP와 신인왕 동시 배출'),
+  s('O_mvpRepeat', 'O', 'MVP 연속 수상', 'once', [2, 3], '같은 선수 MVP 연속 수상'),
+  s('O_defense', 'O', '수비상', 'cumulative', [1, 5, 10, 25], '우리 구단 수비상(명)'),
+  s('O_platinum', 'O', '플래티넘 글러브', 'cumulative', [1, 3], '우리 구단 플래티넘 글러브(회)'),
+  s('O_pitcher', 'O', '최우수 투수', 'cumulative', [1, 3, 5], '우리 구단 최우수 투수(회)'),
+  s('O_reliever', 'O', '최우수 구원 투수', 'cumulative', [1, 3, 5], '우리 구단 최우수 구원 투수(회)'),
+  s('O_comeback', 'O', '재기상', 'cumulative', [1, 3], '우리 구단 재기상(회)'),
+  s('O_manager', 'O', '감독상', 'cumulative', [1, 3], '우리 감독 감독상(회)'),
+  s('O_front', 'O', '올해의 프런트', 'cumulative', [1, 3, 5], '우리 구단 올해의 프런트(회)', { tiers: [4, 4, 4] }),
+  s('O_best', 'O', '베스트 팀 선정', 'cumulative', [1, 5, 15, 30], '우리 선수 베스트 팀 선정(명)'),
+  s('O_best1Season', 'O', '한 시즌 베스트 1팀', 'season', [3, 5, 8], '한 시즌 베스트 1팀 우리 선수(명)'),
+  s('O_monthly', 'O', '월간 시상', 'cumulative', [1, 10, 25, 50], '우리 선수 월간 MVP·월간 신인(회)'),
+  s('O_monthlyRepeat', 'O', '월간 MVP 연속', 'once', [2, 3], '같은 선수 월간 MVP 연속(개월)'),
+  s('O_milestone', 'O', '기록 달성상', 'cumulative', [1, 5, 10], '우리 선수 기록 달성상(회)'),
+  s('O_popular', 'O', '인기상', 'cumulative', [1, 3], '인기상(회)', { inactive: '인기 지표 구현 전' }),
+  one('O_grand', 'O', '그랜드슬램', 'season', 5, '한 시즌 MVP·최우수 투수·신인왕·감독상·올해의 프런트 모두 우리 구단'),
+  s('O_allstar', 'O', '올스타 선정', 'cumulative', [1, 5, 10, 25], '올스타 선정(명)', { inactive: '올스타전(8e) 전' }),
+  s('O_allstarSeason', 'O', '한 시즌 올스타', 'season', [3, 5, 7], '한 시즌 올스타 선정(명)', { inactive: '올스타전(8e) 전' }),
+  s('O_best12', 'O', '베스트 12 투표 1위', 'cumulative', [1, 5, 10], '베스트 12 포지션 1위(명)', { inactive: '올스타전(8e) 전' }),
+  s('O_topVote', 'O', '올스타 최다 득표', 'cumulative', [1, 3], '올스타 팬 투표 최다 득표(회)', { inactive: '올스타전(8e) 전' }),
+  s('O_mrAllstar', 'O', '미스터 올스타', 'cumulative', [1, 3], '미스터 올스타(회)', { inactive: '올스타전(8e) 전' }),
+  s('O_hrRace', 'O', '홈런 레이스 우승', 'cumulative', [1, 3], '홈런 레이스 우승(회)', { inactive: '올스타전(8e) 전' }),
+  s('O_allstarRun', 'O', '올스타 연속 선정', 'once', [5, 10], '같은 선수 올스타 연속 선정(회)', { inactive: '올스타전(8e) 전' }),
+  s('O_allstarHr', 'O', '올스타전 홈런', 'cumulative', [1, 5], '올스타전 우리 선수 홈런(개)', { inactive: '올스타전(8e) 전' }),
+  s('O_allstarHome', 'O', '올스타전 홈구장 개최', 'cumulative', [1, 3], '올스타전 홈구장 개최(회)', { inactive: '올스타전(8e) 전' }),
 ];
 
 /** 화면·기록용 업적 정의(단계마다 하나) */
@@ -158,6 +316,10 @@ export interface AchievementDef {
   /** 시즌형(시즌마다 다시 달성, 두 번째부터 경험치 절반) */
   repeat: boolean;
   type: AchievementType;
+  /** 비활성 사유(판정하지 않음) */
+  inactive: string | null;
+  /** 분류 글자(A~Q) */
+  cat: string;
 }
 
 const stageLabel = (sd: SeriesDef, i: number) => sd.labels?.[i] ?? String(sd.stages[i]);
@@ -177,6 +339,8 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = SERIES.flatMap((sd) =>
       xp: X.byTier[tier - 1] ?? X.byTier[0]!,
       repeat: sd.type === 'season',
       type: sd.type,
+      inactive: sd.inactive ?? null,
+      cat: sd.cat,
     };
   }),
 );
@@ -239,6 +403,7 @@ export class Achievements {
     /** 계열 판정: 값이 넘은 모든 단계(아래 단계 포함)를 한 번에 */
     const judge = (series: string, value: number, detail: (label: string) => string) => {
       const sd = SER.get(series)!;
+      if (sd.inactive) return;
       sd.stages.forEach((t, i) => {
         const ok = sd.lower ? value <= t + 1e-9 : value >= t - 1e-9;
         if (!ok) return;
@@ -365,16 +530,32 @@ export class Achievements {
     const ps = meta.postseason;
     if (ps && ps.season === season && ps.finishedDate === date) this.postseasonEnd(meta, judge, flag);
 
-    // ───── 임시 운영 계열(매주 일요일, D-182 (6)) ─────
-    if (weekday(date) === 0) {
-      const fa = this.repo.getFa(Number(meta.kDate.slice(0, 4)));
-      flag('H_franchise', fa.some((e) => e.originClub === club && e.signedClub === club && players().get(e.playerId)?.career.franchise), '간판 선수 잔류 계약');
-      const staff = this.repo.getStaff(club);
-      flag('M_novacancy', TEAMS.every((t) => staff.some((x) => x.title === '팀장' && x.team === t.key)), `${date} 팀장 공석 0`);
-      const n = this.repo.getApprovals('approved').length;
-      judge('M_approvals', n, () => `${date} 결재 승인 ${n}건`);
-      const cash = this.repo.cashBalance(club) / EOK;
-      judge('L_cash', cash, () => `${date} 현금 ${Math.floor(cash)}억`);
+    // ───── G~O(D-184): 매주 일요일·정규시즌 끝·한국시리즈 끝·수상 날·장부 시즌 마감 ─────
+    {
+      // 판정할 일이 있는 날만(매일 메타 전체를 읽지 않는다)
+      const freshSeason = this.repo.getMetaValue<number>('season') ?? season;
+      const freshK = this.repo.getMetaValue<string>('kDate') ?? meta.kDate;
+      const when = {
+        sunday: weekday(date) === 0,
+        seasonEnd: meta.mode === 'season' && end,
+        ksEnd: !!ps && ps.season === season && ps.finishedDate === date,
+        awardDay: weekday(date) === 1 || date === addDays(meta.kDate, AWARDS.ceremonyAfterK) || date === addDays(freshK, AWARDS.ceremonyAfterK),
+        homeGame: ourGames.some((g) => g.home === club),
+        financeClosed: freshSeason > season ? season : null,
+      };
+      const memo: AchMemo = { ...newMemo(), ...(this.repo.getMetaValue<AchMemo>('achMemo') ?? {}) };
+      const before = JSON.stringify(memo);
+      if (Object.values(when).some((v) => v !== false && v !== null)) judgeOps({ repo: this.repo, meta, date, judge, flag, memo, career: () => this.career(meta), tenureFirst: this.tenureFirstSeason(meta), ...when });
+      // M-2 메타: 올라운더·달성률·황금 시즌(오늘 판정 포함)
+      const doneKeys = new Set([...have.map((a) => a.key), ...hits.map((h) => h.key)]);
+      const active = ACHIEVEMENTS.filter((a) => !a.inactive);
+      const cats = [...new Set(active.map((a) => a.cat))];
+      flag('M2_allround', cats.every((c) => active.some((a) => a.cat === c && doneKeys.has(a.key))), `${date} 모든 분류(${cats.join('')}) 달성`);
+      const rate = (active.filter((a) => doneKeys.has(a.key)).length / active.length) * 100;
+      judge('M2_rate', rate, (l) => `${date} 업적 달성률 ${rate.toFixed(1)}%(${l})`);
+      const golden = new Set([...have.filter((a) => a.season === season).map((a) => a.key), ...hits.filter((h) => DEF.get(h.key)?.repeat).map((h) => h.key)].filter((k) => k.split('.')[0] !== 'M2_golden')).size;
+      judge('M2_golden', golden, (l) => `${season} 시즌형 업적 ${l}개`);
+      if (JSON.stringify(memo) !== before) this.repo.updateMeta({ achMemo: memo });
     }
 
     if (ourGames.length || st.season !== (meta.achState as AchState | undefined)?.season) this.repo.updateMeta({ achState: st });
@@ -555,7 +736,7 @@ export class Achievements {
   }
 
   /** 재임 시즌(현재 구단): 지금 구단 재임 시작 뒤 시즌만 */
-  private tenureFirstSeason(meta: GameMeta): number {
+  tenureFirstSeason(meta: GameMeta): number {
     const t = (meta.tenures ?? []).filter((x) => x.clubId === meta.userClubId && x.to === null).at(-1);
     const from = t?.from ?? meta.kDate;
     const y = Number(from.slice(0, 4));

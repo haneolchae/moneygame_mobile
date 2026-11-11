@@ -139,7 +139,7 @@ export class Draft {
         salary: DRAFT.rookieSalary,
         contractYears: 1,
         honors: a.honors.map((h) => h.title),
-        draft: { year: a.draft!.year, round: a.draft!.round, pick: a.draft!.pick, school: a.school },
+        draft: { year: a.draft!.year, round: a.draft!.round, pick: a.draft!.pick, school: a.school, clubId: a.draft!.clubId },
       };
       players.push(p);
       const bonus = DRAFT.bonusByRound[a.draft!.round - 1] ?? 0;

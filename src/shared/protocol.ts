@@ -363,6 +363,8 @@ export interface AchievementView {
   stage: number;
   stageLabel: string;
   type: 'once' | 'season' | 'cumulative' | 'legacy';
+  /** 8c: 원천 기능이 없어 판정하지 않는 계열의 사유 */
+  inactive?: string | null;
   title: string;
   category: string;
   description: string;

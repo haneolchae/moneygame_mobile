@@ -83,6 +83,19 @@ describe('리그 시상 (8a)', () => {
       const stable = (rows: unknown[]) => (rows as Array<{ award: string }>).filter((r) => /^(title_|closer|setup|defense|milestone)/.test(r.award));
       expect(strip(stable(svc.awards.computeSeason({ ...meta, season: 2027 }, meta.kDate)))).toBe(strip(stable(kbo)));
       expect(strip(svc.awards.computeGoldenGlove({ ...meta, season: 2027 }, gg))).toBe(strip(all.filter((a) => a.award === 'gg' || a.award === 'platinum' || a.award.startsWith('best'))));
+      // 8c(D-185): 수상 계열 업적 단계 = 우리 구단 수상 수, 비활성 계열은 기록되지 않고 사유가 보인다
+      const ours = repo.getAwards({ clubId: 1 });
+      const got = new Set(repo.getAchievements().map((x) => x.key));
+      const stagesFor = (series: string, n: number, steps: number[]) => steps.forEach((t, i) => expect(got.has(`${series}.${i + 1}`), `${series} ${t} (보유 ${n})`).toBe(n >= t));
+      stagesFor('O_titles', ours.filter((x) => x.award.startsWith('title_')).length, [1, 5, 10, 25]);
+      stagesFor('O_gg', ours.filter((x) => x.award === 'gg').length, [1, 5, 10, 25]);
+      stagesFor('O_monthly', ours.filter((x) => x.award.startsWith('monthly_')).length, [1, 10, 25, 50]);
+      expect(ours.length).toBeGreaterThan(0);
+      const team = await call(d, 'game.team');
+      const inactive = team.achievements.filter((x) => x.inactive);
+      expect(inactive.length).toBeGreaterThan(10);
+      for (const x of inactive) expect(x.achieved.length, x.key).toBe(0);
+      expect(inactive.find((x) => x.series === 'O_allstar')?.inactive).toContain('8e');
       // 다시 처리해도 중복 시상하지 않는다
       svc.awards.seasonCeremony(meta, meta.kDate);
       expect(repo.getAwards({ season: 2027 }).length).toBe(all.length);

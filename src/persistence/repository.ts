@@ -446,6 +446,17 @@ export class SqliteGameRepository implements GameRepository {
     return pos.map((r) => ({ gameId: num(r.g), clubId: num(r.c), fieldOuts: num(r.f), dhOuts: num(r.dh), defOuts: def.get(`${num(r.g)}:${num(r.c)}`) ?? 0 }));
   }
 
+  /** 8c: 모든 주의 행동력 지급·사용 */
+  apWeeks(): ApWeek[] {
+    return (this.stmt('SELECT week_id, granted, used FROM ap_ledger ORDER BY week_id').all() as Row[]).map((r) => ({ weekId: String(r.week_id), granted: num(r.granted), used: num(r.used) }));
+  }
+
+  /** 8c: 구단의 직접 선수 조사 수(기초 자료 제외) */
+  scoutingObservations(clubId: ClubId): number {
+    const r = this.stmt("SELECT COUNT(*) AS n FROM scouting_history WHERE club_id = ? AND json_extract(data, '$.observer') != '기초 자료'").get(clubId) as Row;
+    return num(r.n);
+  }
+
   /** 8b: 구단 소속 투수의 정규시즌 홀드·블론세이브·퀄리티 스타트(구단 기준) */
   flagTotals(season: number, clubId: ClubId): Map<PlayerId, { HLD: number; BS: number; QS: number }> {
     const rows = this.stmt("SELECT pitcher_id AS id, SUM(hld) AS HLD, SUM(bs) AS BS, SUM(qs) AS QS FROM pitcher_flags WHERE stage = 'regular' AND season = ? AND club_id = ? GROUP BY pitcher_id").all(season, clubId) as Row[];

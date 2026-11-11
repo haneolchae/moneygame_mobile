@@ -196,7 +196,8 @@ export interface PlayerTruth {
   /** 아마추어 시절 개인 업적(D-084) */
   honors?: string[];
   /** 신인 드래프트 지명 정보 */
-  draft?: { year: number; round: number; pick: number; school: string };
+  /** clubId: 지명 구단(8c, D-184 (3) 이후 입단 신인) */
+  draft?: { year: number; round: number; pick: number; school: string; clubId?: number };
   /** 은퇴(시즌·사유). 은퇴 선수는 소속이 없다 */
   retired?: { season: number; reason: string };
   /** 성장·노화 누적 상태(4a, D-124). 내부 계산용이며 화면 응답에 그대로 넣지 않는다 */
