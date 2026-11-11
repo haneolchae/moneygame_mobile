@@ -17,6 +17,8 @@ export class HealthOps {
     private readonly repo: GameRepository,
     private readonly roster: RosterOps,
     private readonly medicalQuality: (clubId: number) => number,
+    /** 4c-2b(D-172): 감독 컨디션 관리 — 경기 사이 피로 누적 배율 */
+    private readonly condition: (clubId: number) => number = () => 1,
   ) {}
 
   /** 그날 아직 복귀하지 않은 부상인가(부상 발생 당일 경기 뒤 ~ 복귀일 전날) */
@@ -151,7 +153,7 @@ export class HealthOps {
     const fatigue = this.fatigueMap(date, who, true);
     const injured: PlayerTruth[] = [];
     for (const p of who) {
-      const inj = rollInjury(meta.seed, date, p, fatigue.get(p.id) ?? 0, ageOn(p.birthDate, date), this.medicalQuality(p.clubId!), p.level === '1군');
+      const inj = rollInjury(meta.seed, date, p, (fatigue.get(p.id) ?? 0) * this.condition(p.clubId!), ageOn(p.birthDate, date), this.medicalQuality(p.clubId!), p.level === '1군');
       if (!inj) continue;
       p.health = { injury: inj, history: p.health?.history ?? [], ...(p.health?.lastCheck ? { lastCheck: p.health.lastCheck } : {}) };
       injured.push(p);

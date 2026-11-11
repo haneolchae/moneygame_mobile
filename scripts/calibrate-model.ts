@@ -9,10 +9,11 @@
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { CLUTCH, COUNT_BASE_SHAPE, SIM } from '../src/engine/config';
+import { CLUTCH, COUNT_BASE_SHAPE, MANAGER, SIM } from '../src/engine/config';
 import { chainSummary, fitCountTable, fitMatchup, foulShares, meanPitches, type CountTable } from '../src/engine/count';
 import COUNT_MODEL from '../src/engine/data/countModel.json';
-import { applyDirective, countModelVersion, createGame, finishGame, managerDecide, nextDecision, preparePa, resolvePa, runPrePlays, type GameOptions, type GameState, type PaEvent, type PreparedPa } from '../src/engine/gamesim';
+import { applyDirective, countModelVersion, createGame, finishGame, managerDecide, nextDecision, preparePa, resolvePa, runPrePlays, simulateGame, type GameOptions, type GameState, type PaEvent, type PreparedPa } from '../src/engine/gamesim';
+import { NEUTRAL_MANAGER, nextTrust, type ManagerProfile } from '../src/engine/manager';
 import { emptyTotals, measureLeague, type LeagueTotals } from '../src/engine/leagueCalibration';
 import { prepareTeam } from '../src/engine/lineup';
 import { battingSide, type LeagueEnvironment } from '../src/engine/probability';
@@ -30,6 +31,7 @@ const seeds = Number(arg('seeds', '6'));
 const games = Number(arg('games', '720'));
 const env = { runs: Number(arg('runs', '0')), hr: Number(arg('hr', '0')) };
 const makeTables = process.argv.includes('--tables');
+const managerMode = process.argv.includes('--manager');
 
 function activeOf(s: number): Map<ClubId, PlayerTruth[]> {
   const world = generateWorld(Rng.fromSeed(`calibrate-${s}`), 2026);
@@ -41,7 +43,11 @@ function activeOf(s: number): Map<ClubId, PlayerTruth[]> {
 const mask = (b: GameState['bases']) => (b[0] ? 1 : 0) | (b[1] ? 2 : 0) | (b[2] ? 4 : 0);
 
 /** measureLeague와 같은 대진·선발 규칙으로 경기를 한 걸음씩 돌리며 타석마다 콜백(보정 도구 분석용) */
-function playLeague(active: Map<ClubId, PlayerTruth[]>, n: number, seed: string, e: LeagueEnvironment, opts: GameOptions, onPa: (g: GameState, prep: PreparedPa, before: { outs: number; bases: number; runs: number; inning: number; half: 'T' | 'B'; diff: number }, ev: PaEvent) => void): void {
+type StepState = { outs: number; bases: number; runs: number; inning: number; half: 'T' | 'B'; diff: number };
+const stateOf = (g: GameState): StepState => ({ outs: g.outs, bases: mask(g.bases), runs: g.score.home + g.score.away, inning: g.inning, half: g.half, diff: g.score.home - g.score.away });
+
+/** onStep: 결정 지점부터 타석이 끝날 때까지(주루 사건 포함) 한 걸음. 주루 사건으로 반 이닝이 끝나면 prep·ev는 null */
+function playLeague(active: Map<ClubId, PlayerTruth[]>, n: number, seed: string, e: LeagueEnvironment, opts: GameOptions, onPa: (g: GameState, prep: PreparedPa, before: StepState, ev: PaEvent) => void, onStep?: (g: GameState, atDecision: StepState) => void): void {
   const clubs = [...active.keys()];
   const last = new Map<ClubId, PlayerId | null>();
   const pairs = Rng.derive(seed, 'league-calib', 'tool-detail');
@@ -56,11 +62,16 @@ function playLeague(active: Map<ClubId, PlayerTruth[]>, n: number, seed: string,
     const g = createGame(i + 1, th, ta, Rng.derive(seed, 'league-calib-detail', i), PROBABILITY_CONFIG.seasonCalibration.maxInnings, e, opts);
     for (let d = nextDecision(g); d; d = nextDecision(g)) {
       applyDirective(g, d, managerDecide(g, d));
-      if (!runPrePlays(g)) continue;
+      const atDecision = stateOf(g);
+      if (!runPrePlays(g)) {
+        onStep?.(g, atDecision);
+        continue;
+      }
       const prep = preparePa(g);
-      const before = { outs: g.outs, bases: mask(g.bases), runs: g.score.home + g.score.away, inning: g.inning, half: g.half, diff: g.score.home - g.score.away };
+      const before = stateOf(g);
       const ev = resolvePa(g, prep);
       onPa(g, prep, before, ev);
+      onStep?.(g, atDecision);
     }
     finishGame(g);
   }
@@ -76,19 +87,29 @@ if (makeTables) {
   const T = CLUTCH.table;
   const q = { n: 0, BB: 0, K: 0, HBP: 0 };
   for (let s = 0; s < seeds; s++) {
-    playLeague(activeOf(s), games, `calibrate-${s}`, env, { countLayer: 'off' }, (g, prep, before, ev) => {
-      const from = before.outs * 8 + before.bases;
-      const to = g.outs >= 3 ? END_STATE : g.outs * 8 + mask(g.bases);
-      const runs = ev.homeScore + ev.awayScore - before.runs;
-      const key = `${to}:${runs}`;
-      counts[from]!.set(key, (counts[from]!.get(key) ?? 0) + 1);
-      const c = tableCell(T.maxInnings, T.diffMax, Math.min(before.inning, T.maxInnings), before.half, before.outs, before.bases, before.diff);
-      occupancy.set(c, (occupancy.get(c) ?? 0) + 1);
-      q.n++;
-      q.BB += prep.top.BB;
-      q.K += prep.top.K;
-      q.HBP += prep.top.HBP;
-    });
+    // D-172 (8): 결정 지점부터 타석이 끝날 때까지(도루·폭투 같은 주루 사건 포함)를 한 전이로 잰다
+    playLeague(
+      activeOf(s),
+      games,
+      `calibrate-${s}`,
+      env,
+      { countLayer: 'off' },
+      (_g, prep) => {
+        q.n++;
+        q.BB += prep.top.BB;
+        q.K += prep.top.K;
+        q.HBP += prep.top.HBP;
+      },
+      (g, at) => {
+        const from = at.outs * 8 + at.bases;
+        const to = g.outs >= 3 ? END_STATE : g.outs * 8 + mask(g.bases);
+        const runs = g.score.home + g.score.away - at.runs;
+        const key = `${to}:${runs}`;
+        counts[from]!.set(key, (counts[from]!.get(key) ?? 0) + 1);
+        const c = tableCell(T.maxInnings, T.diffMax, Math.min(at.inning, T.maxInnings), at.half, at.outs, at.bases, at.diff);
+        occupancy.set(c, (occupancy.get(c) ?? 0) + 1);
+      },
+    );
   }
   const transitions: Transitions = counts.map((m) => {
     const total = [...m.values()].reduce((a, b) => a + b, 0);
@@ -118,10 +139,103 @@ if (makeTables) {
   process.exit(0);
 }
 
+if (managerMode) {
+  // ───────── D-173 ① 80 vs 50 감독, ③ 평균 감독 신뢰도 ─────────
+  const t1 = Date.now();
+  const strong: ManagerProfile = { ...NEUTRAL_MANAGER, ratings: { hitting: 80, pitching: 80, fieldRun: 80, tactics: 80, authority: 80, leadership: 80, condition: 80, development: 80 } };
+  const perSeason = 144;
+  const diffs: number[] = [];
+  for (let s = 0; s < seeds; s++) {
+    const active = activeOf(s);
+    const clubs = [...active.keys()];
+    for (const c of clubs) {
+      const wins = (mgr: ManagerProfile) => {
+        let w = 0;
+        const last = new Map<ClubId, PlayerId | null>();
+        for (let i = 0; i < perSeason; i++) {
+          const opp = clubs.filter((x) => x !== c)[i % (clubs.length - 1)]!;
+          const home = i % 2 === 0;
+          const tc = { ...prepareTeam(c, active.get(c)!, [], last.get(c) ?? null), manager: mgr };
+          const to = prepareTeam(opp, active.get(opp)!, [], last.get(opp) ?? null);
+          last.set(c, tc.starter.id);
+          last.set(opp, to.starter.id);
+          const r = home ? simulateGame(i + 1, tc, to, Rng.derive(`calibrate-${s}`, 'mgr', c, i), 11, env) : simulateGame(i + 1, to, tc, Rng.derive(`calibrate-${s}`, 'mgr', c, i), 11, env);
+          if ((home && r.outcome === 'home') || (!home && r.outcome === 'away')) w++;
+          else if (r.outcome === 'tie') w += 0.5;
+        }
+        return w;
+      };
+      diffs.push(wins(strong) - wins(NEUTRAL_MANAGER));
+    }
+  }
+  const mean = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+  const sd = Math.sqrt(diffs.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, diffs.length - 1));
+  // ③ 평균 감독(능력치 50)의 한 시즌 신뢰도: 구단당 144경기, 경기마다 게임과 같은 규칙으로 갱신
+  const ends: number[] = [];
+  const sums: number[] = [];
+  const counts: number[] = [];
+  for (let s = 0; s < seeds; s++) {
+    const active = activeOf(s);
+    const clubs = [...active.keys()];
+    const st = new Map(clubs.map((c) => [c, { trust: 50, baseOff: 0, baseDef: 0, sum: 0, n: 0 }]));
+    const a = 1 - Math.pow(0.5, 1 / MANAGER.trust.baselineHalfLife);
+    const pairs = Rng.derive(`calibrate-${s}`, 'trust-sched');
+    const last = new Map<ClubId, PlayerId | null>();
+    for (let i = 0; i < (clubs.length * perSeason) / 2; i++) {
+      const home = pairs.pick(clubs);
+      let away = pairs.pick(clubs);
+      while (away === home) away = pairs.pick(clubs);
+      const th = prepareTeam(home, active.get(home)!, [], last.get(home) ?? null);
+      const ta = prepareTeam(away, active.get(away)!, [], last.get(away) ?? null);
+      last.set(home, th.starter.id);
+      last.set(away, ta.starter.id);
+      const r = simulateGame(i + 1, th, ta, Rng.derive(`calibrate-${s}`, 'trust', i), 11, env);
+      for (const tr of r.wpTrack) {
+        const m = st.get(tr.clubId)!;
+        for (const d of r.managerDecisions.filter((x) => x.clubId === tr.clubId)) {
+          const base = d.side === 'off' ? m.baseOff : m.baseDef;
+          m.trust = nextTrust(m.trust, d.wpAfter - d.wpBefore, base);
+          m.sum += d.wpAfter - d.wpBefore - base;
+          m.n++;
+        }
+        if (tr.offN) m.baseOff += (1 - Math.pow(1 - a, tr.offN)) * (tr.offSum / tr.offN - m.baseOff);
+        if (tr.defN) m.baseDef += (1 - Math.pow(1 - a, tr.defN)) * (tr.defSum / tr.defN - m.baseDef);
+      }
+    }
+    for (const v of st.values()) ends.push(v.trust);
+    for (const v of st.values()) sums.push(v.sum);
+    for (const v of st.values()) counts.push(v.n);
+  }
+  const tMean = ends.reduce((x, y) => x + y, 0) / ends.length;
+  console.log(
+    JSON.stringify({
+      manager: {
+        winDiffPerSeason: +mean.toFixed(2),
+        sd: +sd.toFixed(2),
+        samples: diffs.length,
+        decisions: { perSeason: +(counts.reduce((x, y) => x + y, 0) / counts.length).toFixed(0), scoreSumMean: +(sums.reduce((x, y) => x + y, 0) / sums.length).toFixed(3), scoreSumMaxAbs: +Math.max(...sums.map(Math.abs)).toFixed(3) },
+        trustEnd: { min: +Math.min(...ends).toFixed(1), max: +Math.max(...ends).toFixed(1), mean: +tMean.toFixed(1), n: ends.length },
+        verdict: { d173_1: mean >= 2 && mean <= 4, d173_3: Math.min(...ends) >= 30 && Math.max(...ends) <= 70 && tMean >= 45 && tMean <= 55 },
+        K: MANAGER.K,
+        gain: MANAGER.trust.gain,
+      },
+      elapsedMs: Date.now() - t1,
+    }),
+  );
+  process.exit(0);
+}
+
+// D-173 ②: 리그 감독 능력치를 평균 50·표준편차 12로 나눠 준다(구단·시드 고정)
+const leagueManager = (s: number) => (clubId: ClubId): ManagerProfile => {
+  const r = Rng.derive(`calibrate-${s}`, 'league-manager', clubId);
+  const v = () => Math.max(15, Math.min(95, Math.round(r.normal(50, 12))));
+  return { ratings: { hitting: v(), pitching: v(), fieldRun: v(), tactics: v(), authority: v(), leadership: v(), condition: v(), development: v() }, smallBall: r.int(0, 100), quickHook: r.int(0, 100), trust: 50 };
+};
+
 const t: LeagueTotals = emptyTotals();
 const t0 = Date.now();
 for (let s = 0; s < seeds; s++) {
-  const r = measureLeague(activeOf(s), games, `calibrate-${s}`, 'tool', env);
+  const r = measureLeague(activeOf(s), games, `calibrate-${s}`, 'tool', env, leagueManager(s));
   for (const k of Object.keys(t) as Array<keyof LeagueTotals>) t[k] += r[k];
 }
 const elapsedMs = Date.now() - t0;

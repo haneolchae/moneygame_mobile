@@ -564,6 +564,35 @@ export const TACTICS = {
   },
 } as const;
 
+/** 4c-2b 감독 능력치·성향·신뢰도(D-162·D-163·D-172 초기안). z = (능력 − 50) / 50 */
+export const MANAGER = {
+  /** 기본 보정 최대 점수(조정값, D-173 ①) */
+  K: 0.9,
+  authorityLogit: 0.045,
+  leadership: 0.045,
+  condition: 0.1,
+  stamina: 0.03,
+  development: 0.05,
+  /** 작전: 감독 AI 판단 오차(도루 성공 추정에 더하는 편차) */
+  judgmentSd: 0.06,
+  /** 성향: 스몰볼 시도 비율 배율 0.5 + 값/100, 불펜 조기 투입 선발 투구 수 한도 −(값 − 50)/divisor */
+  quickHookDivisor: 5,
+  trust: {
+    start: 50,
+    /** 결정 점수 × 100 × gain 만큼 오르내린다(조정값, D-173 ③) */
+    gain: 0.03,
+    /** 팀 기준선 지수이동평균 반감 타석 수 */
+    baselineHalfLife: 200,
+    seasonRegression: 0.5,
+    recentMax: 50,
+  },
+  /** 채용 시장 감독 후보 수와 평균 능력 */
+  candidates: 3,
+  candidateMean: 54,
+  /** AI 구단 감독 교체(D-166) */
+  replace: { missSeasons: 2, trustBelow: 30, renewAtLeast: 50 },
+} as const;
+
 /** 7a AI 구단 운영 상태·긴축·AI 간 트레이드(D-155 초기안) */
 export const AI_CLUB = {
   /** 기준 순위: 이 순위 이내 우승 경쟁, 이 순위 이하 리빌딩 */

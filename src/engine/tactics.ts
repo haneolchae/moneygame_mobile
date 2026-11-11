@@ -45,9 +45,9 @@ export const hitIndex = (contact: number, power: number, eye: number) => (contac
 export const canPlay = (p: PlayerTruth, pos: Position | 'DH') => pos === 'DH' || (p.positions[pos as Position] ?? 0) >= 50;
 
 /** 도루 성공 확률(10 문서 D-170 (3)). base: 2 = 2루 도루, 3 = 3루 도루. 값은 판단이면 추정, 판정이면 실제 */
-export function stealSuccess(base: 2 | 3, runner: { speed: number; baserunning: number }, catcherArm: number, catcherTransfer: number, pitcherHold: number): number {
+export function stealSuccess(base: 2 | 3, runner: { speed: number; baserunning: number }, catcherArm: number, catcherTransfer: number, pitcherHold: number, extraLogit = 0): number {
   const S = T.steal;
-  return sigmoid(logit(base === 2 ? S.base2 : S.base3) + S.speed * z(runner.speed) + S.baserunning * z(runner.baserunning) - S.catcherArm * z(catcherArm) - S.catcherTransfer * z(catcherTransfer) - S.hold * z(pitcherHold));
+  return sigmoid(extraLogit + logit(base === 2 ? S.base2 : S.base3) + S.speed * z(runner.speed) + S.baserunning * z(runner.baserunning) - S.catcherArm * z(catcherArm) - S.catcherTransfer * z(catcherTransfer) - S.hold * z(pitcherHold));
 }
 
 /** 타석 전 주루 사건 확률(주자가 있을 때): 견제사(1루 주자), 폭투, 포일, 보크 */
@@ -62,11 +62,11 @@ export function runningRates(pitcher: PlayerTruth, catcher: PlayerTruth, runnerO
 }
 
 /** 번트 결과 확률: 번트 안타, (안타가 아니면) 성공 */
-export function buntProbs(kind: 'sac' | 'squeeze', batter: PlayerTruth): { hit: number; success: number } {
+export function buntProbs(kind: 'sac' | 'squeeze', batter: PlayerTruth, extraLogit = 0): { hit: number; success: number } {
   const B = T.bunt;
   return {
     hit: kind === 'sac' ? sigmoid(logit(B.hitBase) + B.hitSpeed * z(batter.batting.speed)) : 0,
-    success: sigmoid(logit(kind === 'sac' ? B.sacBase : B.squeezeBase) + B.skill * z(batter.batting.bunt)),
+    success: sigmoid(extraLogit + logit(kind === 'sac' ? B.sacBase : B.squeezeBase) + B.skill * z(batter.batting.bunt)),
   };
 }
 

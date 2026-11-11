@@ -38,6 +38,8 @@ import { Growth } from './growth';
 import { TrainingOps } from './training';
 import { TradeOps } from './trade';
 import { AiClubOps } from './aiClubs';
+import { ManagerOps } from './managers';
+import { MANAGER_KEYS, MANAGER_LABEL } from '../engine/manager';
 import { CareerOps } from './career';
 import { BusinessOps } from './business';
 import { SponsorOps } from './sponsors';
@@ -266,6 +268,7 @@ export class GameService {
   readonly training: TrainingOps;
   readonly trades: TradeOps;
   readonly aiClubs: AiClubOps;
+  readonly managers: ManagerOps;
   readonly career: CareerOps;
   readonly business: BusinessOps;
   readonly sponsors: SponsorOps;
@@ -324,8 +327,10 @@ export class GameService {
     this.growth = new Growth(repo);
     this.business = new BusinessOps(repo, this.clubMap);
     // 6a 시설 효과(D-141): 재활센터 → 메디컬 역량, 실내 훈련장 → 집중 훈련 효과
-    this.health = new HealthOps(repo, this.rosterOps, (id) => Math.min(1, this.org.medicalQuality(id) + this.business.rehabBoost(id)));
-    this.training = new TrainingOps(repo, this.org, (id) => this.business.trainingBoost(id));
+    // 4c-2b(D-172): 감독 컨디션 관리(경기 사이 피로)·육성(집중 훈련 효과)
+    this.managers = new ManagerOps(repo, this.clubMap, this.seasonClose);
+    this.health = new HealthOps(repo, this.rosterOps, (id) => Math.min(1, this.org.medicalQuality(id) + this.business.rehabBoost(id)), (id) => this.managers.conditionFactor(id));
+    this.training = new TrainingOps(repo, this.org, (id) => this.business.trainingBoost(id) * this.managers.developmentFactor(id));
     this.sponsors = new SponsorOps(repo, this.clubMap, this.org, this.business);
     this.merch = new MerchOps(repo, this.clubMap, this.org, this.business);
     this.trades = new TradeOps(repo, this.org, this.rosterOps, (id) => this.aiClubs.stance(id));
@@ -437,13 +442,17 @@ export class GameService {
       const out = this.health.unavailableOn(this.meta(), date, active);
       const tired = this.health.tiredOn(date, active);
       for (const f of fixtures) {
-        const teamOf = (clubId: ClubId) => prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null, clubId === meta.userClubId ? userPlan : null, ROSTER_MOVE.rotationSize, { out, tired });
+        // 4c-2b(D-172): 감독 능력치·성향·신뢰도를 경기에 넘긴다
+        const teamOf = (clubId: ClubId) => ({ ...prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null, clubId === meta.userClubId ? userPlan : null, ROSTER_MOVE.rotationSize, { out, tired }), manager: this.managers.profileOf(clubId) });
         // 경기 난수는 (시드, 경기 ID)에서 파생한다. 처리 순서와 무관하게 같은 경기는 같은 결과를 낸다.
         const maxInnings = f.stage && f.stage !== 'regular' ? POSTSEASON_MAX_INNINGS : LEAGUE.regularSeasonMaxInnings;
         const postseason = !!f.stage && f.stage !== 'regular';
         results.push(simulateGame(f.id, teamOf(f.home), teamOf(f.away), Rng.derive(meta.seed, 'game', f.id), maxInnings, env, { forms, postseason }));
       }
     }
+
+    // 4c-2b(D-163): 경기의 감독 결정으로 신뢰도·팀 기준선 갱신
+    this.managers.afterGames(date, results);
 
     // 3) 정기 수입·지출 (모든 구단)
     const players = this.repo.getPlayers();
@@ -559,6 +568,8 @@ export class GameService {
       this.repo.addInbox(this.growth.annual(after, date));
       // 6c 스폰서 시즌 마감 정산(D-149): 인센티브·의무 반환, 계약 종료
       this.repo.addInbox(this.sponsors.settleSeason(this.meta(), date));
+      // 4c-2b(D-163·D-166): 감독 신뢰도 되돌림·AI 구단 감독 교체
+      this.repo.addInbox(this.managers.closeSeason(this.meta(), date));
       this.seasonClose.close(after, date);
     }
     // 은퇴 설득 기한·파산 감시
@@ -1152,6 +1163,19 @@ export class GameService {
       };
     });
     const coaches = staff.filter((s) => ['감독', '수석코치', '코치'].includes(s.title));
+    // 4c-2b(D-172 (7)): 우리 감독은 실제 능력치·성향·신뢰도·최근 결정
+    const mgr = staff.find((s) => s.title === '감독');
+    const managerCard = mgr
+      ? {
+          id: mgr.id,
+          name: mgr.name,
+          ratings: MANAGER_KEYS.map((k) => ({ key: k, label: MANAGER_LABEL[k], value: mgr.abilities[k] ?? 50 })),
+          smallBall: mgr.manager?.smallBall ?? 50,
+          quickHook: mgr.manager?.quickHook ?? 50,
+          trust: Math.round(mgr.manager?.trust ?? 50),
+          recent: [...(mgr.manager?.recent ?? [])].reverse().slice(0, 10).map((r) => ({ date: r.date, side: r.side === 'off' ? '공격' : '수비', kinds: r.kinds.join('·'), inning: r.inning, delta: r.delta, score: r.score })),
+        }
+      : null;
     const players = new Map(this.repo.getPlayers().map((p) => [p.id, p]));
     const kindLabel: Record<string, string> = { fa: 'FA 협상', salary: '연봉 협상', hire: '채용', roster: '40인 명단 정리(의무)' };
     const tasks: WorkTaskView[] = this.repo
@@ -1188,6 +1212,7 @@ export class GameService {
       secretary: secretary ? sv(secretary) : null,
       executives: staff.filter((s) => s.title === '단장' || s.title === '사업본부장').map(sv),
       coaches: coaches.map(sv),
+      manager: managerCard,
       coachSlots: this.org.coachSlots().map((slot) => {
         const c = coaches.find((s) => (slot.title === '코치' ? s.title === '코치' && s.part === slot.part : s.title === slot.title));
         return { part: slot.part, squad: slot.squad, coach: c ? sv(c) : null };

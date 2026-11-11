@@ -3,6 +3,7 @@
 // 능력치를 재정규화하지 않는다(D-086). 저장되는 난수 흐름을 쓰지 않고 (시드, 시즌)에서 파생한 난수만 쓴다.
 import { simulateGame } from './gamesim';
 import { prepareTeam } from './lineup';
+import type { ManagerProfile } from './manager';
 import type { LeagueEnvironment } from './probability';
 import { PROBABILITY_CONFIG as C } from './probabilityConfig';
 import { Rng } from './rng';
@@ -55,7 +56,7 @@ export interface LeagueTotals {
 }
 
 /** 구단별 1군 선수로 무작위 대진 경기를 돌려 리그 합계를 잰다(선발은 로테이션 순서). */
-export function measureLeague(active: Map<ClubId, PlayerTruth[]>, games: number, seed: string, key: string | number, env: LeagueEnvironment): LeagueTotals {
+export function measureLeague(active: Map<ClubId, PlayerTruth[]>, games: number, seed: string, key: string | number, env: LeagueEnvironment, managers?: (clubId: ClubId) => ManagerProfile): LeagueTotals {
   const t: LeagueTotals = emptyTotals();
   const clubs = [...active.keys()];
   if (clubs.length < 2) return t;
@@ -65,8 +66,8 @@ export function measureLeague(active: Map<ClubId, PlayerTruth[]>, games: number,
     const home = pairs.pick(clubs);
     let away = pairs.pick(clubs);
     while (away === home) away = pairs.pick(clubs);
-    const th = prepareTeam(home, active.get(home)!, [], last.get(home) ?? null);
-    const ta = prepareTeam(away, active.get(away)!, [], last.get(away) ?? null);
+    const th = { ...prepareTeam(home, active.get(home)!, [], last.get(home) ?? null), ...(managers ? { manager: managers(home) } : {}) };
+    const ta = { ...prepareTeam(away, active.get(away)!, [], last.get(away) ?? null), ...(managers ? { manager: managers(away) } : {}) };
     last.set(home, th.starter.id);
     last.set(away, ta.starter.id);
     const r = simulateGame(g + 1, th, ta, Rng.derive(seed, 'league-calib-game', key, g), C.seasonCalibration.maxInnings, env);

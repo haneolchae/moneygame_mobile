@@ -21,7 +21,8 @@ import { batterSide, battingSide, combineTop, effectivePitching, framingContext,
 import { Rng } from './rng';
 import { buntProbs, canPlay, countMultipliers, defaultEstimator, hitIndex, runningRates, stealSuccess, trueRating, type CountTactic, type Estimator, type RatingKey } from './tactics';
 import type { ClubId, FixtureId, PlayerId, PlayerTruth, Position } from './types';
-import { leverage } from './winProb';
+import { authorityLogit, hookAdjust, judgmentSd, leadershipFactor, managedPlayer, NEUTRAL_MANAGER, smallBallFactor, staminaFactor, type ManagerProfile } from './manager';
+import { leverage, winProbability } from './winProb';
 import { cachedTheta, effFielding, effRange, NORMAL_ALIGNMENT, qualityDist, resolveInPlay, type Alignment, type Bases, type Credit, type FieldPos, type Fielders, type Runner } from './zone';
 import type { BallType, Quality } from './zoneConfig';
 
@@ -44,6 +45,8 @@ export interface TeamSetup {
   defense: DefenseContext;
   /** 4c-2a: 라인업에 없는 1군 야수(대타·대주자·대수비 후보) */
   bench?: PlayerTruth[];
+  /** 4c-2b: 감독(없으면 평균 감독) */
+  manager?: ManagerProfile;
 }
 
 export interface PaEvent {
@@ -105,6 +108,16 @@ export interface SubEvent {
   inId: PlayerId;
 }
 
+/** 4c-2b 감독 결정 하나(신뢰도 갱신 재료, D-163) */
+export interface ManagerDecision {
+  clubId: ClubId;
+  side: 'off' | 'def';
+  kinds: string[];
+  inning: number;
+  wpBefore: number;
+  wpAfter: number;
+}
+
 export interface RunEvent {
   seq: number;
   battingClub: ClubId;
@@ -127,6 +140,9 @@ export interface GameResult {
   plays: PlayEvent[];
   /** 4c-2a 선수 교체 */
   subs: SubEvent[];
+  /** 4c-2b 감독 결정과 그 타석의 승리 확률 변화(그 구단 쪽), 구단별 타석당 승리 확률 변화 합(팀 기준선용) */
+  managerDecisions: ManagerDecision[];
+  wpTrack: Array<{ clubId: ClubId; offSum: number; offN: number; defSum: number; defN: number }>;
   runs: RunEvent[];
   starters: { home: PlayerId; away: PlayerId };
   winningPitcher: PlayerId | null;
@@ -162,6 +178,10 @@ export interface TeamState {
   fielders: Fielders;
   /** 4c-2a 수비 위치 지시 */
   align: Alignment;
+  /** 4c-2b 감독 */
+  manager: ManagerProfile;
+  /** 타석당 승리 확률 변화(이 팀 쪽) 합: 공격·수비 */
+  wp: { offSum: number; offN: number; defSum: number; defN: number };
 }
 
 export type Side = 'home' | 'away';
@@ -184,7 +204,7 @@ export interface GameOptions {
 }
 
 /** 타석 판정 난수의 사건 종류(D-167 (5)). 투구는 PITCH_BASE + 투구 순번 */
-const DRAW = { top: 1, pitches: 2, hrSplit: 3, steal: 10, running: 11, bunt: 12, decideSteal: 13, decideHnr: 14, decideBunt: 15, hnrSteal: 16, pitchBase: 100 } as const;
+const DRAW = { top: 1, pitches: 2, hrSplit: 3, steal: 10, running: 11, bunt: 12, decideSteal: 13, decideHnr: 14, decideBunt: 15, hnrSteal: 16, judge: 17, powerRound: 18, pitchBase: 100 } as const;
 const COUNT_P0 = (COUNT_MODEL as { version: string; table: CountTable }).table;
 export const countModelVersion = (): string => (COUNT_MODEL as { version: string }).version;
 
@@ -241,6 +261,10 @@ export interface GameState {
   estCache: Map<string, number>;
   /** 승부처 카운트 결정(없으면 감독 AI) */
   countDecider: CountDecider | null;
+  /** 4c-2b: 이번 결정 지점의 홈팀 승리 확률과 감독이 내린 결정(타석이 끝나면 점수를 매긴다) */
+  wpAtDecision: number | null;
+  openDecisions: Array<{ side: Side; role: 'off' | 'def'; kinds: string[] }>;
+  managerDecisions: ManagerDecision[];
 }
 
 /** 타석 전 결정 지점(D-170 (1)): 수비(투수·대수비·수비 위치·고의사구)와 공격(대타·대주자·작전) */
@@ -297,21 +321,25 @@ export const battingSideOf = (half: 'T' | 'B'): Side => (half === 'T' ? 'away' :
 const leadFor = (g: GameState, side: Side) => (side === 'home' ? g.score.home - g.score.away : g.score.away - g.score.home);
 const basesMask = (b: GameState['bases']) => (b[0] ? 1 : 0) | (b[1] ? 2 : 0) | (b[2] ? 4 : 0);
 
-function makeTeam(setup: TeamSetup): TeamState {
+function makeTeam(raw: TeamSetup, bbKey: number, fixtureId: FixtureId): TeamState {
+  // 4c-2b: 감독 보정을 더한 경기용 선수 사본(저장 능력치 불변, D-172 (2)). 장타 확률 반올림 난수는 (경기 키, 경기 ID, 선수)에서 파생
+  const manager = raw.manager ?? NEUTRAL_MANAGER;
+  const adj = (p: PlayerTruth) => managedPlayer(p, manager, Rng.fromKeys(bbKey, fixtureId, -p.id, DRAW.powerRound).next());
+  const setup: TeamSetup = { ...raw, lineup: raw.lineup.map((s) => ({ ...s, player: adj(s.player) })), starter: adj(raw.starter), bullpen: raw.bullpen.map(adj), closer: raw.closer ? adj(raw.closer) : null, bench: (raw.bench ?? []).map(adj) };
   const stint: PitcherStint = { pitcher: setup.starter, isStarter: true, pitches: 0, outs: 0, runs: 0, leadAtEntry: 0, outsAtEntryOfInning: true };
   const lineup = setup.lineup.map((s) => ({ ...s }));
   const fielders = { P: stint.pitcher } as Fielders;
   for (const spot of lineup) if (spot.position !== 'DH') fielders[spot.position as FieldPos] = spot.player;
   const bench = [...(setup.bench ?? [])];
   const own = new Set<PlayerId>([...lineup.map((s) => s.player.id), ...bench.map((p) => p.id), setup.starter.id, ...setup.bullpen.map((p) => p.id), ...(setup.closer ? [setup.closer.id] : [])]);
-  return { setup, lineup, bench, removed: new Set(), own, orderIndex: 0, stint, stints: [stint], usedRelievers: new Set(), fielders, align: NORMAL_ALIGNMENT };
+  return { setup, lineup, bench, removed: new Set(), own, orderIndex: 0, stint, stints: [stint], usedRelievers: new Set(), fielders, align: NORMAL_ALIGNMENT, manager, wp: { offSum: 0, offN: 0, defSum: 0, defN: 0 } };
 }
 
 /** 경기 상태 만들기. env: 시즌 리그 환경(D-100), opts: 성적 혼합 표본·경기 중요도(3b) */
 export function createGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSetup, rng: Rng, maxInnings: number, env: LeagueEnvironment = NEUTRAL_ENVIRONMENT, opts: GameOptions = {}): GameState {
-  const teams = { home: makeTeam(home), away: makeTeam(away) };
-  // 타석별 하위 난수 흐름(10b §12): 판정 난수는 (경기 키, 순번)에서 파생한 난수를 쓴다.
+  // 타석별 하위 난수 흐름(10b §12): 판정 난수는 (경기 키, 순번)에서 파생한 난수를 쓴다(팀 준비는 난수를 쓰지 않는다).
   const bbKey = rng.int(0, 2_000_000_000);
+  const teams = { home: makeTeam(home, bbKey, fixtureId), away: makeTeam(away, bbKey, fixtureId) };
   return {
     fixtureId,
     maxInnings,
@@ -343,6 +371,9 @@ export function createGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSetu
     estimator: opts.estimator ?? defaultEstimator,
     estCache: new Map(),
     countDecider: null,
+    wpAtDecision: null,
+    openDecisions: [],
+    managerDecisions: [],
   };
 }
 
@@ -367,7 +398,39 @@ export function nextDecision(g: GameState): DecisionPoint | null {
   settle(g);
   if (g.phase === 'over') return null;
   const batSide = battingSideOf(g.half);
+  g.wpAtDecision = wpNow(g);
+  g.openDecisions = [];
   return { kind: 'prePa', side: other(batSide), batSide, inning: g.inning, atInningStart: g.atHalfStart, key: g.seq + 1 };
+}
+
+/** 지금 상태의 홈팀 승리 확률(표, 경기가 끝났으면 결과) */
+function wpNow(g: GameState): number {
+  if (g.phase === 'over') return g.score.home > g.score.away ? 1 : g.score.home < g.score.away ? 0 : 0.5;
+  const diff = g.score.home - g.score.away;
+  if (g.phase === 'halfStart') {
+    if (g.half === 'B' && g.inning >= 9 && diff > 0) return 1;
+    return winProbability(g.inning, g.half, 0, 0, diff, g.opts.postseason === true);
+  }
+  return winProbability(g.inning, g.half, g.outs, basesMask(g.bases), diff, g.opts.postseason === true);
+}
+
+/** 타석(또는 반 이닝을 끝낸 주루 사건) 뒤: 팀 기준선용 승리 확률 변화와 감독 결정 점수 재료를 남긴다(D-163) */
+function closeDecision(g: GameState, batSide: Side): void {
+  if (g.wpAtDecision === null) return;
+  const delta = wpNow(g) - g.wpAtDecision;
+  const offDelta = batSide === 'home' ? delta : -delta;
+  const off = g.teams[batSide].wp;
+  const def = g.teams[other(batSide)].wp;
+  off.offSum += offDelta;
+  off.offN++;
+  def.defSum -= offDelta;
+  def.defN++;
+  for (const d of g.openDecisions) {
+    const before = d.side === 'home' ? g.wpAtDecision : 1 - g.wpAtDecision;
+    g.managerDecisions.push({ clubId: g.teams[d.side].setup.clubId, side: d.role, kinds: d.kinds, inning: g.inning, wpBefore: before, wpAfter: before + (d.role === 'off' ? offDelta : -offDelta) });
+  }
+  g.wpAtDecision = null;
+  g.openDecisions = [];
 }
 
 // ───────── 감독 AI(D-170) ─────────
@@ -397,10 +460,10 @@ function decidePitcher(g: GameState, d: DecisionPoint): PlayerId | null {
   const closerAvailable = t.setup.closer && !t.usedRelievers.has(t.setup.closer.id) && s.pitcher.id !== t.setup.closer.id;
   let needChange = false;
   if (s.isStarter) {
-    const limit = SIM.starterPitchLimitBase + SIM.starterPitchLimitPerStamina * (s.pitcher.pitching?.stamina ?? 50);
-    needChange = s.pitches >= limit || s.runs >= SIM.starterRunsBeforeHook;
+    const limit = SIM.starterPitchLimitBase + SIM.starterPitchLimitPerStamina * (s.pitcher.pitching?.stamina ?? 50) + hookAdjust(t.manager);
+    needChange = s.pitches * staminaFactor(t.manager) >= limit || s.runs >= SIM.starterRunsBeforeHook;
   } else {
-    needChange = s.pitches >= SIM.relieverPitchLimit || (d.atInningStart && s.outs >= 3);
+    needChange = s.pitches * staminaFactor(t.manager) >= SIM.relieverPitchLimit || (d.atInningStart && s.outs >= 3);
   }
   const saveSituation = d.atInningStart && d.inning >= 9 && lead >= 1 && lead <= SIM.closerMaxLead;
   if (saveSituation && closerAvailable) needChange = true;
@@ -501,15 +564,18 @@ export function managerDecide(g: GameState, d: DecisionPoint): Directive {
   // 공격 작전: 스퀴즈 > 희생번트 > 도루 > 히트앤드런. 상대 포수·투수는 추정값으로 본다
   const topOrder = spotIdx < T.pinchHit.protectTop;
   const bunter = batter;
-  if (b[2] && g.outs < 2 && d.inning >= 7 && (offDiff === 0 || offDiff === -1) && !topOrder && decideDraw(g, d, DRAW.decideBunt) < T.bunt.squeezeShare) dir.play = 'squeeze';
-  else if ((b[0] || b[1]) && !b[2] && g.outs === 0 && !topOrder && ((d.inning >= 7 && Math.abs(offDiff) <= 1) || hitIndex(bunter.batting.contact, bunter.batting.power, bunter.batting.eye) < T.bunt.weakIndex) && decideDraw(g, d, DRAW.decideBunt) < T.bunt.sacShare) dir.play = 'sacBunt';
+  const small = smallBallFactor(off.manager);
+  // 작전 능력: 도루 성공 추정에 판단 오차를 더한다(결정 난수에서 파생, D-172 (2))
+  const judge = Rng.fromKeys(g.bbKey, g.fixtureId, d.key, DRAW.judge).normal(0, judgmentSd(off.manager));
+  if (b[2] && g.outs < 2 && d.inning >= 7 && (offDiff === 0 || offDiff === -1) && !topOrder && decideDraw(g, d, DRAW.decideBunt) < T.bunt.squeezeShare * small) dir.play = 'squeeze';
+  else if ((b[0] || b[1]) && !b[2] && g.outs === 0 && !topOrder && ((d.inning >= 7 && Math.abs(offDiff) <= 1) || hitIndex(bunter.batting.contact, bunter.batting.power, bunter.batting.eye) < T.bunt.weakIndex) && decideDraw(g, d, DRAW.decideBunt) < T.bunt.sacShare * small) dir.play = 'sacBunt';
   else if (Math.abs(offDiff) <= T.steal.maxDiff) {
     const catcher = def.fielders.C;
-    const stealOf = (base: 2 | 3, r: Runner) => stealSuccess(base, r, seen(g, d.batSide, catcher, 'armStrength'), seen(g, d.batSide, catcher, 'transfer'), seen(g, d.batSide, pitcher, 'holdRunners'));
+    const stealOf = (base: 2 | 3, r: Runner) => stealSuccess(base, r, seen(g, d.batSide, catcher, 'armStrength'), seen(g, d.batSide, catcher, 'transfer'), seen(g, d.batSide, pitcher, 'holdRunners'), authorityLogit(off.manager)) + judge;
     const cand: OffensePlay = b[0] && !b[1] && stealOf(2, b[0]) >= T.steal.breakEven2 ? 'steal2' : b[1] && !b[2] && !b[0] && stealOf(3, b[1]) >= T.steal.breakEven3 ? 'steal3' : 'none';
-    if (cand !== 'none' && decideDraw(g, d, DRAW.decideSteal) < T.steal.attemptShare) dir.play = cand;
+    if (cand !== 'none' && decideDraw(g, d, DRAW.decideSteal) < T.steal.attemptShare * small) dir.play = cand;
   }
-  if (dir.play === 'none' && b[0] && !b[1] && g.outs < 2 && b[0].speed >= T.hitAndRun.minSpeed && batter.batting.contact >= T.hitAndRun.minContact && decideDraw(g, d, DRAW.decideHnr) < T.hitAndRun.attemptShare) dir.play = 'hitAndRun';
+  if (dir.play === 'none' && b[0] && !b[1] && g.outs < 2 && b[0].speed >= T.hitAndRun.minSpeed && batter.batting.contact >= T.hitAndRun.minContact && decideDraw(g, d, DRAW.decideHnr) < T.hitAndRun.attemptShare * small) dir.play = 'hitAndRun';
   return dir;
 }
 
@@ -584,6 +650,11 @@ export function applyDirective(g: GameState, d: DecisionPoint, dir: Directive): 
   }
   def.align = dir.align;
   g.pending = { play: dir.play, ibb: dir.ibb };
+  // 4c-2b: 감독 결정(신뢰도 재료). 기본 수비 위치·병살 대비(1루 주자 때 늘 하는 수비)·작전 없음은 결정으로 세지 않는다
+  const defKinds = [...(dir.pitcherId !== null ? ['투수 교체'] : []), ...(dir.defensiveSubs.length ? ['대수비'] : []), ...(dir.ibb ? ['고의사구'] : []), ...(dir.align.infield === 'in' || dir.align.outfield !== 'normal' || dir.align.lines ? ['수비 위치'] : [])];
+  const offKinds = [...(dir.pinchHitter !== null ? ['대타'] : []), ...(dir.pinchRunners.length ? ['대주자'] : []), ...(dir.play !== 'none' ? [dir.play] : [])];
+  if (defKinds.length) g.openDecisions.push({ side: d.side, role: 'def', kinds: defKinds });
+  if (offKinds.length) g.openDecisions.push({ side: d.batSide, role: 'off', kinds: offKinds });
 }
 
 function sideOf(g: GameState, p: PlayerTruth, role: 'batter' | 'pitcher'): SideLogits {
@@ -630,7 +701,9 @@ function recordPlay(g: GameState, kind: PlayEvent['kind'], runnerId: PlayerId | 
   def.stint.outs += outsOnPlay;
   g.plays.push({ seq: g.seq, inning: g.inning, half: g.half, battingClub: g.teams[batSide].setup.clubId, kind, runnerId, from, pitcherId: def.stint.pitcher.id, catcherId: def.fielders.C.id, outsBefore, outsOnPlay, homeScore: g.score.home, awayScore: g.score.away, credits });
   endOfPlay(g, batSide);
-  return g.phase === 'pa' && g.outs < 3;
+  const goOn = g.phase === 'pa' && g.outs < 3;
+  if (!goOn) closeDecision(g, batSide);
+  return goOn;
 }
 
 /** 도루 판정(실제 값). 도루 실패면 포수 보살·베이스 커버 자살 */
@@ -642,7 +715,7 @@ function resolveSteal(g: GameState, base: 2 | 3, drawKind: number): boolean {
   g.seq++;
   const outsBefore = g.outs;
   const catcher = def.fielders.C;
-  const p = stealSuccess(base, r, catcher.defense.armStrength, catcher.catcher?.transfer ?? 50, def.stint.pitcher.pitching?.holdRunners ?? 50);
+  const p = stealSuccess(base, r, catcher.defense.armStrength, catcher.catcher?.transfer ?? 50, def.stint.pitcher.pitching?.holdRunners ?? 50, authorityLogit(g.teams[batSide].manager));
   g.bases[from - 1] = null;
   const credits: Credit[] = [];
   if (Rng.fromKeys(g.bbKey, g.fixtureId, g.seq, drawKind).next() < p) {
@@ -712,8 +785,9 @@ export function preparePa(g: GameState): PreparedPa {
   // 타석 위 단계 확률(10a 5·6장): 대결 한쪽 값 + 사건별 상황 보정(프레이밍 + 방향 계수 × (타자 수행 − 투수 수행) + 좌우 상대)
   const bases0 = g.bases;
   const pressure = pressureIndex({ inning, scoreDiff: g.score.home - g.score.away, runners: (bases0[0] ? 1 : 0) + (bases0[1] ? 1 : 0) + (bases0[2] ? 1 : 0), postseason: g.opts.postseason === true });
-  const batPerf = perfOf(g, batter) - pressureLoss(pressure, batter.batting.mental, batter.hidden.pressureSensitivity);
-  const pitPerf = perfOf(g, pitcher) - pressureLoss(pressure, pitcher.pitching?.mental ?? 50, pitcher.hidden.pressureSensitivity);
+  // 4c-2b 리더십: 압박 손실·경기별 수행 편차 크기 배율(D-172 (2))
+  const batPerf = (perfOf(g, batter) - pressureLoss(pressure, batter.batting.mental, batter.hidden.pressureSensitivity)) * leadershipFactor(bat.manager);
+  const pitPerf = (perfOf(g, pitcher) - pressureLoss(pressure, pitcher.pitching?.mental ?? 50, pitcher.hidden.pressureSensitivity)) * leadershipFactor(g.teams[defSide].manager);
   const fr = g.framing[defSide];
   const context = {} as SideLogits;
   // 4c-2a 좌우 상대(D-170 (2)): 같은 손이면 투수 쪽, 다르면 타자 쪽
@@ -827,7 +901,7 @@ export function resolvePa(g: GameState, prep: PreparedPa): PaEvent {
     case 'BUNT': {
       // 번트(D-170 (5)): 번트 안타 → 성공(희생·스퀴즈) → 실패(선행 주자 아웃)
       const kind = pending.play === 'squeeze' ? 'squeeze' : 'sac';
-      const pr = buntProbs(kind, batter);
+      const pr = buntProbs(kind, batter, authorityLogit(bat.manager));
       const u = draw(DRAW.bunt).next();
       const [r1, r2, r3] = g.bases;
       if (u < pr.hit) {
@@ -923,6 +997,7 @@ export function resolvePa(g: GameState, prep: PreparedPa): PaEvent {
   if (hnr) ev.hitAndRun = true;
   g.events.push(ev);
   endOfPlay(g, batSide);
+  closeDecision(g, batSide);
   // 히트앤드런 삼진: 출발한 1루 주자의 도루 판정(삼진 뒤 주루 사건)
   if (hnr && outcome === 'K' && g.phase === 'pa' && g.outs < 3 && g.bases[0] && !g.bases[1]) resolveSteal(g, 2, DRAW.hnrSteal);
   return ev;
@@ -989,6 +1064,8 @@ export function finishGame(g: GameState): GameResult {
     events: g.events,
     plays: g.plays,
     subs: g.subs,
+    managerDecisions: g.managerDecisions,
+    wpTrack: (['home', 'away'] as const).map((s) => ({ clubId: g.teams[s].setup.clubId, ...g.teams[s].wp })),
     runs: g.runs,
     starters: { home: home.starter.id, away: away.starter.id },
     winningPitcher,

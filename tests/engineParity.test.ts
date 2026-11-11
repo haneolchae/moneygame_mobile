@@ -13,8 +13,8 @@ import { Rng } from '../src/engine/rng';
 import type { PlayerTruth } from '../src/engine/types';
 import { generateWorld } from '../src/engine/worldgen';
 
-/** 엔진 표본 요약 해시. 4c-1 처음 기준표 d5480b6c…, D-169 파울 비율 기준표 7b2d5c0b…, 4c-2a 작전 사건(D-170)부터 아래 값 */
-const EXPECTED = '73c418842ee605d726015d05b6b7c54831464841';
+/** 엔진 표본 요약 해시. 4c-1 처음 기준표 d5480b6c…, D-169 파울 비율 기준표 7b2d5c0b…, 4c-2a 작전 사건(D-170) 73c41884…, 4c-2b 감독 판단 오차·승리 확률 표 wp-64952f24d2·기준표 cm-1cbf6ee319부터 아래 값 */
+const EXPECTED = 'e300bc4b72ae81cf2170c5774bc46314fa1da162';
 
 function sample(): string {
   const world = generateWorld(Rng.fromSeed('parity-sample'), 2026);

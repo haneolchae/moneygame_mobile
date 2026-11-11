@@ -1,5 +1,6 @@
 // 조직·직원·팀 처리량 (03 문서, D-020~D-028). 순수 규칙만 둔다.
 import { addDays, makeDate } from './calendar';
+import { MANAGER } from './config';
 import { stableNormal, type Rng } from './rng';
 
 export type TeamKey = 'ops' | 'scout' | 'analysis' | 'dev' | 'medical' | 'marketing' | 'pr' | 'partnership' | 'merch' | 'facility' | 'admin';
@@ -59,7 +60,8 @@ export const ABILITY_KEYS: Record<StaffTitle, string[]> = {
   사업본부장: ['judgment', 'management', 'coordination', 'expertise'],
   팀장: ['judgment', 'management', 'execution', 'expertise'],
   팀원: ['execution', 'expertise'],
-  감독: ['tactics', 'leadership', 'development', 'authority'],
+  // 4c-2b(D-172): 감독 능력치 8개(engine/manager.ts MANAGER_KEYS)
+  감독: ['hitting', 'pitching', 'fieldRun', 'tactics', 'authority', 'leadership', 'condition', 'development'],
   수석코치: ['coaching', 'communication', 'management'],
   코치: ['coaching', 'communication'],
 };
@@ -73,10 +75,14 @@ export const ABILITY_LABEL: Record<string, string> = {
   coordination: '조정력',
   expertise: '전문성',
   execution: '실행력',
-  tactics: '경기 운영',
+  hitting: '타격 지휘',
+  pitching: '투수 운용',
+  fieldRun: '수비·주루 지휘',
+  tactics: '작전',
   leadership: '리더십',
-  development: '육성 성향',
-  authority: '권위 중시',
+  condition: '컨디션 관리',
+  development: '육성',
+  authority: '권위',
   coaching: '지도력',
   communication: '소통력',
 };
@@ -96,6 +102,17 @@ export interface StaffMember {
   abilities: Record<string, number>;
   /** 감독 만족도 등 관계 지표 (0~100) */
   satisfaction: number;
+  /** 4c-2b 감독만: 성향(0~100), 신뢰도, 팀 기준선(공격·수비), 최근 결정 */
+  manager?: ManagerState;
+}
+
+export interface ManagerState {
+  smallBall: number;
+  quickHook: number;
+  trust: number;
+  baseOff: number;
+  baseDef: number;
+  recent: Array<{ date: string; side: 'off' | 'def'; kinds: string[]; inning: number; delta: number; score: number }>;
 }
 
 /** ASSUMPTION(D-076): 직급별 기준 연봉. 능력 평균 50 기준, 능력에 따라 ×0.6~×1.8 */
@@ -144,6 +161,8 @@ export function makeStaff(rng: Rng, id: number, title: StaffTitle, clubId: numbe
     abilities,
     satisfaction: 60,
   };
+  // 4c-2b(D-172): 감독은 성향 2개(0~100 고르게)와 신뢰도 50으로 시작한다
+  if (title === '감독') s.manager = { smallBall: rng.int(0, 100), quickHook: rng.int(0, 100), trust: 50, baseOff: 0, baseDef: 0, recent: [] };
   s.salary = staffSalary(title, abilityAvg(s));
   return s;
 }
@@ -167,7 +186,7 @@ export function generateOrganization(rng: Rng, clubId: number, nextId: () => num
   return out;
 }
 
-/** 채용 시장 후보: 팀장 6, 팀원 14, 코치 4, 감독 1, 본부장 1, 비서 1 (매달 새로 만든다) */
+/** 채용 시장 후보: 팀장 6, 팀원 14, 코치 4, 감독 3, 본부장 1, 비서 1 (매달 새로 만든다) */
 export function generateCandidates(rng: Rng, nextId: () => number, year: number): StaffMember[] {
   const out: StaffMember[] = [];
   const team = () => rng.pick(TEAMS);
@@ -180,7 +199,8 @@ export function generateCandidates(rng: Rng, nextId: () => number, year: number)
     out.push(makeStaff(rng, nextId(), '팀원', null, { team: t.key, division: t.division, mean: 50, year }));
   }
   for (let i = 0; i < 4; i++) out.push(makeStaff(rng, nextId(), '코치', null, { part: rng.pick(COACH_SLOTS.filter((c) => c.title === '코치')).part, mean: 52, year }));
-  out.push(makeStaff(rng, nextId(), '감독', null, { part: '감독', mean: 54, year }));
+  // 4c-2b(D-172 (5)): 감독 후보 매달 3명
+  for (let i = 0; i < MANAGER.candidates; i++) out.push(makeStaff(rng, nextId(), '감독', null, { part: '감독', mean: MANAGER.candidateMean, year }));
   const div = rng.chance(0.5) ? 'baseball' : 'business';
   out.push(makeStaff(rng, nextId(), div === 'baseball' ? '단장' : '사업본부장', null, { division: div, mean: 54, year }));
   out.push(makeStaff(rng, nextId(), '비서', null, { mean: 55, year }));

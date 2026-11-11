@@ -320,6 +320,65 @@ export function Organization({ nav }: { nav: Nav }) {
               </div>
             </section>
           </div>
+          {v.manager && (
+            <section className="panel">
+              <div className="panel-head">
+                <h2>감독 {v.manager.name}</h2>
+                <span className="meta">능력치는 경기 중 우리 선수 유효 능력치·작전에 반영(저장 능력치는 그대로) · 신뢰도는 감독 결정의 결과로 쌓이고 보정에 0.9~1.1배</span>
+              </div>
+              <div className="panel-body">
+                <div className="toolbar" style={{ flexWrap: 'wrap', gap: 14 }}>
+                  {v.manager.ratings.map((r) => (
+                    <span key={r.key}>
+                      {r.label} <strong>{r.value}</strong>
+                    </span>
+                  ))}
+                </div>
+                <div className="toolbar" style={{ gap: 18, marginTop: 6 }}>
+                  <span>
+                    성향: 빅볼 ↔ 스몰볼 <strong>{v.manager.smallBall}</strong>
+                  </span>
+                  <span>
+                    선발 신뢰 ↔ 불펜 조기 투입 <strong>{v.manager.quickHook}</strong>
+                  </span>
+                  <span>
+                    감독 신뢰도 <strong>{v.manager.trust}</strong> / 100
+                  </span>
+                </div>
+              </div>
+              <table className="grid dense">
+                <thead>
+                  <tr>
+                    <th>날짜</th>
+                    <th>공수</th>
+                    <th>결정</th>
+                    <th className="num">이닝</th>
+                    <th className="num" title="그 타석이 끝난 뒤 승리 확률 변화(우리 쪽)">승리 확률 변화</th>
+                    <th className="num" title="팀 평소 변화를 뺀 결정 점수">결정 점수</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {v.manager.recent.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="muted">
+                        아직 기록된 결정이 없습니다.
+                      </td>
+                    </tr>
+                  )}
+                  {v.manager.recent.map((r, i) => (
+                    <tr key={i}>
+                      <td>{r.date}</td>
+                      <td>{r.side}</td>
+                      <td>{r.kinds}</td>
+                      <td className="num">{r.inning}</td>
+                      <td className="num">{(r.delta * 100).toFixed(1)}%p</td>
+                      <td className="num">{(r.score * 100).toFixed(1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
         </>
       )}
 

@@ -957,6 +957,16 @@ export interface OrganizationView {
   secretary: StaffView | null;
   executives: StaffView[];
   coaches: StaffView[];
+  /** 4c-2b 우리 감독(실제 능력치·성향·신뢰도·최근 결정 10건) */
+  manager: {
+    id: number;
+    name: string;
+    ratings: Array<{ key: string; label: string; value: number }>;
+    smallBall: number;
+    quickHook: number;
+    trust: number;
+    recent: Array<{ date: string; side: string; kinds: string; inning: number; delta: number; score: number }>;
+  } | null;
   coachSlots: Array<{ part: string; squad: string; coach: StaffView | null }>;
   teams: TeamView[];
   lookaheadDays: number;

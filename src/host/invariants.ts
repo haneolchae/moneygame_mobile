@@ -40,6 +40,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   errors.push(...checkTraining(repo));
   errors.push(...checkBusiness(repo));
   errors.push(...checkAiClubs(repo));
+  errors.push(...checkManagers(repo));
 
   // 경기 기록 일관성: 득점 = 득점 기록 수, 타석 수 = 아웃 + 출루, 이닝 아웃 수
   const games = repo.getGames(season);
@@ -385,6 +386,23 @@ export function checkAiClubs(repo: GameRepository): string[] {
   if (offers.filter((o) => o.status === 'open').length > AI_CLUB.offer.maxOpen) errors.push('열린 받은 제안이 상한을 넘음');
   for (const [w, n] of perWeek) if (n > 1) errors.push(`AI 간 거래 주 ${n}건(${w})`);
   for (const [k, n] of perClub) if (n > AI_CLUB.trade.maxPerClubPeriod) errors.push(`AI 간 거래 구단별 상한 초과: ${k} ${n}건`);
+  return errors;
+}
+
+/** 4c-2b 감독(D-172·D-173 ⑥): AI 구단은 감독 1명, 우리 구단은 0~1명(해고 뒤 공석 허용), 신뢰도 0~100, 최근 결정 50건 이하 */
+export function checkManagers(repo: GameRepository): string[] {
+  const errors: string[] = [];
+  const meta = repo.getMeta();
+  const managers = repo.getStaff().filter((s) => s.title === '감독' && s.clubId !== null);
+  for (const c of repo.getClubs()) {
+    const n = managers.filter((m) => m.clubId === c.id).length;
+    if (c.id === meta.userClubId ? n > 1 : n !== 1) errors.push(`${c.name} 감독 ${n}명`);
+  }
+  for (const m of managers) {
+    const t = m.manager?.trust ?? 50;
+    if (!(t >= 0 && t <= 100)) errors.push(`감독 ${m.name} 신뢰도 ${t}`);
+    if ((m.manager?.recent.length ?? 0) > 50) errors.push(`감독 ${m.name} 최근 결정 ${m.manager!.recent.length}건`);
+  }
   return errors;
 }
 

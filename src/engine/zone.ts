@@ -118,8 +118,16 @@ export function directionDist(type: BallType, power: number, hand: 'R' | 'L'): n
     DIR_CACHE.set(key, v);
     return v;
   }
-  return computeDirection(type, power, hand);
+  // 4c-2b: 감독 보정으로 장타가 정수가 아니면(경기마다 같은 값) 정확한 값으로 따로 기억한다(결과는 같고 계산만 줄인다)
+  const fkey = `${type}|${power}|${hand}`;
+  const hit = DIR_CACHE_F.get(fkey);
+  if (hit) return hit;
+  if (DIR_CACHE_F.size >= 20_000) DIR_CACHE_F.clear();
+  const v = computeDirection(type, power, hand);
+  DIR_CACHE_F.set(fkey, v);
+  return v;
 }
+const DIR_CACHE_F = new Map<string, number[]>();
 const TYPE_ORDER: Record<BallType, number> = { GB: 0, LD: 1, FB: 2 };
 function computeDirection(type: BallType, power: number, hand: 'R' | 'L'): number[] {
   const base = Z.direction.base[type];
