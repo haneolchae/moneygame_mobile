@@ -12,6 +12,7 @@ import { exhibitionDates } from '../game/rosterOps';
 import { compositionViolations } from '../engine/roster';
 import type { GameRepository } from '../game/ports';
 import { aiOps, defaultPlan } from '../engine/budget';
+import { AWARDS } from '../engine/config';
 import { FINANCE_BASE, inflate } from '../engine/finance';
 import { EOK, splitEvenly } from '../engine/money';
 
@@ -46,6 +47,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   errors.push(...checkHealthPlay(repo, season));
   errors.push(...checkTraining(repo));
   errors.push(...checkBudget(repo));
+  errors.push(...checkAwards(repo));
   errors.push(...checkBusiness(repo));
   errors.push(...checkAiClubs(repo));
   errors.push(...checkManagers(repo));
@@ -495,3 +497,50 @@ export function checkBudget(repo: GameRepository): string[] {
 }
 
 const AI_OPS_SET = () => Object.fromEntries(STANCES.map((s) => [s, [aiOps(s).futures, aiOps(s).teamOps]]));
+
+/**
+ * 8a(D-181 ③): 경기별 포지션 수비 아웃 합 = 수비 아웃 × 9(지명타자는 0 또는 수비 아웃과 같음),
+ * 수상자 자격(비율 타이틀 규정, 신인왕 국내·프로 연차, 수비상·골든글러브 포지션 이닝), 시상식 날짜 하나.
+ */
+export function checkAwards(repo: GameRepository): string[] {
+  const errors: string[] = [];
+  const meta = repo.getMeta();
+  if (!repo.isCompressed(meta.season)) {
+    for (const c of repo.positionOutChecks(meta.season)) {
+      if (c.fieldOuts !== 9 * c.defOuts) errors.push(`포지션 수비 아웃 불일치: 경기 ${c.gameId} 구단 ${c.clubId} ${c.fieldOuts} ≠ 9 × ${c.defOuts}`);
+      if (c.dhOuts !== 0 && c.dhOuts !== c.defOuts) errors.push(`지명타자 아웃 불일치: 경기 ${c.gameId} 구단 ${c.clubId}`);
+    }
+  }
+  const players = new Map(repo.getPlayers().map((p) => [p.id, p]));
+  for (const y of [meta.season - 1, meta.season]) {
+    const aw = repo.getAwards({ season: y });
+    if (aw.length === 0) continue;
+    const teamGames = Math.round((repo.getGames(y, 'regular').length * 2) / Math.max(1, repo.getClubs().length));
+    const bat = repo.battingTotals(y);
+    const pit = repo.pitchingTotals(y);
+    const outs = new Map<string, number>();
+    for (const r of repo.positionOuts(y)) outs.set(`${r.playerId}|${r.position}`, (outs.get(`${r.playerId}|${r.position}`) ?? 0) + r.outs);
+    const at = (id: number, pos: string) => (pos === 'OF' ? ['LF', 'CF', 'RF'].reduce((a, p) => a + (outs.get(`${id}|${p}`) ?? 0), 0) : (outs.get(`${id}|${pos}`) ?? 0));
+    const qualPa = teamGames * AWARDS.qualPaPerGame;
+    const qualOuts = teamGames * AWARDS.qualOutsPerGame;
+    for (const a of aw) {
+      const id = a.playerId;
+      if (id === null) continue;
+      const who = `${y} ${a.award}${a.slot ? `(${a.slot})` : ''} #${id}`;
+      if (['title_AVG', 'title_OBP', 'title_SLG'].includes(a.award) && (bat.get(id)?.PA ?? 0) < qualPa) errors.push(`규정 타석 미달 수상: ${who}`);
+      if (a.award === 'title_ERA' && (pit.get(id)?.OUTS ?? 0) < qualOuts) errors.push(`규정 이닝 미달 수상: ${who}`);
+      if (a.award === 'roy') {
+        const p = players.get(id);
+        if (!p || p.origin !== 'domestic' || p.career.proSeasons > AWARDS.rookie.maxProSeasons + (meta.season - y) + 1) errors.push(`신인왕 자격 위반: ${who}`);
+      }
+      if ((a.award === 'defense' && a.slot !== 'P') || (a.award === 'gg' && a.slot !== 'P')) {
+        const need = a.slot === 'DH' ? AWARDS.dhQualOuts : AWARDS.posQualOuts;
+        if (at(id, a.slot) < need) errors.push(`포지션 이닝 미달 수상: ${who} ${at(id, a.slot)}아웃`);
+      }
+    }
+    const dates = (f: (k: string) => boolean) => new Set(aw.filter((a) => f(a.award)).map((a) => a.date)).size;
+    if (dates((k) => !k.startsWith('monthly_') && k !== 'ks_mvp' && k !== 'gg' && k !== 'platinum' && !k.startsWith('best')) > 1) errors.push(`${y} KBO 시상식 날짜가 여럿`);
+    if (dates((k) => k === 'gg' || k === 'platinum' || k.startsWith('best')) > 1) errors.push(`${y} 골든글러브 시상식 날짜가 여럿`);
+  }
+  return errors;
+}

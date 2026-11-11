@@ -158,6 +158,8 @@ export class Dispatcher {
         return this.game().budgetSet(payload as RequestMap['budget.set']['payload']) as R;
       case 'meeting.convene':
         return this.game().meetingConvene() as R;
+      case 'awards.list':
+        return this.game().awardsList((payload as RequestMap['awards.list']['payload'])?.season) as R;
       case 'trade.respondOffer': {
         const p = payload as RequestMap['trade.respondOffer']['payload'];
         return this.game().tradeRespondOffer(p.offerId, p.accept, p.commandId) as R;

@@ -1,5 +1,5 @@
 import type { ScoutingSnapshot } from '../engine/scouting';
-import type { PlayerNote } from '../game/ports';
+import type { AwardRecord, PlayerNote } from '../game/ports';
 // GameRepository의 SQLite 구현 (node:sqlite).
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type { GameDate } from '../engine/calendar';
@@ -356,7 +356,112 @@ export class SqliteGameRepository implements GameRepository {
       this.stmt('DELETE FROM runs WHERE season = ?').run(season);
       this.stmt('DELETE FROM fielding WHERE season = ?').run(season);
       this.stmt('DELETE FROM plays WHERE season = ?').run(season);
+      // 8a: 포지션별 수비 아웃은 시즌 합계로 남긴다(투수 홀드·블론·QS 표는 작아 그대로 둔다)
+      this.stmt(
+        `INSERT INTO field_positions_season (season, stage, club_id, player_id, position, outs)
+         SELECT season, stage, club_id, player_id, position, SUM(outs) FROM field_positions WHERE season = ? GROUP BY stage, club_id, player_id, position`,
+      ).run(season);
+      this.stmt('DELETE FROM field_positions WHERE season = ?').run(season);
     });
+  }
+
+  // ───────── 8a 리그 시상(D-180) ─────────
+
+  private dateRange(range?: { from: GameDate; to: GameDate }): string {
+    if (!range) return '';
+    const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d);
+    if (!ok(range.from) || !ok(range.to)) throw new Error('날짜 형식');
+    return ` AND date >= '${range.from}' AND date <= '${range.to}'`;
+  }
+
+  /** 시상용 정규시즌 원시 기록(압축 전 시즌): 타자·투수 합계(홀드·블론·QS 포함). range가 있으면 그 기간만 */
+  awardLines(season: number, range?: { from: GameDate; to: GameDate }): { batting: Map<PlayerId, BattingTotals>; pitching: Map<PlayerId, PitchingTotals & { HLD: number; BS: number; QS: number }> } {
+    const dr = this.dateRange(range);
+    const hit = "outcome IN ('1B','2B','3B','HR')";
+    const bat = this.db.prepare(
+      `SELECT batter_id AS id, COUNT(DISTINCT game_id) AS G, COUNT(*) AS PA, SUM(outcome NOT IN ('BB','HBP','SF','SH')) AS AB, SUM(${hit}) AS H,
+              SUM(outcome = '2B') AS D, SUM(outcome = '3B') AS T, SUM(outcome = 'HR') AS HR, SUM(rbi) AS RBI, SUM(outcome = 'BB') AS BB, SUM(outcome = 'HBP') AS HBP,
+              SUM(outcome = 'K') AS SO, SUM(outcome = 'SF') AS SF
+         FROM plate_appearances WHERE stage = 'regular' AND season = ?${dr} GROUP BY batter_id`,
+    ).all(season) as Row[];
+    const runs = new Map((this.db.prepare(`SELECT runner_id AS id, COUNT(*) AS R FROM runs WHERE stage = 'regular' AND season = ?${dr ? ` AND game_id IN (SELECT fixture_id FROM games WHERE season = ${Math.trunc(season)}${dr})` : ''} GROUP BY runner_id`).all(season) as Row[]).map((r) => [num(r.id), num(r.R)]));
+    const steals = new Map((this.db.prepare(`SELECT runner_id AS id, SUM(kind = 'SB') AS SB, SUM(kind = 'CS') AS CS FROM plays WHERE stage = 'regular' AND season = ? AND kind IN ('SB','CS')${dr} GROUP BY runner_id`).all(season) as Row[]).map((r) => [num(r.id), r]));
+    const batting = new Map<PlayerId, BattingTotals>();
+    for (const r of bat) {
+      const id = num(r.id);
+      batting.set(id, { G: num(r.G), PA: num(r.PA), AB: num(r.AB), H: num(r.H), '2B': num(r.D), '3B': num(r.T), HR: num(r.HR), RBI: num(r.RBI), R: runs.get(id) ?? 0, BB: num(r.BB), HBP: num(r.HBP), SO: num(r.SO), SF: num(r.SF), SB: num(steals.get(id)?.SB), CS: num(steals.get(id)?.CS) });
+    }
+    const pit = this.db.prepare(
+      `SELECT pitcher_id AS id, COUNT(DISTINCT game_id) AS G, SUM(outs_on_play) AS OUTS, COUNT(*) AS BF, SUM(${hit}) AS H, SUM(outcome = 'BB') AS BB, SUM(outcome = 'HBP') AS HBP,
+              SUM(outcome = 'K') AS K, SUM(outcome = 'HR') AS HR, SUM(pitches) AS P
+         FROM plate_appearances WHERE stage = 'regular' AND season = ?${dr} GROUP BY pitcher_id`,
+    ).all(season) as Row[];
+    const gameIn = dr ? ` AND game_id IN (SELECT fixture_id FROM games WHERE season = ${Math.trunc(season)}${dr})` : '';
+    const pruns = new Map((this.db.prepare(`SELECT pitcher_id AS id, COUNT(*) AS R, SUM(earned) AS ER FROM runs WHERE stage = 'regular' AND season = ?${gameIn} GROUP BY pitcher_id`).all(season) as Row[]).map((r) => [num(r.id), r]));
+    const pouts = new Map((this.db.prepare(`SELECT pitcher_id AS id, SUM(outs_on_play) AS OUTS FROM plays WHERE stage = 'regular' AND season = ?${dr} GROUP BY pitcher_id`).all(season) as Row[]).map((r) => [num(r.id), num(r.OUTS)]));
+    const dec = new Map((this.db.prepare(
+      `SELECT id, SUM(gs) AS GS, SUM(w) AS W, SUM(l) AS L, SUM(s) AS SV FROM (
+         SELECT home_sp AS id, 1 AS gs, 0 AS w, 0 AS l, 0 AS s FROM games WHERE stage = 'regular' AND season = ?1${dr}
+         UNION ALL SELECT away_sp, 1, 0, 0, 0 FROM games WHERE stage = 'regular' AND season = ?1${dr}
+         UNION ALL SELECT wp, 0, 1, 0, 0 FROM games WHERE stage = 'regular' AND season = ?1${dr} AND wp IS NOT NULL
+         UNION ALL SELECT lp, 0, 0, 1, 0 FROM games WHERE stage = 'regular' AND season = ?1${dr} AND lp IS NOT NULL
+         UNION ALL SELECT sv, 0, 0, 0, 1 FROM games WHERE stage = 'regular' AND season = ?1${dr} AND sv IS NOT NULL
+       ) GROUP BY id`,
+    ).all(season) as Row[]).map((r) => [num(r.id), r]));
+    const flags = new Map((this.db.prepare(`SELECT pitcher_id AS id, SUM(hld) AS HLD, SUM(bs) AS BS, SUM(qs) AS QS FROM pitcher_flags WHERE stage = 'regular' AND season = ?${dr} GROUP BY pitcher_id`).all(season) as Row[]).map((r) => [num(r.id), r]));
+    const pitching = new Map<PlayerId, PitchingTotals & { HLD: number; BS: number; QS: number }>();
+    for (const r of pit) {
+      const id = num(r.id);
+      const d = dec.get(id);
+      const rr = pruns.get(id);
+      const f = flags.get(id);
+      pitching.set(id, { G: num(r.G), GS: num(d?.GS), OUTS: num(r.OUTS) + (pouts.get(id) ?? 0), W: num(d?.W), L: num(d?.L), SV: num(d?.SV), BF: num(r.BF), H: num(r.H), R: num(rr?.R), ER: num(rr?.ER), BB: num(r.BB), HBP: num(r.HBP), K: num(r.K), HR: num(r.HR), pitches: num(r.P), HLD: num(f?.HLD), BS: num(f?.BS), QS: num(f?.QS) });
+    }
+    return { batting, pitching };
+  }
+
+  /** 정규시즌 선수·포지션별 수비 아웃 */
+  positionOuts(season: number): Array<{ playerId: PlayerId; clubId: ClubId; position: string; outs: number }> {
+    const rows = (this.isCompressed(season)
+      ? this.stmt("SELECT player_id AS id, club_id AS c, position, SUM(outs) AS outs FROM field_positions_season WHERE stage = 'regular' AND season = ? GROUP BY player_id, club_id, position").all(season)
+      : this.stmt("SELECT player_id AS id, club_id AS c, position, SUM(outs) AS outs FROM field_positions WHERE stage = 'regular' AND season = ? GROUP BY player_id, club_id, position").all(season)) as Row[];
+    return rows.map((r) => ({ playerId: num(r.id), clubId: num(r.c), position: String(r.position), outs: num(r.outs) }));
+  }
+
+  /** 정규시즌 수비 기록(자살·보살·실책)과 포수 도루 허용·저지·포일(압축 전 시즌) */
+  awardFielding(season: number): { fielding: Map<PlayerId, { PO: number; A: number; E: number }>; catcher: Map<PlayerId, { SB: number; CS: number; PB: number }> } {
+    const f = this.stmt("SELECT player_id AS id, SUM(kind = 'PO') AS PO, SUM(kind = 'A') AS A, SUM(kind = 'E') AS E FROM fielding WHERE stage = 'regular' AND season = ? GROUP BY player_id").all(season) as Row[];
+    const c = this.stmt("SELECT catcher_id AS id, SUM(kind = 'SB') AS SB, SUM(kind = 'CS') AS CS, SUM(kind = 'PB') AS PB FROM plays WHERE stage = 'regular' AND season = ? AND kind IN ('SB','CS','PB') GROUP BY catcher_id").all(season) as Row[];
+    return { fielding: new Map(f.map((r) => [num(r.id), { PO: num(r.PO), A: num(r.A), E: num(r.E) }])), catcher: new Map(c.map((r) => [num(r.id), { SB: num(r.SB), CS: num(r.CS), PB: num(r.PB) }])) };
+  }
+
+  /** 경기별 포지션 수비 아웃 합과 수비 아웃(규칙 검사, 압축 전 시즌) */
+  positionOutChecks(season: number): Array<{ gameId: number; clubId: ClubId; fieldOuts: number; dhOuts: number; defOuts: number }> {
+    const pos = this.stmt("SELECT game_id AS g, club_id AS c, SUM(CASE WHEN position = 'DH' THEN 0 ELSE outs END) AS f, SUM(CASE WHEN position = 'DH' THEN outs ELSE 0 END) AS dh FROM field_positions WHERE season = ? GROUP BY game_id, club_id").all(season) as Row[];
+    const def = new Map((this.stmt(
+      `SELECT x.game_id AS g, CASE WHEN x.batting_club = gm.home THEN gm.away ELSE gm.home END AS c, SUM(x.outs_on_play) AS o
+         FROM (SELECT game_id, batting_club, outs_on_play FROM plate_appearances WHERE season = ?1 UNION ALL SELECT game_id, batting_club, outs_on_play FROM plays WHERE season = ?1) x
+         JOIN games gm ON gm.fixture_id = x.game_id GROUP BY x.game_id, c`,
+    ).all(season) as Row[]).map((r) => [`${num(r.g)}:${num(r.c)}`, num(r.o)]));
+    return pos.map((r) => ({ gameId: num(r.g), clubId: num(r.c), fieldOuts: num(r.f), dhOuts: num(r.dh), defOuts: def.get(`${num(r.g)}:${num(r.c)}`) ?? 0 }));
+  }
+
+  insertAwards(rows: AwardRecord[]): void {
+    const ins = this.stmt('INSERT INTO awards (season, award, slot, subject, player_id, club_id, staff_id, date, score, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    this.tx(() => {
+      for (const a of rows) ins.run(a.season, a.award, a.slot, a.playerId !== null ? `p:${a.playerId}` : a.staffId !== null ? `s:${a.staffId}` : `c:${a.clubId}`, a.playerId, a.clubId, a.staffId, a.date, a.score, a.detail);
+    });
+  }
+
+  getAwards(filter: { season?: number; playerId?: PlayerId; clubId?: ClubId; award?: string } = {}): AwardRecord[] {
+    const where: string[] = [];
+    const args: Array<number | string> = [];
+    if (filter.season !== undefined) (where.push('season = ?'), args.push(filter.season));
+    if (filter.playerId !== undefined) (where.push('player_id = ?'), args.push(filter.playerId));
+    if (filter.clubId !== undefined) (where.push('club_id = ?'), args.push(filter.clubId));
+    if (filter.award !== undefined) (where.push('award = ?'), args.push(filter.award));
+    const rows = this.db.prepare(`SELECT * FROM awards${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY season, date, award, slot, score DESC`).all(...args) as Row[];
+    return rows.map((r) => ({ season: num(r.season), award: String(r.award), slot: String(r.slot), playerId: r.player_id === null ? null : num(r.player_id), clubId: num(r.club_id), staffId: r.staff_id === null ? null : num(r.staff_id), date: String(r.date), score: Number(r.score), detail: String(r.detail) }));
   }
 
   /** 스프레이 차트 합계(타자·구역·타구 유형). 압축 전 시즌은 원시 기록에서 같은 방식으로 센다 */
@@ -741,6 +846,8 @@ export class SqliteGameRepository implements GameRepository {
       const insRun = this.stmt(
         'INSERT INTO runs (game_id, seq, idx, season, batting_club, runner_id, pitcher_id, earned, stage) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       );
+      const insPos = this.stmt('INSERT INTO field_positions (game_id, season, stage, date, club_id, player_id, position, outs) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+      const insFlag = this.stmt('INSERT INTO pitcher_flags (game_id, season, stage, date, club_id, pitcher_id, hld, bs, qs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
       const stageOf = this.stmt('SELECT stage FROM fixtures WHERE id = ?');
       for (const r of results) {
         const stage = String((stageOf.get(r.fixtureId) as Row | undefined)?.stage ?? 'regular');
@@ -757,6 +864,9 @@ export class SqliteGameRepository implements GameRepository {
           p.credits.forEach((c, idx) => insFielding.run(r.fixtureId, p.seq, idx, meta.season, defClub, c.playerId, c.kind, stage));
         }
         r.runs.forEach((run, idx) => insRun.run(r.fixtureId, run.seq, idx, meta.season, run.battingClub, run.runnerId, run.pitcherId, run.earned ? 1 : 0, stage));
+        // 8a(D-180): 포지션별 수비 아웃, 홀드·블론세이브·퀄리티 스타트
+        for (const f of r.fieldOuts ?? []) insPos.run(r.fixtureId, meta.season, stage, date, f.clubId, f.playerId, f.position, f.outs);
+        for (const f of r.pitcherFlags ?? []) insFlag.run(r.fixtureId, meta.season, stage, date, f.clubId, f.pitcherId, f.hold ? 1 : 0, f.blown ? 1 : 0, f.qs ? 1 : 0);
       }
       this.writeMeta(metaUpdate);
     });

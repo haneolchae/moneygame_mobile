@@ -12,7 +12,8 @@ import type { DatabaseSync } from 'node:sqlite';
 // 11: 고정 관측·보고서 이력·세이브별 메모와 관심 등록(D-113).
 // 12: 4c-1 승부처 타석 표시(plate_appearances.clutch, D-167). 타석별 투구 수는 이미 있어 경기별 투수·타자 투구 수는 그 값에서 계산한다.
 // 13: 4c-2a 주루 사건 표(plays), 타석의 고의사구·번트 표시, 시즌 합계 도루·도루 실패·폭투·보크·포일(D-170).
-export const SCHEMA_VERSION = 13;
+// 14: 8a 선수·포지션별 수비 아웃(field_positions, 시즌 압축 표), 투수별 홀드·블론세이브·퀄리티 스타트(pitcher_flags), 리그 시상(awards)(D-180).
+export const SCHEMA_VERSION = 14;
 
 const SCHEMA_V3 = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -351,6 +352,28 @@ export function createSchema(db: DatabaseSync): void {
     db.exec(`CREATE TABLE scouting_snapshots (club_id INTEGER NOT NULL, player_id INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (club_id, player_id));
       CREATE TABLE scouting_history (club_id INTEGER NOT NULL, player_id INTEGER NOT NULL, date TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (club_id, player_id, date));
       CREATE TABLE player_notes (player_id INTEGER PRIMARY KEY, text TEXT NOT NULL, watched INTEGER NOT NULL, updated_at TEXT NOT NULL);`);
+    db.exec(`CREATE TABLE field_positions (
+        game_id INTEGER NOT NULL, season INTEGER NOT NULL, stage TEXT NOT NULL, date TEXT NOT NULL, club_id INTEGER NOT NULL,
+        player_id INTEGER NOT NULL, position TEXT NOT NULL, outs INTEGER NOT NULL,
+        PRIMARY KEY (game_id, player_id, position)
+      ) WITHOUT ROWID;
+      CREATE INDEX field_positions_player ON field_positions (season, player_id);
+      CREATE TABLE field_positions_season (
+        season INTEGER NOT NULL, stage TEXT NOT NULL, club_id INTEGER NOT NULL, player_id INTEGER NOT NULL, position TEXT NOT NULL, outs INTEGER NOT NULL,
+        PRIMARY KEY (season, stage, player_id, club_id, position)
+      ) WITHOUT ROWID;
+      CREATE TABLE pitcher_flags (
+        game_id INTEGER NOT NULL, season INTEGER NOT NULL, stage TEXT NOT NULL, date TEXT NOT NULL, club_id INTEGER NOT NULL,
+        pitcher_id INTEGER NOT NULL, hld INTEGER NOT NULL, bs INTEGER NOT NULL, qs INTEGER NOT NULL,
+        PRIMARY KEY (game_id, pitcher_id)
+      ) WITHOUT ROWID;
+      CREATE INDEX pitcher_flags_player ON pitcher_flags (season, pitcher_id);
+      CREATE TABLE awards (
+        season INTEGER NOT NULL, award TEXT NOT NULL, slot TEXT NOT NULL, subject TEXT NOT NULL,
+        player_id INTEGER, club_id INTEGER NOT NULL, staff_id INTEGER, date TEXT NOT NULL, score REAL NOT NULL, detail TEXT NOT NULL,
+        PRIMARY KEY (season, award, slot, subject)
+      ) WITHOUT ROWID;
+      CREATE INDEX awards_player ON awards (player_id);`);
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

@@ -66,6 +66,8 @@ export interface GameMeta {
   budgets?: Record<string, BudgetPlan>;
   budgetPlanWeeks?: string[];
   meetings?: MeetingRecord[];
+  /** 8a(D-180): 시즌 → 구단 ID → 개막 때 기대 순위(감독상 예상 승수) */
+  awardBase?: Record<string, Record<string, number>>;
   /** 6e: 한 번만 보내는 예산 알림 키(시즌:항목) */
   budgetAlerts?: string[];
   /** 4c-2b(D-166·D-172): AI 구단 성적 목표 연속 미달 시즌 수(감독 교체 판정) */
@@ -156,6 +158,22 @@ export interface TradeTalk {
   log: TradeLogEntry[];
   /** 상대 역제안(그 주 안에서만 유효) */
   counter: { pkg: TradePackage; weekId: string } | null;
+}
+
+/** 8a 리그 시상 결과 한 줄(D-180). 대상은 선수·감독(직원)·구단 중 하나 */
+export interface AwardRecord {
+  season: number;
+  /** 상 키(mvp, title_HR, gg 등) */
+  award: string;
+  /** 자리(포지션·월·부문). 없으면 '' */
+  slot: string;
+  playerId: PlayerId | null;
+  clubId: ClubId;
+  staffId: number | null;
+  date: GameDate;
+  score: number;
+  /** 화면용 근거(기록 요약) */
+  detail: string;
 }
 
 /** 6e 특별 운영회의 보고(D-177 (6)) */
@@ -594,6 +612,13 @@ export interface GameRepository {
   isCompressed(season: number): boolean;
   /** 스프레이 차트 합계(타자·구역·타구 유형) */
   sprayTotals(season: number, playerId: PlayerId): Array<{ zone: string; type: string; n: number; h: number; xbh: number }>;
+  /** 8a 리그 시상(D-180) */
+  awardLines(season: number, range?: { from: GameDate; to: GameDate }): { batting: Map<PlayerId, BattingTotals>; pitching: Map<PlayerId, PitchingTotals & { HLD: number; BS: number; QS: number }> };
+  positionOuts(season: number): Array<{ playerId: PlayerId; clubId: ClubId; position: string; outs: number }>;
+  awardFielding(season: number): { fielding: Map<PlayerId, { PO: number; A: number; E: number }>; catcher: Map<PlayerId, { SB: number; CS: number; PB: number }> };
+  positionOutChecks(season: number): Array<{ gameId: number; clubId: ClubId; fieldOuts: number; dhOuts: number; defOuts: number }>;
+  insertAwards(rows: AwardRecord[]): void;
+  getAwards(filter?: { season?: number; playerId?: PlayerId; clubId?: ClubId; award?: string }): AwardRecord[];
   /** 수비 합계(자살·보살·실책) */
   fieldingTotals(season: number, playerId: PlayerId): { PO: number; A: number; E: number };
   /** 구단 소속으로 쌓은 선수별 수비 합계(정규시즌) */

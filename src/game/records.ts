@@ -160,6 +160,8 @@ export class Records {
         preGame: cs?.preGame ?? false,
         source,
         mine: mineSeason(y) && (st?.postseason ?? '') !== '진행 중',
+        // 8a: 그 시즌 리그 수상 수(월간 시상 제외)
+        awards: this.repo.getAwards({ season: y, clubId: club }).filter((a) => !a.award.startsWith('monthly_')).length,
         AVG: cs ? (f3(battingRates(cs.bat).AVG) ?? '—') : '—',
         OPS: cs ? (f3(battingRates(cs.bat).OPS) ?? '—') : '—',
         HR: cs ? cs.bat.HR : null,

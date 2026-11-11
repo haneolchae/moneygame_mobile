@@ -243,6 +243,8 @@ export interface PlayerDetailView extends PlayerListItem {
   observationNote: string;
   /** 아마추어 개인 업적·드래프트 정보 */
   honors: string[];
+  /** 8a 리그 수상 이력(시즌·상) */
+  awards: Array<{ season: number; title: string }>;
   draftInfo: string | null;
   retired: string | null;
   /** 우리 구단 선수: 현재 능력치를 오차 없이 표시(D-078) */
@@ -343,6 +345,8 @@ export interface TeamHistoryRow {
   source: 'real' | 'start' | 'game';
   /** 구단주 취임 이후 우리 구단이 이룬 시즌 */
   mine: boolean;
+  /** 8a 그 시즌 리그 수상 수(월간 제외) */
+  awards: number;
   AVG: string;
   OPS: string;
   HR: number | null;
@@ -752,6 +756,30 @@ export interface TradeResultView {
   apCharged: number;
   view: TradeView;
 }
+// ───────── 8a 리그 시상 (D-180) ─────────
+
+export interface AwardItemView {
+  season: number;
+  award: string;
+  slot: string;
+  title: string;
+  /** KBO 시상식·한국시리즈·골든글러브 시상식·월간 시상 */
+  group: string;
+  playerId: number | null;
+  name: string;
+  club: ClubRef | null;
+  date: string;
+  detail: string;
+  /** 우리 구단 수상(구단주 달성) */
+  mine: boolean;
+}
+
+export interface AwardsView {
+  seasons: number[];
+  season: number | null;
+  items: AwardItemView[];
+}
+
 // ───────── 6e 예산 배분·특별 운영회의 (D-176·D-177) ─────────
 
 export interface BudgetPlanView {
@@ -1144,6 +1172,7 @@ export interface RequestMap {
   'budget.view': { payload: void; result: BudgetView };
   'budget.set': { payload: BudgetPlanInput; result: { message: string; apCharged: number; view: BudgetView } };
   'meeting.convene': { payload: void; result: { message: string; view: BudgetView } };
+  'awards.list': { payload: { season?: number }; result: AwardsView };
   'trade.respondOffer': { payload: { offerId: number; accept: boolean; commandId: string }; result: TradeOfferResultView };
   'owner.career': { payload: void; result: CareerView };
   'owner.acceptJob': { payload: { clubId: number }; result: DashboardView };
@@ -1230,6 +1259,7 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'budget.view',
   'budget.set',
   'meeting.convene',
+  'awards.list',
   'trade.respondOffer',
   'owner.career',
   'owner.acceptJob',

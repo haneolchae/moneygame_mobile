@@ -1,11 +1,11 @@
 // 명예의 전당: 10개 구단의 연표·구단 역사·구단 기록·레전드·구단주 업적 (24 문서, D-083)
 import { useEffect, useState } from 'react';
-import type { ClubOption, TeamRecordsView } from '../../shared/protocol';
+import type { AwardsView, ClubOption, TeamRecordsView } from '../../shared/protocol';
 import type { Nav } from '../App';
 import { api } from '../api';
 import { Emblem } from '../Emblem';
 
-type Tab = 'timeline' | 'history' | 'records' | 'legends' | 'mine';
+type Tab = 'timeline' | 'history' | 'records' | 'legends' | 'awards' | 'mine';
 
 const SOURCE_LABEL: Record<string, string> = { real: '', start: ' (시작 이전)', game: '' };
 const BAT_KEYS = ['G', 'H', 'HR', 'RBI', 'SB', 'AVG'];
@@ -21,6 +21,17 @@ export function HallOfFame({ nav, initialClubId }: { nav: Nav; initialClubId?: n
   const [clubId, setClubId] = useState(initialClubId ?? userClub);
   const [tab, setTab] = useState<Tab>('timeline');
   const [v, setV] = useState<TeamRecordsView | null>(null);
+  // 8a 리그 시상 기록(전 구단)
+  const [aw, setAw] = useState<AwardsView | null>(null);
+  const [onlyClub, setOnlyClub] = useState(false);
+  const loadAwards = (season?: number) =>
+    api('awards.list', season === undefined ? {} : { season })
+      .then(setAw)
+      .catch((e: Error) => nav.notify(e.message, 'error'));
+  useEffect(() => {
+    if (tab === 'awards' && !aw) void loadAwards();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   useEffect(() => {
     api('game.clubOptions')
@@ -82,6 +93,7 @@ export function HallOfFame({ nav, initialClubId }: { nav: Nav; initialClubId?: n
                   ['history', '구단 역사'],
                   ['records', '구단 기록'],
                   ['legends', `레전드 (${v.legends.length})`],
+                  ['awards', '리그 시상 기록'],
                   ...(v.isUserClub ? ([['mine', `구단주 달성 (${mineCount})`]] as Array<[Tab, string]>) : []),
                 ] as Array<[Tab, string]>
               ).map(([k, label]) => (
@@ -135,6 +147,7 @@ export function HallOfFame({ nav, initialClubId }: { nav: Nav; initialClubId?: n
                       <th className="num">OPS</th>
                       <th className="num">홈런</th>
                       <th className="num">평균자책</th>
+                      <th className="num" title="그 시즌 리그 수상 수(월간 시상 제외)">수상</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -153,11 +166,61 @@ export function HallOfFame({ nav, initialClubId }: { nav: Nav; initialClubId?: n
                         <td className="num">{h.OPS}</td>
                         <td className="num">{h.HR ?? '—'}</td>
                         <td className="num">{h.ERA}</td>
+                        <td className="num">{h.awards || ''}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+            </section>
+          )}
+
+          {tab === 'awards' && (
+            <section className="panel">
+              <div className="panel-head">
+                <h2>리그 시상 기록</h2>
+                <div className="seg">
+                  {(aw?.seasons ?? []).map((s) => (
+                    <button key={s} className={aw?.season === s ? 'active' : ''} onClick={() => void loadAwards(s)}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                <label className="small" style={{ marginLeft: 12 }}>
+                  <input type="checkbox" checked={onlyClub} onChange={(e) => setOnlyClub(e.target.checked)} /> {v.club.shortName ?? v.club.name}만
+                </label>
+                <span className="meta">2027 시즌부터 · 전 구단 수상, 우리 구단 수상은 구단주 달성</span>
+              </div>
+              {!aw ? (
+                <div className="panel-body muted">불러오는 중…</div>
+              ) : aw.items.length === 0 ? (
+                <div className="panel-body muted">아직 시상 기록이 없습니다. 월간 시상은 매월 첫 월요일, KBO 시상식은 한국시리즈 뒤, 골든글러브는 12월 둘째 월요일에 열립니다.</div>
+              ) : (
+                ['KBO 시상식', '한국시리즈', '골든글러브 시상식', '월간 시상'].map((g) => {
+                  const rows = aw.items.filter((a) => a.group === g && (!onlyClub || a.club?.id === v.club.id));
+                  if (rows.length === 0) return null;
+                  return (
+                    <div key={g} className="panel-body">
+                      <h3 style={{ margin: '0 0 6px' }}>{g}</h3>
+                      <table className="grid dense">
+                        <thead>
+                          <tr><th>상</th><th>수상</th><th>구단</th><th>근거</th></tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((a, i) => (
+                            <tr key={i} className={a.mine ? 'mine' : a.playerId !== null ? 'clickable' : ''} onClick={() => a.playerId !== null && nav.go({ name: 'player', playerId: a.playerId, back: { name: 'hof', clubId } })}>
+                              <td>{a.title}</td>
+                              <td>{a.name} {a.mine && <MineBadge />}</td>
+                              <td>{a.club ? a.club.shortName ?? a.club.name : '—'}</td>
+                              <td className="muted small">{a.detail}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })
+              )}
             </section>
           )}
 

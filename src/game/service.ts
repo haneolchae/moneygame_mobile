@@ -3,7 +3,7 @@ import { createSnapshot, currentRatings, snapshotRanges, SCOUTING, type Scouting
 import { addDays, ageOn, diffDays, mondayOf, weekday, type GameDate } from '../engine/calendar';
 import { CLUB_PROFILES, SEASON_2026_STANDINGS } from '../engine/clubs';
 import { STANCE_LABEL } from '../engine/aiClub';
-import { AI_CLUB, LIVE, FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
+import { AI_CLUB, AWARDS, LIVE, FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
 import { compensationFor, foreignRenewalDemandUsd, offerTotal, wonToUsd, type ContractOffer } from '../engine/contracts';
 import { CATEGORY_LABEL, FINANCE_BASE, NOT_YET_IMPLEMENTED, scheduledEntries, stadiumFee, type LedgerEntry } from '../engine/finance';
 import { battingSideOf, countModelVersion, createGame, directiveError, mergeOwner, OwnerPause, runGame, simulateGame, type Directive, type GameResult, type GameState, type OffensePlay, type OwnerControl, type OwnerPoint, type OwnerPrePa } from '../engine/gamesim';
@@ -44,6 +44,8 @@ import { AiClubOps } from './aiClubs';
 import { ManagerOps } from './managers';
 import { MANAGER_KEYS, MANAGER_LABEL } from '../engine/manager';
 import { CareerOps } from './career';
+import { AwardOps, goldenGloveDate } from './awards';
+import { awardTitle } from '../engine/awards';
 import { BudgetOps } from './budget';
 import { BusinessOps } from './business';
 import { SponsorOps } from './sponsors';
@@ -103,6 +105,7 @@ import {
   type BusinessView,
   type LiveChoice,
   type BudgetPlanInput,
+  type AwardsView,
   type BudgetView,
   type LiveDecisionView,
   type LiveFeedItem,
@@ -285,6 +288,7 @@ export class GameService {
   readonly sponsors: SponsorOps;
   readonly merch: MerchOps;
   readonly budget: BudgetOps;
+  readonly awards: AwardOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -365,6 +369,8 @@ export class GameService {
     this.trades.budget = this.budget;
     this.career = new CareerOps(repo, this.clubMap, () => this.stanceRanks());
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
+    // 8a(D-180): 리그 시상
+    this.awards = new AwardOps(repo, this.clubMap, (m, c, s) => this.seasonClose.expectedRank(m, c, s));
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
       const meta = this.meta();
@@ -592,6 +598,8 @@ export class GameService {
       // 성적 기본 목표: 시즌 모드 시작 때 예상 순위로 고정한다(02 문서).
       const expectedRank = this.seasonClose.expectedRank(meta, meta.userClubId, season);
       metaUpdate.seasonGoal = { season, expectedRank };
+      // 8a(D-180): 감독상 예상 승수용 개막 기대 순위(전 구단)
+      metaUpdate.awardBase = { ...(meta.awardBase ?? {}), [String(season)]: Object.fromEntries([...this.clubMap.keys()].map((c) => [String(c), this.seasonClose.expectedRank(meta, c, season)])) };
       // 시즌 리그 환경(D-100): 첫 시즌은 기준값, 이후 직전 시즌 편차에서 −5%p·0·+5%p(±10% 안, 비누적)
       const prevEnv = meta.leagueEnvironment?.[String(season - 1)];
       const envRng = Rng.derive(meta.seed, 'league-env', season);
@@ -638,6 +646,14 @@ export class GameService {
       const now = this.meta();
       this.repo.addInbox(this.draft.run(now, date, now.draftBoard ?? [], this.org.scoutingScale(now)));
     }
+    // 8a(D-180) 리그 시상: 월간(매월 첫 월요일), KBO 시상식 발표(K+3), 골든글러브(12월 둘째 월요일)
+    {
+      const now = this.meta();
+      const awardInbox = [...this.awards.monthly(now, date)];
+      if (date === addDays(now.kDate, AWARDS.ceremonyAfterK)) awardInbox.push(...this.awards.announce(now, date));
+      if (now.mode === 'stove' && date === goldenGloveDate(Number(now.kDate.slice(0, 4)))) awardInbox.push(...this.awards.goldenGlove(now, date));
+      if (awardInbox.length) this.repo.addInbox(awardInbox);
+    }
     // 업적 판정은 같은 트랜잭션 안에서 기록한다(경험치는 그날 처리 뒤 메타에 반영).
     const fresh = this.meta();
     this.achievements.onDay({ ...meta, ownerLevel: fresh.ownerLevel, ownerXp: fresh.ownerXp, postseason: fresh.postseason }, date, results);
@@ -648,6 +664,9 @@ export class GameService {
       this.repo.addInbox(this.growth.annual(after, date));
       // 6c 스폰서 시즌 마감 정산(D-149): 인센티브·의무 반환, 계약 종료
       this.repo.addInbox(this.sponsors.settleSeason(this.meta(), date));
+      // 8a(D-180): KBO 시상식 선정(감독 교체 전, K+3 발표)·한국시리즈 MVP
+      this.awards.seasonCeremony(this.meta(), date);
+      this.repo.addInbox(this.awards.ksMvpMessage(this.meta(), date));
       // 4c-2b(D-163·D-166): 감독 신뢰도 되돌림·AI 구단 감독 교체
       this.repo.addInbox(this.managers.closeSeason(this.meta(), date));
       this.seasonClose.close(after, date);
@@ -1422,6 +1441,33 @@ export class GameService {
   }
 
   /** 승부처 참여 설정(행동력 0). 끄면 관전만 한다 */
+  // ───────── 8a 리그 시상 (D-180) ─────────
+
+  /** 시즌별 수상 목록(전 구단). season이 없으면 가장 최근 시즌 */
+  awardsList(season?: number): AwardsView {
+    const meta = this.meta();
+    const seasons = [...new Set(this.repo.getAwards().map((a) => a.season))].sort((a, b) => b - a);
+    const s = season !== undefined && seasons.includes(season) ? season : (seasons[0] ?? null);
+    if (s === null) return { seasons, season: null, items: [] };
+    const players = new Map(this.repo.getPlayers().map((p) => [p.id, p]));
+    const staff = new Map(this.repo.getStaff().map((x) => [x.id, x]));
+    const group = (k: string) => (k.startsWith('monthly_') ? '월간 시상' : k === 'ks_mvp' ? '한국시리즈' : k === 'gg' || k === 'platinum' || k.startsWith('best') ? '골든글러브 시상식' : 'KBO 시상식');
+    const items = this.repo.getAwards({ season: s }).map((a) => ({
+      season: a.season,
+      award: a.award,
+      slot: a.slot,
+      title: awardTitle(a.award, a.slot),
+      group: group(a.award),
+      playerId: a.playerId,
+      name: a.playerId !== null ? (players.get(a.playerId)?.name ?? `#${a.playerId}`) : a.staffId !== null ? `${staff.get(a.staffId)?.name ?? ''} 감독` : `${this.clubMap.get(a.clubId)?.shortName ?? ''} 프런트`,
+      club: this.clubMap.has(a.clubId) ? this.ref(a.clubId) : null,
+      date: a.date,
+      detail: a.detail,
+      mine: a.clubId === meta.userClubId,
+    }));
+    return { seasons, season: s, items };
+  }
+
   // ───────── 6e 예산 배분·특별 운영회의 (D-176·D-177) ─────────
 
   budgetView(): BudgetView {
@@ -2501,6 +2547,7 @@ export class GameService {
       spray,
       fielding,
       honors: p.honors ?? [],
+      awards: this.repo.getAwards({ playerId: p.id }).map((a) => ({ season: a.season, title: awardTitle(a.award, a.slot) })),
       draftInfo: p.draft ? `${p.draft.year} 신인 드래프트 ${p.draft.round}라운드 ${p.draft.pick}순위 (${p.draft.school})` : null,
       retired: p.retired ? `${p.retired.season} 시즌 뒤 은퇴 (${p.retired.reason})` : null,
       health: this.health.view(meta, p, own),

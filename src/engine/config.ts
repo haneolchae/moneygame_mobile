@@ -108,6 +108,9 @@ export const SIM = {
   closerMaxLead: 3,
   winQualifyingOutsForStarter: 15,
   saveMaxLead: 3,
+  /** 8a(D-180) 퀄리티 스타트: 선발 6이닝 이상·자책 3 이하 */
+  qsMinOuts: 18,
+  qsMaxEr: 3,
   saveMinOuts: 3,
 } as const;
 
@@ -562,6 +565,45 @@ export const TACTICS = {
     pitchAround: { ball: 1.35, strike: 0.85, foul: 1, inplay: 0.8 },
     attack: { ball: 0.8, strike: 1.1, foul: 1, inplay: 1.1 },
   },
+} as const;
+
+/** 8a 리그 시상(D-180·25 문서) */
+export const AWARDS = {
+  rankPointsTop: 10,
+  voteSpread: 3,
+  titleBonus: 5,
+  /** 팀 순위 보정: (10 − 순위) × teamBonusPerRank */
+  teamBonusPerRank: 10 / 9,
+  qualPaPerGame: 3.1,
+  qualOutsPerGame: 3,
+  /** MVP 같은 표에 둘 때 투수 점수 배율(타자 9부문 기준) */
+  starterScale: 9 / 6,
+  relieverScale: 9 / 5,
+  /** 구원 평균자책·WHIP 순위 자격 등판 수 */
+  relieverRateGames: 30,
+  mvpReliefSv: 30,
+  mvpReliefHld: 30,
+  closerMinSv: 20,
+  setupMinHld: 15,
+  /** 포지션 자격(수비 아웃): 720이닝, 지명타자 480이닝, 수비상 투수 50경기 */
+  posQualOuts: 2160,
+  dhQualOuts: 1440,
+  pitcherDefGames: 50,
+  ggPitcher: { W: 10, SV: 30, HLD: 30 },
+  rookie: { maxProSeasons: 5, priorPa: 60, priorOuts: 90 },
+  /** 감독상 예상 승수 = base + (5.5 − 기대 순위) × perRank, 순위 상승 폭 배수, 가을야구 보너스 */
+  manager: { baseWins: 72, perRank: 4, rankGain: 3, postseason: 5 },
+  front: { drafteeBatG: 50, drafteePitG: 30, drafteeEach: 2, profit: 3 },
+  monthly: { minPa: 60, minOuts: 60, minG: 8 },
+  milestones: {
+    H: [1000, 1500, 2000, 2500], HR: [100, 200, 300, 400], RBI: [1000], SB: [200, 300],
+    W: [100, 150], SV: [100, 200, 300], K: [1000, 1500, 2000],
+  } as Record<string, readonly number[]>,
+  /** 베스트 팀 선발·구원 인원 */
+  bestStarters: 5,
+  bestRelievers: 2,
+  /** KBO 시상식 발표(K + 일), 골든글러브는 12월 둘째 월요일 */
+  ceremonyAfterK: 3,
 } as const;
 
 /** 6e 예산 배분·특별 운영회의(D-176·D-177) */

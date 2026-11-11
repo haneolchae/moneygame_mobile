@@ -148,6 +148,9 @@ export interface GameResult {
   managerDecisions: ManagerDecision[];
   wpTrack: Array<{ clubId: ClubId; offSum: number; offN: number; defSum: number; defN: number }>;
   runs: RunEvent[];
+  /** 8a(D-180): 투수별 홀드·블론세이브·퀄리티 스타트(해당 있는 투수만), 선수·포지션별 수비 아웃 */
+  pitcherFlags: Array<{ clubId: ClubId; pitcherId: PlayerId; hold: boolean; blown: boolean; qs: boolean }>;
+  fieldOuts: Array<{ clubId: ClubId; playerId: PlayerId; position: string; outs: number }>;
   starters: { home: PlayerId; away: PlayerId };
   winningPitcher: PlayerId | null;
   losingPitcher: PlayerId | null;
@@ -162,6 +165,9 @@ export interface PitcherStint {
   runs: number;
   leadAtEntry: number;
   outsAtEntryOfInning: boolean;
+  /** 8a(D-180): 등판 중 가장 낮았던 리드, 내려갈 때 리드(홀드·블론세이브 판정) */
+  minLead: number;
+  leadAtExit?: number;
 }
 
 export interface TeamState {
@@ -186,6 +192,8 @@ export interface TeamState {
   manager: ManagerProfile;
   /** 타석당 승리 확률 변화(이 팀 쪽) 합: 공격·수비 */
   wp: { offSum: number; offN: number; defSum: number; defN: number };
+  /** 8a(D-180): '선수|포지션' → 수비 아웃(지명타자는 수비 동안 라인업에 있던 아웃) */
+  defOuts: Map<string, number>;
 }
 
 export type Side = 'home' | 'away';
@@ -384,13 +392,13 @@ function makeTeam(raw: TeamSetup, bbKey: number, fixtureId: FixtureId): TeamStat
   const manager = raw.manager ?? NEUTRAL_MANAGER;
   const adj = (p: PlayerTruth) => managedPlayer(p, manager, Rng.fromKeys(bbKey, fixtureId, -p.id, DRAW.powerRound).next());
   const setup: TeamSetup = { ...raw, lineup: raw.lineup.map((s) => ({ ...s, player: adj(s.player) })), starter: adj(raw.starter), bullpen: raw.bullpen.map(adj), closer: raw.closer ? adj(raw.closer) : null, bench: (raw.bench ?? []).map(adj) };
-  const stint: PitcherStint = { pitcher: setup.starter, isStarter: true, pitches: 0, outs: 0, runs: 0, leadAtEntry: 0, outsAtEntryOfInning: true };
+  const stint: PitcherStint = { pitcher: setup.starter, isStarter: true, pitches: 0, outs: 0, runs: 0, leadAtEntry: 0, outsAtEntryOfInning: true, minLead: 0 };
   const lineup = setup.lineup.map((s) => ({ ...s }));
   const fielders = { P: stint.pitcher } as Fielders;
   for (const spot of lineup) if (spot.position !== 'DH') fielders[spot.position as FieldPos] = spot.player;
   const bench = [...(setup.bench ?? [])];
   const own = new Set<PlayerId>([...lineup.map((s) => s.player.id), ...bench.map((p) => p.id), setup.starter.id, ...setup.bullpen.map((p) => p.id), ...(setup.closer ? [setup.closer.id] : [])]);
-  return { setup, lineup, bench, removed: new Set(), own, orderIndex: 0, stint, stints: [stint], usedRelievers: new Set(), fielders, align: NORMAL_ALIGNMENT, manager, wp: { offSum: 0, offN: 0, defSum: 0, defN: 0 } };
+  return { setup, lineup, bench, removed: new Set(), own, orderIndex: 0, stint, stints: [stint], usedRelievers: new Set(), fielders, align: NORMAL_ALIGNMENT, manager, wp: { offSum: 0, offN: 0, defSum: 0, defN: 0 }, defOuts: new Map() };
 }
 
 /** 경기 상태 만들기. env: 시즌 리그 환경(D-100), opts: 성적 혼합 표본·경기 중요도(3b) */
@@ -687,7 +695,8 @@ export function applyDirective(g: GameState, d: DecisionPoint, dir: Directive, o
   if (dir.pitcherId !== null && dir.pitcherId !== def.stint.pitcher.id) {
     const next = [...def.setup.bullpen, ...(def.setup.closer ? [def.setup.closer] : [])].find((p) => p.id === dir.pitcherId)!;
     def.usedRelievers.add(next.id);
-    const stint: PitcherStint = { pitcher: next, isStarter: false, pitches: 0, outs: 0, runs: 0, leadAtEntry: leadFor(g, d.side), outsAtEntryOfInning: d.atInningStart };
+    def.stint.leadAtExit = leadFor(g, d.side);
+    const stint: PitcherStint = { pitcher: next, isStarter: false, pitches: 0, outs: 0, runs: 0, leadAtEntry: leadFor(g, d.side), outsAtEntryOfInning: d.atInningStart, minLead: leadFor(g, d.side) };
     def.stints.push(stint);
     def.stint = stint;
   }
@@ -762,6 +771,7 @@ function recordPlay(g: GameState, kind: PlayEvent['kind'], runnerId: PlayerId | 
   const def = g.teams[other(batSide)];
   const outsOnPlay = g.outs - outsBefore;
   def.stint.outs += outsOnPlay;
+  afterDefense(g, other(batSide), outsOnPlay);
   g.plays.push({ seq: g.seq, inning: g.inning, half: g.half, battingClub: g.teams[batSide].setup.clubId, kind, runnerId, from, pitcherId: def.stint.pitcher.id, catcherId: def.fielders.C.id, outsBefore, outsOnPlay, homeScore: g.score.home, awayScore: g.score.away, credits });
   endOfPlay(g, batSide);
   const goOn = g.phase === 'pa' && g.outs < 3;
@@ -1044,6 +1054,7 @@ export function resolvePa(g: GameState, prep: PreparedPa): PaEvent {
       : Math.max(1, Math.round((outcome === 'K' ? SIM.pitches.k : outcome === 'BB' ? SIM.pitches.bb : outcome === 'HBP' ? SIM.pitches.hbp : SIM.pitches.other) + draw(DRAW.pitches).normal(0, SIM.pitches.jitter)));
   def.stint.pitches += pitches;
   def.stint.outs += outsOnPlay;
+  afterDefense(g, battingSideOf(half) === 'home' ? 'away' : 'home', outsOnPlay);
   const ev: PaEvent = {
     seq: g.seq,
     inning,
@@ -1102,6 +1113,53 @@ function endOfPlay(g: GameState, batSide: Side): void {
   }
 }
 
+/** 8a(D-180): 수비 아웃을 지금 수비수(투수는 현재 투수, 지명타자 포함)에게 더하고, 현재 투수의 최저 리드를 갱신한다 */
+function afterDefense(g: GameState, defSide: Side, outs: number): void {
+  const def = g.teams[defSide];
+  def.stint.minLead = Math.min(def.stint.minLead, leadFor(g, defSide));
+  if (outs <= 0) return;
+  const add = (id: PlayerId, pos: string) => {
+    const k = `${id}|${pos}`;
+    def.defOuts.set(k, (def.defOuts.get(k) ?? 0) + outs);
+  };
+  for (const pos of FIELD_LIST) add(pos === 'P' ? def.stint.pitcher.id : def.fielders[pos].id, pos);
+  const dh = def.lineup.find((s) => s.position === 'DH');
+  if (dh) add(dh.player.id, 'DH');
+}
+const FIELD_LIST: readonly FieldPos[] = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF'];
+
+/** 8a(D-180): 홀드·블론세이브·퀄리티 스타트(세이브 상황 = 등판 때 1~3점 리드) */
+function pitcherFlags(g: GameState, winningPitcher: PlayerId | null, savePitcher: PlayerId | null): GameResult['pitcherFlags'] {
+  const out: GameResult['pitcherFlags'] = [];
+  for (const side of ['home', 'away'] as const) {
+    const t = g.teams[side];
+    const last = t.stints[t.stints.length - 1]!;
+    last.leadAtExit = leadFor(g, side);
+    t.stints.forEach((st, i) => {
+      const er = g.runs.filter((r) => r.pitcherId === st.pitcher.id && r.earned).length;
+      const qs = st.isStarter && st.outs >= SIM.qsMinOuts && er <= SIM.qsMaxEr;
+      const saveSit = !st.isStarter && st.leadAtEntry >= 1 && st.leadAtEntry <= SIM.saveMaxLead;
+      const hold = saveSit && i < t.stints.length - 1 && st.outs >= 1 && (st.leadAtExit ?? 0) >= 1 && st.pitcher.id !== winningPitcher && st.pitcher.id !== savePitcher;
+      const blown = saveSit && st.minLead <= 0;
+      if (qs || hold || blown) out.push({ clubId: t.setup.clubId, pitcherId: st.pitcher.id, hold, blown, qs });
+    });
+  }
+  return out;
+}
+
+/** 8a: 선수·포지션별 수비 아웃 */
+function fieldOuts(g: GameState): GameResult['fieldOuts'] {
+  const out: GameResult['fieldOuts'] = [];
+  for (const side of ['home', 'away'] as const) {
+    const t = g.teams[side];
+    for (const [k, outs] of t.defOuts) {
+      const [id, position] = k.split('|') as [string, string];
+      out.push({ clubId: t.setup.clubId, playerId: Number(id), position, outs });
+    }
+  }
+  return out;
+}
+
 /** 경기 결과: 승리·패전·세이브 판정 */
 export function finishGame(g: GameState): GameResult {
   const score = g.score;
@@ -1147,6 +1205,8 @@ export function finishGame(g: GameState): GameResult {
     winningPitcher,
     losingPitcher,
     savePitcher,
+    pitcherFlags: pitcherFlags(g, winningPitcher, savePitcher),
+    fieldOuts: fieldOuts(g),
   };
 }
 
