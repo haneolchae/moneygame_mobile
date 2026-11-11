@@ -2,6 +2,8 @@
 // 모든 구단이 같은 규칙을 쓰고, 우리 구단만 알림을 받는다. 실제 복귀일은 화면 응답에 넣지 않는다.
 import { addDays, ageOn, diffDays, weekday, type GameDate } from '../engine/calendar';
 import { HEALTH } from '../engine/config';
+import { allStarDates } from '../engine/allStar';
+import { allStarAppearances } from './allStar';
 import type { GameResult } from '../engine/gamesim';
 import { estimatedDaysLeft, hitterFatigue, injuredOn, injuryChance, pitcherFatigue, riskLevel, rollInjury } from '../engine/health';
 import { overall } from '../engine/worldgen';
@@ -36,6 +38,17 @@ export class HealthOps {
     for (const g of this.repo.getRecentBatterGames(from, end)) bat.set(g.batterId, [...(bat.get(g.batterId) ?? []), diffDays(ref, g.date)]);
     const pit = new Map<PlayerId, Array<{ daysAgo: number; pitches: number }>>();
     for (const u of this.repo.getRecentPitcherUsage(from, end)) pit.set(u.pitcherId, [...(pit.get(u.pitcherId) ?? []), { daysAgo: diffDays(ref, u.date), pitches: u.pitches }]);
+    // 8e-2(D-190 (7)): 홈런 레이스·올스타전 출전일도 출전으로 센다(그 기간이 올스타 일정과 겹칠 때만 읽는다)
+    const year = Number(ref.slice(0, 4));
+    const asd = allStarDates(year);
+    if ((asd.hrRace >= from && asd.hrRace < end) || (asd.game >= from && asd.game < end)) {
+      const row = this.repo.getAllStar(year);
+      if (row) {
+        const ap = allStarAppearances([row], from, end);
+        for (const b of ap.batters) bat.set(b.batterId, [...(bat.get(b.batterId) ?? []), diffDays(ref, b.date)]);
+        for (const u of ap.pitchers) pit.set(u.pitcherId, [...(pit.get(u.pitcherId) ?? []), { daysAgo: diffDays(ref, u.date), pitches: u.pitches }]);
+      }
+    }
     const out = new Map<PlayerId, number>();
     for (const p of players) out.set(p.id, p.isPitcher ? pitcherFatigue(pit.get(p.id) ?? []) : hitterFatigue(bat.get(p.id) ?? [], p.position === 'C'));
     return out;

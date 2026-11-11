@@ -95,7 +95,8 @@ describe('리그 시상 (8a)', () => {
       const inactive = team.achievements.filter((x) => x.inactive);
       expect(inactive.length).toBeGreaterThan(10);
       for (const x of inactive) expect(x.achieved.length, x.key).toBe(0);
-      expect(inactive.find((x) => x.series === 'O_allstar')?.inactive).toContain('8e');
+      expect(inactive.find((x) => x.series === 'M_hire')?.inactive).toContain('채용');
+      expect(team.achievements.find((x) => x.series === 'O_allstar')?.inactive ?? null).toBeNull();
       // 다시 처리해도 중복 시상하지 않는다
       svc.awards.seasonCeremony(meta, meta.kDate);
       expect(repo.getAwards({ season: 2027 }).length).toBe(all.length);

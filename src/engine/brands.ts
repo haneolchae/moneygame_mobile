@@ -5,7 +5,7 @@ import raw from './data/brands.json';
 export const BRAND_CATEGORIES = ['general', 'sportswear', 'running', 'outdoor', 'fashion', 'baseball'] as const;
 export const BRAND_ROLES = ['sponsor', 'maker', 'collab'] as const;
 export const BRAND_STYLES = ['guaranteed', 'balanced', 'performance'] as const;
-export const BRAND_INCENTIVES = ['postseason', 'top3', 'occupancy', 'satisfaction'] as const;
+export const BRAND_INCENTIVES = ['postseason', 'top3', 'occupancy', 'satisfaction', 'allstar3', 'mrAllstar'] as const;
 export const BRAND_OBLIGATIONS = ['none', 'campaigns', 'noHighPrice'] as const;
 
 export type BrandStyle = (typeof BRAND_STYLES)[number];

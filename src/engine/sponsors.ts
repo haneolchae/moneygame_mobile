@@ -86,11 +86,15 @@ export interface SeasonFacts {
   occupancy: number;
   satisfaction: number;
   campaigns: number;
+  /** 8e-2: 그 시즌 올스타 선정 인원, 미스터 올스타 배출 */
+  allStars?: number;
+  mrAllstar?: boolean;
 }
 
 /** 시즌 마감 정산: 인센티브 지급액과 의무 미달 반환액 */
 export function settle(c: SponsorContract, f: SeasonFacts): { incentiveWon: number; refundWon: number } {
-  const met = c.incentive.kind === 'postseason' ? f.postseason : c.incentive.kind === 'top3' ? f.rank <= S.topRank : c.incentive.kind === 'occupancy' ? f.occupancy >= S.occupancyGoal : f.satisfaction >= S.satisfactionGoal;
+  const k = c.incentive.kind;
+  const met = k === 'postseason' ? f.postseason : k === 'top3' ? f.rank <= S.topRank : k === 'occupancy' ? f.occupancy >= S.occupancyGoal : k === 'allstar3' ? (f.allStars ?? 0) >= S.allStarGoal : k === 'mrAllstar' ? !!f.mrAllstar : f.satisfaction >= S.satisfactionGoal;
   const broke = c.obligation === 'campaigns' && f.campaigns < S.campaignsRequired;
   return { incentiveWon: met ? c.incentive.bonusWon : 0, refundWon: broke ? Math.round(c.guaranteedWon * S.refundShare) : 0 };
 }

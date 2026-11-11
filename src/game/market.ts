@@ -3,7 +3,7 @@
 import { addDays, diffDays, weekday, type GameDate } from '../engine/calendar';
 import type { ClubStance } from '../engine/aiClub';
 import { SEASON_2026_STANDINGS } from '../engine/clubs';
-import { CONTRACT, FOREIGN, LEAGUE, usdToWon, WORLDGEN, wonToUsd } from '../engine/config';
+import { ALLSTAR, CONTRACT, FOREIGN, LEAGUE, usdToWon, WORLDGEN, wonToUsd } from '../engine/config';
 import {
   acceptThreshold,
   aiOffer,
@@ -392,11 +392,14 @@ export class Market {
     const fa = new Map(this.repo.getFa(off).map((e) => [e.playerId, e]));
     const talks: SalaryTalk[] = [];
     const updated: PlayerTruth[] = [];
+    // 8e-2(D-190 (6)): 직전 시즌 올스타 선정 선수는 요구액 가산
+    const allStars = new Set(this.repo.getAllStar(year - 1)?.picks.map((x) => x.playerId) ?? []);
     for (const p of this.players()) {
       if (p.clubId === null || p.origin !== 'domestic' || p.contractYears !== 0) continue;
       const e = fa.get(p.id);
       if (e && e.status !== 'declined') continue; // FA 시장에 나간 선수는 제외
-      const demand = salaryDemand(meta.seed, p, year);
+      const base = salaryDemand(meta.seed, p, year);
+      const demand = allStars.has(p.id) ? round1m(base * (1 + ALLSTAR.salaryBonus)) : base;
       if (p.clubId === meta.userClubId) {
         talks.push({ playerId: p.id, offseason: off, clubId: p.clubId, priorSalary: p.salary, demand, offer: round1m(demand * 0.95), status: 'open', final: null });
       } else {

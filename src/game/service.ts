@@ -3,7 +3,7 @@ import { createSnapshot, currentRatings, snapshotRanges, SCOUTING, type Scouting
 import { addDays, ageOn, diffDays, mondayOf, weekday, type GameDate } from '../engine/calendar';
 import { CLUB_PROFILES, SEASON_2026_STANDINGS } from '../engine/clubs';
 import { STANCE_LABEL } from '../engine/aiClub';
-import { AI_CLUB, AWARDS, LIVE, FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
+import { AI_CLUB, ALLSTAR, AWARDS, LIVE, FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
 import { compensationFor, foreignRenewalDemandUsd, offerTotal, wonToUsd, type ContractOffer } from '../engine/contracts';
 import { CATEGORY_LABEL, FINANCE_BASE, NOT_YET_IMPLEMENTED, scheduledEntries, stadiumFee, type LedgerEntry } from '../engine/finance';
 import { battingSideOf, countModelVersion, createGame, directiveError, mergeOwner, OwnerPause, runGame, simulateGame, type Directive, type GameResult, type GameState, type OffensePlay, type OwnerControl, type OwnerPoint, type OwnerPrePa } from '../engine/gamesim';
@@ -45,6 +45,8 @@ import { ManagerOps } from './managers';
 import { MANAGER_KEYS, MANAGER_LABEL } from '../engine/manager';
 import { CareerOps } from './career';
 import { AwardOps, goldenGloveDate } from './awards';
+import { AllStarOps, lineText } from './allStar';
+import { allStarDates, SLOT_LABEL, SLOT_SIZE, TEAM_LABEL } from '../engine/allStar';
 import { awardTitle } from '../engine/awards';
 import { BudgetOps } from './budget';
 import { BusinessOps } from './business';
@@ -105,6 +107,7 @@ import {
   type BusinessView,
   type LiveChoice,
   type BudgetPlanInput,
+  type AllStarView,
   type AwardsView,
   type BudgetView,
   type LiveDecisionView,
@@ -112,7 +115,7 @@ import {
   type LiveGameGameView,
   type LiveGameView,
 } from '../shared/protocol';
-import type { CalendarEvent, DayCommit, GameMeta, GameRepository, InboxMessage, StoredGame } from './ports';
+import type { AllStarSeason, CalendarEvent, DayCommit, GameMeta, GameRepository, InboxMessage, StoredGame } from './ports';
 
 export interface NewGameOptions {
   clubId: number;
@@ -289,6 +292,7 @@ export class GameService {
   readonly merch: MerchOps;
   readonly budget: BudgetOps;
   readonly awards: AwardOps;
+  readonly allStar: AllStarOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -371,6 +375,8 @@ export class GameService {
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
     // 8a(D-180): 리그 시상
     this.awards = new AwardOps(repo, this.clubMap, (m, c, s) => this.seasonClose.expectedRank(m, c, s));
+    // 8e(D-189·D-190): 올스타전
+    this.allStar = new AllStarOps(repo, this.clubMap, (id) => this.managers.profileOf(id), (s, d, ps, env) => this.forms.formsFor(s, d, ps, env), this.budget);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
       const meta = this.meta();
@@ -652,6 +658,8 @@ export class GameService {
       const awardInbox = [...this.awards.monthly(now, date)];
       if (date === addDays(now.kDate, AWARDS.ceremonyAfterK)) awardInbox.push(...this.awards.announce(now, date));
       if (now.mode === 'stove' && date === goldenGloveDate(Number(now.kDate.slice(0, 4)))) awardInbox.push(...this.awards.goldenGlove(now, date));
+      // 8e(D-189): 올스타 투표·발표·홈런 레이스·올스타전·결과 편지(정규 기록과 분리)
+      awardInbox.push(...this.allStar.onDay(now, date));
       if (awardInbox.length) this.repo.addInbox(awardInbox);
     }
     // 업적 판정은 같은 트랜잭션 안에서 기록한다(경험치는 그날 처리 뒤 메타에 반영).
@@ -1444,9 +1452,79 @@ export class GameService {
   // ───────── 8a 리그 시상 (D-180) ─────────
 
   /** 시즌별 수상 목록(전 구단). season이 없으면 가장 최근 시즌 */
+  // ───────── 8e 올스타전 (D-189·D-190) ─────────
+
+  allStarView(season?: number): AllStarView {
+    const meta = this.meta();
+    const rows = this.repo.allStarSeasons();
+    const seasons = [...new Set([...rows.map((r) => r.season), meta.season])].sort((a, b) => b - a);
+    const s = season !== undefined && seasons.includes(season) ? season : meta.season;
+    const row = rows.find((r) => r.season === s) ?? null;
+    const players = new Map(this.repo.getPlayers().map((p) => [p.id, p]));
+    const nm = (id: number) => players.get(id)?.name ?? `#${id}`;
+    const cref = (c: ClubId | null | undefined) => (c !== null && c !== undefined && this.clubMap.has(c) ? this.ref(c) : null);
+    const short = (c: ClubId) => this.clubMap.get(c)?.shortName ?? '';
+    const d = allStarDates(s);
+    const mine = meta.userClubId;
+    const stage: AllStarView['stage'] = !row ? 'before' : row.game ? 'done' : row.picks.length ? 'announced' : 'voting';
+    const latest = row ? (row.picks.length ? { date: d.close, final: true, rows: row.ballot } : row.interim[row.interim.length - 1] ? { date: row.interim[row.interim.length - 1]!.date, final: false, rows: row.interim[row.interim.length - 1]!.rows } : null) : null;
+    const ballot = latest
+      ? {
+          date: latest.date,
+          final: latest.final,
+          rows: (['dream', 'nanum'] as const).flatMap((t) => [...new Set(latest.rows.filter((r) => r.team === t).map((r) => r.slot))].flatMap((slot) => latest.rows.filter((r) => r.team === t && r.slot === slot).slice(0, SLOT_SIZE(slot) + 2).map((r, i) => ({ team: t, slotLabel: SLOT_LABEL[slot] ?? slot, rank: i + 1, playerId: r.playerId, name: nm(r.playerId), club: cref(r.clubId), votes: r.votes, mine: r.clubId === mine })))),
+        }
+      : null;
+    const round = ['', '8강', '4강', '결승'];
+    const camp = this.allStar.campaignCheck(meta);
+    const ap = this.allStar.applyCheck(meta);
+    const scoreText = (r: AllStarSeason) => (r.game ? `드림 ${r.game.score.dream} : ${r.game.score.nanum} 나눔` : '-');
+    return {
+      season: s,
+      seasons,
+      dates: { voteStart: d.voteStart, close: d.close, hrRace: d.hrRace, game: d.game },
+      stage,
+      host: row ? { club: this.ref(row.host), by: row.hostBy, applicants: row.applicants.map(short) } : null,
+      managers: row ? { dream: this.ref(row.managers.dream), nanum: this.ref(row.managers.nanum) } : null,
+      ballot,
+      roster: (row?.picks ?? []).map((p) => ({ playerId: p.playerId, name: nm(p.playerId), club: cref(p.clubId), team: p.team, kind: p.kind, slotLabel: SLOT_LABEL[p.slot] ?? p.slot, votes: p.votes, status: p.status, replacesName: p.replaces !== undefined ? nm(p.replaces) : null, mine: p.clubId === mine })),
+      hrRace: row?.hrRace ? { matches: row.hrRace.matches.map((x) => ({ round: round[x.round] ?? '', a: nm(x.a), b: nm(x.b), hrA: x.hrA, hrB: x.hrB, tiebreak: x.tiebreak.map((t) => t.join(':')).join(', '), winner: nm(x.winner), mine: [x.a, x.b].some((id) => players.get(id)?.clubId === mine) })), champion: nm(row.hrRace.champion) } : null,
+      game: row?.game ? { home: row.game.home, score: row.game.score, line: row.game.line, mvp: row.game.mvp.map(nm), lines: row.game.lines.map((l) => { const club = row.picks.find((p) => p.playerId === l.playerId)?.clubId ?? null; return { playerId: l.playerId, name: nm(l.playerId), team: l.team, club: cref(club), text: lineText(l), mine: club === mine }; }) } : null,
+      campaign: { reason: camp.reason, costWon: camp.costWon, ap: ALLSTAR.campaignAp, done: meta.allStarCampaign?.[String(s)] ?? null, bonusVotes: Math.round(ALLSTAR.campaignBonus * ALLSTAR.voteScale) },
+      hosting: { season: ap.season, reason: ap.reason, ap: ALLSTAR.applyAp, applied: !!meta.allStarApply?.[String(ap.season)] },
+      history: rows.filter((r) => r.game).sort((a, b) => b.season - a.season).map((r) => ({ season: r.season, host: short(r.host), score: scoreText(r), mvp: r.game!.mvp.map(nm).join('·'), hrChampion: r.hrRace ? nm(r.hrRace.champion) : '-', ours: r.picks.filter((p) => p.clubId === mine).length })),
+    };
+  }
+
+  /** 8e 선수 올스타 경력: 선정 시즌, 통산 올스타전 기록(타율·홈런, 투구) */
+  private allStarCareer(playerId: number): PlayerDetailView['allStar'] {
+    const rows = this.repo.allStarSeasons();
+    const seasons = rows.filter((r) => r.picks.some((p) => p.playerId === playerId)).map((r) => r.season);
+    const lines = rows.flatMap((r) => r.game?.lines.filter((l) => l.playerId === playerId) ?? []);
+    if (!lines.length) return { count: seasons.length, seasons, record: null };
+    const t = lines.reduce((a, l) => ({ AB: a.AB + l.AB, H: a.H + l.H, HR: a.HR + l.HR, RBI: a.RBI + l.RBI, OUTS: a.OUTS + l.OUTS, PR: a.PR + l.PR, PK: a.PK + l.PK }), { AB: 0, H: 0, HR: 0, RBI: 0, OUTS: 0, PR: 0, PK: 0 });
+    const parts = [`${lines.length}경기`];
+    if (t.AB > 0) parts.push(`타율 ${(t.H / t.AB).toFixed(3).replace(/^0/, '')}(${t.AB}타수 ${t.H}안타) ${t.HR}홈런 ${t.RBI}타점`);
+    if (t.OUTS > 0) parts.push(`${Math.floor(t.OUTS / 3)}${t.OUTS % 3 ? `.${t.OUTS % 3}` : ''}이닝 ${t.PR}실점 ${t.PK}탈삼진`);
+    return { count: seasons.length, seasons, record: parts.join(' · ') };
+  }
+
+  allStarCampaign(): { message: string; view: AllStarView } {
+    const meta = this.meta();
+    const message = this.allStar.campaign(meta, weekIdFor(meta.currentDate));
+    return { message, view: this.allStarView() };
+  }
+
+  allStarApply(): { message: string; view: AllStarView } {
+    const meta = this.meta();
+    const message = this.allStar.apply(meta, weekIdFor(meta.currentDate));
+    return { message, view: this.allStarView() };
+  }
+
   awardsList(season?: number): AwardsView {
     const meta = this.meta();
-    const seasons = [...new Set(this.repo.getAwards().map((a) => a.season))].sort((a, b) => b - a);
+    const allStars = this.repo.allStarSeasons();
+    const seasons = [...new Set([...this.repo.getAwards().map((a) => a.season), ...allStars.filter((r) => r.picks.length).map((r) => r.season)])].sort((a, b) => b - a);
     const s = season !== undefined && seasons.includes(season) ? season : (seasons[0] ?? null);
     if (s === null) return { seasons, season: null, items: [] };
     const players = new Map(this.repo.getPlayers().map((p) => [p.id, p]));
@@ -1465,6 +1543,18 @@ export class GameService {
       detail: a.detail,
       mine: a.clubId === meta.userClubId,
     }));
+    // 8e(D-189 (12)): 리그 시상 기록에 올스타(미스터 올스타·홈런 레이스 우승·명단)를 함께 보여준다(시상 표와는 분리)
+    const as = allStars.find((r) => r.season === s);
+    if (as) {
+      const clubOf = (id: number) => as.picks.find((p) => p.playerId === id)?.clubId ?? players.get(id)?.clubId ?? null;
+      const it = (award: string, slot: string, title: string, id: number, date: string, detail: string) => {
+        const c = clubOf(id);
+        items.push({ season: s, award, slot, title, group: '올스타전', playerId: id, name: players.get(id)?.name ?? `#${id}`, club: c !== null && this.clubMap.has(c) ? this.ref(c) : null, date, detail, mine: c === meta.userClubId });
+      };
+      if (as.game) for (const id of as.game.mvp) it('allstar_mvp', '', '미스터 올스타', id, as.game.date, `드림 ${as.game.score.dream} : ${as.game.score.nanum} 나눔 · ${lineText(as.game.lines.find((l) => l.playerId === id)!)}`);
+      if (as.hrRace) it('hr_race', '', '홈런 레이스 우승', as.hrRace.champion, as.hrRace.date, '');
+      for (const p of as.picks) it('allstar', p.slot, `올스타 ${TEAM_LABEL[p.team]} ${p.kind === 'best' ? '베스트 12' : '감독 추천'}(${SLOT_LABEL[p.slot] ?? p.slot})`, p.playerId, p.date, `${p.votes !== null ? `${p.votes.toLocaleString('ko-KR')}표` : ''}${p.status === 'injured' ? ' · 부상으로 출전 못 함' : p.status === 'rested' ? ' · 선발 휴식' : ''}`);
+    }
     return { seasons, season: s, items };
   }
 
@@ -2548,6 +2638,7 @@ export class GameService {
       fielding,
       honors: p.honors ?? [],
       awards: this.repo.getAwards({ playerId: p.id }).map((a) => ({ season: a.season, title: awardTitle(a.award, a.slot) })),
+      allStar: this.allStarCareer(p.id),
       draftInfo: p.draft ? `${p.draft.year} 신인 드래프트 ${p.draft.round}라운드 ${p.draft.pick}순위 (${p.draft.school})` : null,
       retired: p.retired ? `${p.retired.season} 시즌 뒤 은퇴 (${p.retired.reason})` : null,
       health: this.health.view(meta, p, own),

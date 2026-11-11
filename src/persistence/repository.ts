@@ -1,5 +1,5 @@
 import type { ScoutingSnapshot } from '../engine/scouting';
-import type { AwardRecord, PlayerNote } from '../game/ports';
+import type { AllStarSeason, AwardRecord, PlayerNote } from '../game/ports';
 // GameRepository의 SQLite 구현 (node:sqlite).
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type { GameDate } from '../engine/calendar';
@@ -502,6 +502,20 @@ export class SqliteGameRepository implements GameRepository {
          FROM plate_appearances WHERE stage = 'regular' AND season = ? AND batting_club = ?${this.idFilter('batter_id', playerIds)} GROUP BY game_id, batter_id ORDER BY date, game_id`,
     ).all(season, clubId) as Row[];
     return rows.map((r) => ({ gameId: num(r.g), date: String(r.date), batterId: num(r.id), H: num(r.H), OB: num(r.OB) }));
+  }
+
+  /** 8e 올스타 기록(D-189 (9)): 정규 기록과 분리된 표 */
+  getAllStar(season: number): AllStarSeason | null {
+    const r = this.stmt('SELECT data FROM allstar WHERE season = ?').get(season) as Row | undefined;
+    return r ? (JSON.parse(String(r.data)) as AllStarSeason) : null;
+  }
+
+  putAllStar(row: AllStarSeason): void {
+    this.stmt('INSERT INTO allstar (season, data) VALUES (?, ?) ON CONFLICT(season) DO UPDATE SET data = excluded.data').run(row.season, JSON.stringify(row));
+  }
+
+  allStarSeasons(): AllStarSeason[] {
+    return (this.stmt('SELECT data FROM allstar ORDER BY season').all() as Row[]).map((r) => JSON.parse(String(r.data)) as AllStarSeason);
   }
 
   insertAwards(rows: AwardRecord[]): void {

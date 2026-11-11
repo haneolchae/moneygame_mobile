@@ -2,7 +2,8 @@
 // 모든 구단이 같은 수요·입고·판매 규칙을 쓴다. 발주 지급과 판매 수입은 현금 장부에, 매출원가·재고는 굿즈 상태에 남긴다.
 import { addDays, weekday, type GameDate } from '../engine/calendar';
 import { brandsFor } from '../engine/brands';
-import { MERCH as M, SPONSOR } from '../engine/config';
+import { ALLSTAR, MERCH as M, SPONSOR } from '../engine/config';
+import { allStarWindow } from '../engine/allStar';
 import { inflate, type LedgerEntry } from '../engine/finance';
 import { baselineWeekly, gameDemand, newMerch, receive, reorderQty, rollWeek, sell, SKUS, unitCost, unitPrice, VENDOR_KINDS, type MerchState, type Sku, type Vendor, type VendorKind } from '../engine/merch';
 import { EOK } from '../engine/money';
@@ -70,6 +71,9 @@ export class MerchOps {
     const inflation = this.inflation(meta);
     const all: Record<string, MerchState> = {};
     const blocked: string[] = [];
+    const win = allStarWindow(meta.season);
+    const asRow = date >= win.from && date <= win.to ? this.repo.getAllStar(meta.season) : null;
+    const allStarFactor = (clubId: number) => (asRow ? 1 + ALLSTAR.merchPerPick * asRow.picks.filter((p) => p.clubId === clubId).length : 0);
     for (const club of this.clubs.values()) {
       const s = this.stateOf(meta, club.id);
       // 새 시즌: 스토브리그에 고른 업체(없으면 국내 전문 제작사)로 바꾼다
@@ -85,8 +89,11 @@ export class MerchOps {
         let revenue = 0;
         for (const sku of SKUS) {
           let demand: number;
-          if (attendance !== undefined) {
-            demand = gameDemand(meta.seed, `${date}-${club.id}`, sku, attendance, s.vendor.kind, sat);
+          // 8e-2(D-190 (8)): 올스타 유니폼은 판매 기간에만, 그 구단 선정 인원에 비례
+          const factor = sku === 'allstar' ? allStarFactor(club.id) : 1;
+          if (factor === 0) demand = 0;
+          else if (attendance !== undefined) {
+            demand = Math.round(gameDemand(meta.seed, `${date}-${club.id}`, sku, attendance, s.vendor.kind, sat) * factor);
             s.lastDemand[sku] = demand;
           } else demand = Math.round(s.lastDemand[sku] * M.onlineShare);
           revenue += sell(s, sku, demand, unitPrice(sku, inflation), meta.season);
@@ -244,6 +251,7 @@ export class MerchOps {
           revenueWon: x?.revenueWon ?? 0,
           cogsWon: x?.cogsWon ?? 0,
           lastWeekSold: s.recent[s.recent.length - 1]?.[sku] ?? 0,
+          note: sku === 'allstar' ? `판매 기간 ${allStarWindow(meta.season).from.slice(5)}~${allStarWindow(meta.season).to.slice(5)}(올스타전 ±${ALLSTAR.merchWindowDays}일), 자동 재주문 없음` : null,
         };
       }),
       inventoryWon: SKUS.reduce((a, sku) => a + s.stock[sku].qty * s.stock[sku].avgCostWon, 0),

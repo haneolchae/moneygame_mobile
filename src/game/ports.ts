@@ -1,4 +1,5 @@
 import type { ScoutingSnapshot } from '../engine/scouting';
+import type { AllStarLine, AllStarTeam, HrMatch } from '../engine/allStar';
 // 게임 진행 계층이 저장 계층에 요구하는 기능. SQLite 구현은 persistence에 있다.
 // 이 인터페이스 덕분에 게임 진행 로직은 저장 방식(SQLite 드라이버 등)을 모른다.
 import type { ClubStance } from '../engine/aiClub';
@@ -124,6 +125,9 @@ export interface GameMeta {
   supportBp?: Record<string, Record<string, number>>;
   /** 6a 관중 집계(D-141): 시즌 → 구단 ID → 홈경기·관중·수입·승패 */
   attendance?: Record<string, Record<string, AttendanceTotals>>;
+  /** 8e-2(D-190) 우리 구단 올스타전 유치 신청(대상 시즌), 투표 캠페인 실행일(시즌) */
+  allStarApply?: Record<string, true>;
+  allStarCampaign?: Record<string, GameDate>;
   /** 우리 구단 티켓 가격 정책 */
   ticketPolicy?: TicketPolicy;
   /** 구단 시설 단계·공사: 구단 ID → 시설 */
@@ -166,6 +170,48 @@ export interface TradeTalk {
   log: TradeLogEntry[];
   /** 상대 역제안(그 주 안에서만 유효) */
   counter: { pkg: TradePackage; weekId: string } | null;
+}
+
+/** 8e 올스타 선정 한 명(D-189). status: ok = 출전 대상, injured = 부상으로 대체됨(선정 이력 유지), rested = 선발 휴식(출전 안 함) */
+export interface AllStarPick {
+  team: AllStarTeam;
+  kind: 'best' | 'rec';
+  /** 베스트 12 자리(SP·MRP·CL·C·1B·2B·3B·SS·OF·DH) 또는 추천 구분(SP·RP·F) */
+  slot: string;
+  playerId: PlayerId;
+  clubId: ClubId;
+  votes: number | null;
+  perf: number;
+  status: 'ok' | 'injured' | 'rested';
+  /** 부상 대체로 들어온 선수면 원래 선수 */
+  replaces?: PlayerId;
+  date: GameDate;
+}
+
+/** 팬 투표 자리별 상위(득표 순) */
+export interface AllStarBallotRow {
+  team: AllStarTeam;
+  slot: string;
+  playerId: PlayerId;
+  clubId: ClubId;
+  votes: number;
+  perf: number;
+}
+
+/** 8e 시즌별 올스타 기록(정규 기록과 분리된 표 한 행) */
+export interface AllStarSeason {
+  season: number;
+  host: ClubId;
+  hostBy: 'rotation' | 'application';
+  applicants: ClubId[];
+  managers: Record<AllStarTeam, ClubId>;
+  /** 8e-2 투표 캠페인 실행일(우리 구단) */
+  campaign?: { date: GameDate; clubId: ClubId };
+  interim: Array<{ date: GameDate; rows: AllStarBallotRow[] }>;
+  ballot: AllStarBallotRow[];
+  picks: AllStarPick[];
+  hrRace?: { date: GameDate; matches: HrMatch[]; champion: PlayerId; entrants: PlayerId[] };
+  game?: { date: GameDate; home: AllStarTeam; score: Record<AllStarTeam, number>; line: Record<AllStarTeam, number[]>; innings: number; lines: AllStarLine[]; mvp: PlayerId[]; mvpScore: number };
 }
 
 /** 8a 리그 시상 결과 한 줄(D-180). 대상은 선수·감독(직원)·구단 중 하나 */
@@ -626,6 +672,10 @@ export interface GameRepository {
   awardFielding(season: number): { fielding: Map<PlayerId, { PO: number; A: number; E: number }>; catcher: Map<PlayerId, { SB: number; CS: number; PB: number }> };
   positionOutChecks(season: number): Array<{ gameId: number; clubId: ClubId; fieldOuts: number; dhOuts: number; defOuts: number }>;
   insertAwards(rows: AwardRecord[]): void;
+  /** 8e 올스타 기록(시즌별 한 행) */
+  getAllStar(season: number): AllStarSeason | null;
+  putAllStar(row: AllStarSeason): void;
+  allStarSeasons(): AllStarSeason[];
   /** 8b 업적(D-182) */
   apWeeks(): ApWeek[];
   clubErrors(season: number): Map<ClubId, number>;

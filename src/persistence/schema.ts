@@ -13,7 +13,7 @@ import type { DatabaseSync } from 'node:sqlite';
 // 12: 4c-1 승부처 타석 표시(plate_appearances.clutch, D-167). 타석별 투구 수는 이미 있어 경기별 투수·타자 투구 수는 그 값에서 계산한다.
 // 13: 4c-2a 주루 사건 표(plays), 타석의 고의사구·번트 표시, 시즌 합계 도루·도루 실패·폭투·보크·포일(D-170).
 // 14: 8a 선수·포지션별 수비 아웃(field_positions, 시즌 압축 표), 투수별 홀드·블론세이브·퀄리티 스타트(pitcher_flags), 리그 시상(awards)(D-180).
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 const SCHEMA_V3 = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -374,6 +374,8 @@ export function createSchema(db: DatabaseSync): void {
         PRIMARY KEY (season, award, slot, subject)
       ) WITHOUT ROWID;
       CREATE INDEX awards_player ON awards (player_id);`);
+    // 8e(D-189 (9)): 올스타 기록은 시즌별 한 행(정규 기록 표와 분리)
+    db.exec('CREATE TABLE allstar (season INTEGER PRIMARY KEY, data TEXT NOT NULL);');
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     db.exec('COMMIT');
   } catch (e) {

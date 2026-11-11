@@ -245,6 +245,8 @@ export interface PlayerDetailView extends PlayerListItem {
   honors: string[];
   /** 8a 리그 수상 이력(시즌·상) */
   awards: Array<{ season: number; title: string }>;
+  /** 8e 올스타 선정 횟수·시즌, 통산 올스타전 기록(정규 기록과 별도) */
+  allStar: { count: number; seasons: number[]; record: string | null };
   draftInfo: string | null;
   retired: string | null;
   /** 우리 구단 선수: 현재 능력치를 오차 없이 표시(D-078) */
@@ -694,7 +696,7 @@ export interface BusinessView {
     targetWeeks: number;
     targetWeeksRange: [number, number];
     canOrder: boolean;
-    skus: Array<{ sku: 'uniform' | 'cap' | 'cheer'; label: string; priceWon: number; unitCostWon: number; minOrder: number; stock: number; avgCostWon: number; onOrder: number; nextArrival: string | null; sold: number; revenueWon: number; cogsWon: number; lastWeekSold: number }>;
+    skus: Array<{ sku: 'uniform' | 'cap' | 'cheer' | 'allstar'; note: string | null; label: string; priceWon: number; unitCostWon: number; minOrder: number; stock: number; avgCostWon: number; onOrder: number; nextArrival: string | null; sold: number; revenueWon: number; cogsWon: number; lastWeekSold: number }>;
     inventoryWon: number;
     season: number;
   };
@@ -789,6 +791,38 @@ export interface AwardsView {
   seasons: number[];
   season: number | null;
   items: AwardItemView[];
+}
+
+// ───────── 8e 올스타전 (D-189·D-190) ─────────
+
+export interface AllStarPlayerView {
+  playerId: number;
+  name: string;
+  club: ClubRef | null;
+  team: 'dream' | 'nanum';
+  kind: 'best' | 'rec';
+  slotLabel: string;
+  votes: number | null;
+  status: 'ok' | 'injured' | 'rested';
+  replacesName: string | null;
+  mine: boolean;
+}
+
+export interface AllStarView {
+  season: number;
+  seasons: number[];
+  dates: { voteStart: string; close: string; hrRace: string; game: string };
+  stage: 'before' | 'voting' | 'announced' | 'done';
+  host: { club: ClubRef; by: 'rotation' | 'application'; applicants: string[] } | null;
+  managers: { dream: ClubRef; nanum: ClubRef } | null;
+  /** 가장 최근 집계(중간 또는 최종): 자리별 상위 */
+  ballot: { date: string; final: boolean; rows: Array<{ team: 'dream' | 'nanum'; slotLabel: string; rank: number; playerId: number; name: string; club: ClubRef | null; votes: number; mine: boolean }> } | null;
+  roster: AllStarPlayerView[];
+  hrRace: { matches: Array<{ round: string; a: string; b: string; hrA: number; hrB: number; tiebreak: string; winner: string; mine: boolean }>; champion: string } | null;
+  game: { home: 'dream' | 'nanum'; score: { dream: number; nanum: number }; line: { dream: number[]; nanum: number[] }; mvp: string[]; lines: Array<{ playerId: number; name: string; team: 'dream' | 'nanum'; club: ClubRef | null; text: string; mine: boolean }> } | null;
+  campaign: { reason: string | null; costWon: number; ap: number; done: string | null; bonusVotes: number };
+  hosting: { season: number; reason: string | null; ap: number; applied: boolean };
+  history: Array<{ season: number; host: string; score: string; mvp: string; hrChampion: string; ours: number }>;
 }
 
 // ───────── 6e 예산 배분·특별 운영회의 (D-176·D-177) ─────────
@@ -1168,7 +1202,7 @@ export interface RequestMap {
   'business.startCampaign': { payload: { kind: CampaignKindView }; result: { message: string; view: BusinessView } };
   'business.signSponsor': { payload: { offerId: string }; result: { message: string; view: BusinessView } };
   'business.chooseVendor': { payload: { kind: 'budget' | 'standard' | 'brand'; brandId?: string }; result: { message: string; view: BusinessView } };
-  'business.orderMerch': { payload: { sku: 'uniform' | 'cap' | 'cheer'; qty: number }; result: { message: string; view: BusinessView } };
+  'business.orderMerch': { payload: { sku: 'uniform' | 'cap' | 'cheer' | 'allstar'; qty: number }; result: { message: string; view: BusinessView } };
   'business.setMerchPolicy': { payload: { auto: boolean; targetWeeks: number }; result: { message: string; view: BusinessView } };
   'business.cancelFacility': { payload: { kind: FacilityKindView }; result: { message: string; view: BusinessView } };
   'trade.view': { payload: { clubId: number }; result: TradeView };
@@ -1184,6 +1218,9 @@ export interface RequestMap {
   'budget.set': { payload: BudgetPlanInput; result: { message: string; apCharged: number; view: BudgetView } };
   'meeting.convene': { payload: void; result: { message: string; view: BudgetView } };
   'awards.list': { payload: { season?: number }; result: AwardsView };
+  'allStar.view': { payload: { season?: number }; result: AllStarView };
+  'allStar.campaign': { payload: Record<string, never>; result: { message: string; view: AllStarView } };
+  'allStar.apply': { payload: Record<string, never>; result: { message: string; view: AllStarView } };
   'trade.respondOffer': { payload: { offerId: number; accept: boolean; commandId: string }; result: TradeOfferResultView };
   'owner.career': { payload: void; result: CareerView };
   'owner.acceptJob': { payload: { clubId: number }; result: DashboardView };
@@ -1271,6 +1308,9 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'budget.set',
   'meeting.convene',
   'awards.list',
+  'allStar.view',
+  'allStar.campaign',
+  'allStar.apply',
   'trade.respondOffer',
   'owner.career',
   'owner.acceptJob',

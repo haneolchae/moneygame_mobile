@@ -215,6 +215,8 @@ export interface GameOptions {
   tactics?: 'on' | 'off';
   /** 4c-3: 구단주 승부처 참여(D-174) */
   owner?: OwnerControl;
+  /** 8e(D-189 (8)): 올스타 방식 — 투수 1명 최대 아웃, 이 회부터 선발 야수 교체 */
+  allStar?: { maxOuts: number; regularsOutFrom: number };
 }
 
 /** 4c-3 구단주 지시(자기 쪽만): 수비면 투수·고의사구·수비 위치·대수비, 공격이면 대타·대주자·작전 */
@@ -535,6 +537,8 @@ function decidePitcher(g: GameState, d: DecisionPoint): PlayerId | null {
   } else {
     needChange = s.pitches * staminaFactor(t.manager) >= SIM.relieverPitchLimit || (d.atInningStart && s.outs >= 3);
   }
+  // 8e: 올스타 방식은 투수 1명이 최대 아웃을 넘기지 않는다
+  if (g.opts.allStar && s.outs >= g.opts.allStar.maxOuts) needChange = true;
   const saveSituation = d.atInningStart && d.inning >= 9 && lead >= 1 && lead <= SIM.closerMaxLead;
   if (saveSituation && closerAvailable) needChange = true;
   if (!needChange) return null;
@@ -559,8 +563,20 @@ export function managerDecide(g: GameState, d: DecisionPoint): Directive {
   const offDiff = -defLead;
   dir.pitcherId = decidePitcher(g, d);
   const pitcher = dir.pitcherId ? [...def.setup.bullpen, ...(def.setup.closer ? [def.setup.closer] : [])].find((p) => p.id === dir.pitcherId)! : def.stint.pitcher;
-  // 대수비: 반 이닝 시작, 8회 이후 1~3점 앞설 때 수비 지수가 크게 나은 벤치 선수 한 명
-  if (d.atInningStart && d.inning >= T.defSub.minInning && defLead >= T.defSub.minLead && defLead <= T.defSub.maxLead) {
+  const allStar = g.opts.allStar;
+  const isRegular = (t: TeamState, id: PlayerId) => t.setup.lineup.some((s) => s.player.id === id);
+  if (allStar && d.atInningStart && d.inning >= allStar.regularsOutFrom) {
+    // 8e(D-189 (8)): 올스타 방식은 선발 야수를 같은 포지션을 볼 수 있는 벤치 야수로 바꾼다(수비 지수 순)
+    const used = new Set<PlayerId>();
+    for (const spot of def.lineup) {
+      if (spot.position === 'DH' || !isRegular(def, spot.player.id)) continue;
+      const pos = spot.position as FieldPos;
+      const c = def.bench.filter((p) => !def.removed.has(p.id) && !used.has(p.id) && canPlay(p, spot.position)).sort((a, b) => defIndex(b, pos) - defIndex(a, pos) || a.id - b.id)[0];
+      if (!c) continue;
+      used.add(c.id);
+      dir.defensiveSubs.push({ position: pos, playerId: c.id });
+    }
+  } else if (d.atInningStart && d.inning >= T.defSub.minInning && defLead >= T.defSub.minLead && defLead <= T.defSub.maxLead) {
     let best: { position: FieldPos; playerId: PlayerId; gain: number } | null = null;
     for (const spot of def.lineup) {
       if (spot.position === 'DH') continue;
@@ -579,7 +595,16 @@ export function managerDecide(g: GameState, d: DecisionPoint): Directive {
   const spot = off.lineup[spotIdx]!;
   const platoonAdj = (p: PlayerTruth) => (battingSide(p, pitcher) === pitcher.throws ? -T.pinchHit.platoon : T.pinchHit.platoon);
   let batter = spot.player;
-  if (d.inning >= T.pinchHit.minInning && spotIdx >= T.pinchHit.protectTop) {
+  if (allStar && d.inning >= allStar.regularsOutFrom) {
+    // 8e: 올스타 방식은 선발 타자 차례에 남은 벤치 야수가 대타로 나선다(타격 지수 순)
+    if (isRegular(off, batter.id)) {
+      const c = off.bench.filter((p) => !off.removed.has(p.id) && canPlay(p, spot.position)).sort((a, b) => hitIndex(b.batting.contact, b.batting.power, b.batting.eye) - hitIndex(a.batting.contact, a.batting.power, a.batting.eye) || a.id - b.id)[0];
+      if (c) {
+        dir.pinchHitter = c.id;
+        batter = c;
+      }
+    }
+  } else if (d.inning >= T.pinchHit.minInning && spotIdx >= T.pinchHit.protectTop) {
     const cur = hitIndex(batter.batting.contact, batter.batting.power, batter.batting.eye) + platoonAdj(batter);
     let best: PlayerTruth | null = null;
     let bestV = cur + T.pinchHit.gap;

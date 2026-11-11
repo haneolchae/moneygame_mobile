@@ -215,7 +215,7 @@ export function Business({ nav }: { nav: Nav }) {
           <tbody>
             {v.merch.skus.map((k) => (
               <tr key={k.sku}>
-                <td>{k.label}</td>
+                <td title={k.note ?? undefined}>{k.label}{k.note && <div className="muted small">{k.note}</div>}</td>
                 <td className="num">{k.priceWon.toLocaleString('ko-KR')}원</td>
                 <td className="num">{k.unitCostWon.toLocaleString('ko-KR')}원</td>
                 <td className="num">{k.stock === 0 && k.sold > 0 ? <span className="reason">품절</span> : k.stock.toLocaleString('ko-KR')}</td>

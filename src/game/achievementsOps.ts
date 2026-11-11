@@ -61,6 +61,8 @@ export interface OpsCtx {
   homeGame: boolean;
   /** 장부 시즌이 막 끝났으면 그 시즌 */
   financeClosed: number | null;
+  /** 8e: 올스타 발표일·올스타전 날 */
+  allStarDay: boolean;
 }
 
 const set = (arr: number[], v: number) => (arr.includes(v) ? arr : [...arr, v]);
@@ -303,6 +305,26 @@ export function judgeOps(c: OpsCtx): void {
     judge('L_noParent', memo.opProfit.length, (l) => `${y} 모기업 지원 없이 흑자 ${l}시즌`);
     const since = Math.max(c.tenureFirst, (F().emergencyUsedSeason ?? -1) + 1);
     judge('L_noEmergency', y - since + 1, (l) => `${y} 긴급 지원 없이 ${l}시즌`);
+  }
+
+  // ───── 8e 올스타(발표일·올스타전 날, D-189 (13)·D-190) ─────
+  if (c.allStarDay) {
+    const rows = repo.allStarSeasons();
+    const mine = rows.flatMap((r) => r.picks.filter((p) => p.clubId === club).map((p) => ({ ...p, season: r.season })));
+    const ours = (r: (typeof rows)[number], id: number) => r.picks.some((p) => p.playerId === id && p.clubId === club);
+    const voteWins = (p: (typeof mine)[number]) => p.kind === 'best' && p.replaces === undefined;
+    judge('O_allstar', mine.length, (l) => `${date} 올스타 선정 ${l}명`);
+    judge('O_allstarSeason', mine.filter((p) => p.season === season).length, (l) => `${season} 올스타 ${l}명`);
+    judge('O_best12', mine.filter(voteWins).length, (l) => `${date} 베스트 12 ${l}명`);
+    const topVote = rows.filter((r) => r.ballot.length && [...r.ballot].sort((a, b) => b.votes - a.votes || a.playerId - b.playerId)[0]!.clubId === club).length;
+    judge('O_topVote', topVote, (l) => `${date} 올스타 최다 득표 ${l}회`);
+    judge('O_allstarRun', longestRun(mine, (p) => p.season), (l) => `${date} 같은 선수 올스타 ${l}연속`);
+    judge('O_mrAllstar', rows.reduce((a, r) => a + (r.game?.mvp.filter((id) => ours(r, id)).length ?? 0), 0), (l) => `${date} 미스터 올스타 ${l}회`);
+    judge('O_hrRace', rows.filter((r) => r.hrRace && ours(r, r.hrRace.champion)).length, (l) => `${date} 홈런 레이스 우승 ${l}회`);
+    judge('O_allstarHr', rows.reduce((a, r) => a + (r.game?.lines.filter((x) => ours(r, x.playerId)).reduce((s, x) => s + x.HR, 0) ?? 0), 0), (l) => `${date} 올스타전 홈런 ${l}개`);
+    judge('O_allstarHome', rows.filter((r) => r.game && r.host === club).length, (l) => `${date} 홈구장 올스타전 ${l}회`);
+    judge('M2_allstarHost', rows.filter((r) => r.game && r.host === club && r.hostBy === 'application').length, (l) => `${date} 올스타전 유치 ${l}회`);
+    judge('M2_allstarVote', rows.filter((r) => r.campaign?.clubId === club).reduce((a, r) => a + r.picks.filter((p) => p.clubId === club && p.kind === 'best' && p.replaces === undefined).length, 0), (l) => `${date} 캠페인 시즌 베스트 12 ${l}명`);
   }
 
   // ───── 수상(월요일·KBO 시상식 발표일) ─────

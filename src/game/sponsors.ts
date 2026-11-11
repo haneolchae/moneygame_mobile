@@ -156,11 +156,13 @@ export class SponsorOps {
     const sponsors: Record<string, SponsorContract[]> = {};
     const totals = { ...(meta.sponsorTotals?.[String(season)] ?? {}) };
     const lines: string[] = [];
+    // 8e-2: 올스타 인센티브 정산 재료
+    const allStar = this.repo.getAllStar(season);
     for (const club of this.clubs.values()) {
       const id = String(club.id);
       const all = this.contractsOf(meta, club.id);
       const t = att[id];
-      const facts = { postseason: seeds.includes(club.id), rank: order.indexOf(club.id) + 1, occupancy: t && t.games > 0 ? t.total / (t.games * club.stadiumCapacity) : 0, satisfaction: this.business.fanOf(meta, club.id).satisfaction, campaigns: meta.campaignCounts?.[String(season)]?.[id] ?? 0 };
+      const facts = { postseason: seeds.includes(club.id), rank: order.indexOf(club.id) + 1, occupancy: t && t.games > 0 ? t.total / (t.games * club.stadiumCapacity) : 0, satisfaction: this.business.fanOf(meta, club.id).satisfaction, campaigns: meta.campaignCounts?.[String(season)]?.[id] ?? 0, allStars: allStar?.picks.filter((p) => p.clubId === club.id).length ?? 0, mrAllstar: !!allStar?.game?.mvp.some((pid) => allStar.picks.some((p) => p.playerId === pid && p.clubId === club.id)) };
       for (const c of all.filter((x) => x.season === season)) {
         const r = settle(c, facts);
         if (r.incentiveWon) ledger.push({ clubId: club.id, date, category: 'sponsorship', amount: r.incentiveWon, memo: `${c.brand} 인센티브(${S.incentives[c.incentive.kind]})` });

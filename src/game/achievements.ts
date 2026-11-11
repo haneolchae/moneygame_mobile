@@ -8,6 +8,7 @@ import { seasonKeyDates } from '../engine/schedule';
 import { computeStandings } from '../engine/standings';
 import { battingRates, pitchingRates, type BattingTotals, type PitchingTotals } from '../engine/stats';
 import type { ClubId, PlayerTruth } from '../engine/types';
+import { allStarDates } from '../engine/allStar';
 import { EOK } from '../engine/money';
 import { clubHistory } from '../engine/data/history';
 import { TEAMS } from '../engine/staff';
@@ -243,8 +244,8 @@ export const SERIES: readonly SeriesDef[] = [
   one('M2_policy', 'M', '일관된 정책', 'once', 3, '팀 정책 변경 없이 3시즌', { inactive: '정책 변경 이력 없음' }),
   s('M2_budget', 'M', '예산 안에서 시즌 완주', 'cumulative', [1, 3, 5], '정규시즌 마지막 날 재량 지출·연봉 총액이 예산 한도 안인 시즌'),
   s('M2_capRaise', 'M', '샐러리캡 증액 승인', 'cumulative', [1, 3], '샐러리캡 증액 승인(회)', { inactive: '샐러리캡 증액 기능 없음' }),
-  s('M2_allstarHost', 'M', '올스타전 유치', 'cumulative', [1, 3], '올스타전 유치 성공(회)', { inactive: '올스타전(8e) 전' }),
-  s('M2_allstarVote', 'M', '투표 캠페인 베스트 12', 'cumulative', [1, 5], '올스타 투표 캠페인으로 베스트 12(명)', { inactive: '올스타전(8e) 전' }),
+  s('M2_allstarHost', 'M', '올스타전 유치', 'cumulative', [1, 3], '올스타전 유치 성공(회)'),
+  s('M2_allstarVote', 'M', '투표 캠페인 베스트 12', 'cumulative', [1, 5], '올스타 투표 캠페인으로 베스트 12(명)'),
   s('M2_loyal', 'M', '의리', 'cumulative', [1, 3], '다른 구단 영입 제안 거절(회)', { inactive: '재임 중 영입 제안 기능 없음(해임 뒤 제안만)' }),
   one('M2_rebuildTitle', 'M', '리빌딩 끝 우승', 'once', 5, '리빌딩 선언 뒤 5시즌 안에 한국시리즈 우승'),
   one('M2_dynasty2', 'M', '두 번째 왕조', 'once', 4, '우승 간격 5시즌 이상으로 다시 우승'),
@@ -293,15 +294,15 @@ export const SERIES: readonly SeriesDef[] = [
   s('O_milestone', 'O', '기록 달성상', 'cumulative', [1, 5, 10], '우리 선수 기록 달성상(회)'),
   s('O_popular', 'O', '인기상', 'cumulative', [1, 3], '인기상(회)', { inactive: '인기 지표 구현 전' }),
   one('O_grand', 'O', '그랜드슬램', 'season', 5, '한 시즌 MVP·최우수 투수·신인왕·감독상·올해의 프런트 모두 우리 구단'),
-  s('O_allstar', 'O', '올스타 선정', 'cumulative', [1, 5, 10, 25], '올스타 선정(명)', { inactive: '올스타전(8e) 전' }),
-  s('O_allstarSeason', 'O', '한 시즌 올스타', 'season', [3, 5, 7], '한 시즌 올스타 선정(명)', { inactive: '올스타전(8e) 전' }),
-  s('O_best12', 'O', '베스트 12 투표 1위', 'cumulative', [1, 5, 10], '베스트 12 포지션 1위(명)', { inactive: '올스타전(8e) 전' }),
-  s('O_topVote', 'O', '올스타 최다 득표', 'cumulative', [1, 3], '올스타 팬 투표 최다 득표(회)', { inactive: '올스타전(8e) 전' }),
-  s('O_mrAllstar', 'O', '미스터 올스타', 'cumulative', [1, 3], '미스터 올스타(회)', { inactive: '올스타전(8e) 전' }),
-  s('O_hrRace', 'O', '홈런 레이스 우승', 'cumulative', [1, 3], '홈런 레이스 우승(회)', { inactive: '올스타전(8e) 전' }),
-  s('O_allstarRun', 'O', '올스타 연속 선정', 'once', [5, 10], '같은 선수 올스타 연속 선정(회)', { inactive: '올스타전(8e) 전' }),
-  s('O_allstarHr', 'O', '올스타전 홈런', 'cumulative', [1, 5], '올스타전 우리 선수 홈런(개)', { inactive: '올스타전(8e) 전' }),
-  s('O_allstarHome', 'O', '올스타전 홈구장 개최', 'cumulative', [1, 3], '올스타전 홈구장 개최(회)', { inactive: '올스타전(8e) 전' }),
+  s('O_allstar', 'O', '올스타 선정', 'cumulative', [1, 5, 10, 25], '올스타 선정(명)'),
+  s('O_allstarSeason', 'O', '한 시즌 올스타', 'season', [3, 5, 7], '한 시즌 올스타 선정(명)'),
+  s('O_best12', 'O', '베스트 12 투표 1위', 'cumulative', [1, 5, 10], '베스트 12 포지션 1위(명)'),
+  s('O_topVote', 'O', '올스타 최다 득표', 'cumulative', [1, 3], '올스타 팬 투표 최다 득표(회)'),
+  s('O_mrAllstar', 'O', '미스터 올스타', 'cumulative', [1, 3], '미스터 올스타(회)'),
+  s('O_hrRace', 'O', '홈런 레이스 우승', 'cumulative', [1, 3], '홈런 레이스 우승(회)'),
+  s('O_allstarRun', 'O', '올스타 연속 선정', 'once', [5, 10], '같은 선수 올스타 연속 선정(회)'),
+  s('O_allstarHr', 'O', '올스타전 홈런', 'cumulative', [1, 5], '올스타전 우리 선수 홈런(개)'),
+  s('O_allstarHome', 'O', '올스타전 홈구장 개최', 'cumulative', [1, 3], '올스타전 홈구장 개최(회)'),
   // ───── 8d(D-186) P 진기록(숨김, 1단계 경험치 기본) ─────
   s('P_bigInning', 'P', '빅이닝', 'once', [7, 10, 13], '한 이닝 우리 팀 득점', { tiers: [1, 1, 1] }),
   one('P_batAround', 'P', '타자 일순', 'once', 1, '한 이닝 우리 타자 10명 이상 타석'),
@@ -727,6 +728,8 @@ export class Achievements {
         awardDay: weekday(date) === 1 || date === addDays(meta.kDate, AWARDS.ceremonyAfterK) || date === addDays(freshK, AWARDS.ceremonyAfterK),
         homeGame: ourGames.some((g) => g.home === club),
         financeClosed: freshSeason > season ? season : null,
+        // 8e: 올스타 발표일·올스타전 날
+        allStarDay: meta.mode === 'season' && (date === allStarDates(season).close || date === allStarDates(season).game),
       };
       const memo: AchMemo = { ...newMemo(), ...(this.repo.getMetaValue<AchMemo>('achMemo') ?? {}) };
       const before = JSON.stringify(memo);

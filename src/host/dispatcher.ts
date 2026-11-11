@@ -110,6 +110,12 @@ export class Dispatcher {
         return this.game().setTicketPolicy((payload as RequestMap['business.setTicketPolicy']['payload']).policy) as R;
       case 'business.startFacility':
         return this.game().startFacility((payload as RequestMap['business.startFacility']['payload']).kind) as R;
+      case 'allStar.view':
+        return this.game().allStarView((payload as RequestMap['allStar.view']['payload']).season) as R;
+      case 'allStar.campaign':
+        return this.game().allStarCampaign() as R;
+      case 'allStar.apply':
+        return this.game().allStarApply() as R;
       case 'business.startCampaign':
         return this.game().startCampaign((payload as RequestMap['business.startCampaign']['payload']).kind) as R;
       case 'business.signSponsor':

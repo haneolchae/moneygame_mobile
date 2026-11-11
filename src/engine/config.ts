@@ -262,11 +262,13 @@ export const MERCH = {
     uniform: { label: '유니폼', priceWon: 99_000, buyRate: 0.008 },
     cap: { label: '모자', priceWon: 35_000, buyRate: 0.015 },
     cheer: { label: '응원 용품', priceWon: 12_000, buyRate: 0.03 },
+    /** 8e-2(D-190 (8)): 올스타전 ±14일만 판매, 자동 재주문 없음 */
+    allstar: { label: '올스타 유니폼(한정)', priceWon: 120_000, buyRate: 0.003 },
   },
   vendors: {
-    budget: { label: '저가 대량 제작사', costRate: 0.4, demand: 0.85, uniformDemand: 0.85, leadDays: 21, minOrder: { uniform: 500, cap: 1000, cheer: 2000 } },
-    standard: { label: '국내 전문 제작사', costRate: 0.55, demand: 1.0, uniformDemand: 1.0, leadDays: 14, minOrder: { uniform: 100, cap: 200, cheer: 500 } },
-    brand: { label: '스포츠 브랜드 공식 파트너', costRate: 0.65, demand: 1.0, uniformDemand: 1.3, leadDays: 14, minOrder: { uniform: 100, cap: 200, cheer: 500 } },
+    budget: { label: '저가 대량 제작사', costRate: 0.4, demand: 0.85, uniformDemand: 0.85, leadDays: 21, minOrder: { uniform: 500, cap: 1000, cheer: 2000, allstar: 500 } },
+    standard: { label: '국내 전문 제작사', costRate: 0.55, demand: 1.0, uniformDemand: 1.0, leadDays: 14, minOrder: { uniform: 100, cap: 200, cheer: 500, allstar: 100 } },
+    brand: { label: '스포츠 브랜드 공식 파트너', costRate: 0.65, demand: 1.0, uniformDemand: 1.3, leadDays: 14, minOrder: { uniform: 100, cap: 200, cheer: 500, allstar: 100 } },
   },
   /** 브랜드 파트너 후원금(계약 때) × 인지도 배수 */
   partnerFeeWon: 300_000_000,
@@ -311,7 +313,12 @@ export const SPONSOR = {
     top3: '정규시즌 3위 이내',
     occupancy: '시즌 좌석 점유율 75% 이상',
     satisfaction: '시즌 말 팬 만족도 60 이상',
+    /** 8e-2(D-190 (5)) */
+    allstar3: '올스타 3명 이상 선정',
+    mrAllstar: '미스터 올스타 배출',
   },
+  /** 8e-2: 올스타 인센티브 기준 인원 */
+  allStarGoal: 3,
   obligations: {
     none: '의무 없음',
     campaigns: '시즌 중 캠페인 2회 이상(미달 시 보장액의 20% 반환)',
@@ -784,4 +791,60 @@ export const EXHIBITION = {
   startDaysBeforeOpening: 16,
   endDaysBeforeOpening: 4,
   maxInnings: 9,
+} as const;
+
+/** 8e 올스타전(D-189·D-190, 초기안 — 계수는 9a에서 조정) */
+export const ALLSTAR = {
+  /** 개막 주 월요일 + 이 주 수 = 투표 시작(10주차 월요일), 중간 집계 주 수, 마감 주(13주차 일요일) */
+  voteStartWeeks: 9,
+  interimWeeks: 3,
+  /** 자격: 야수 출전 비율, 선발 등판, 구원 등판 */
+  fielderGameShare: 0.6,
+  minStarts: 8,
+  minRelief: 20,
+  /** 투표 점수 = 성적 × perfWeight + 팬 기반 × fanWeight + 편차(±noise) + 캠페인 */
+  perfWeight: 0.7,
+  fanWeight: 0.3,
+  noise: 0.08,
+  /** 득표 수 = 투표 점수 × 이 값(표시용) */
+  voteScale: 1_000_000,
+  /** 감독 추천: 득표가 자리 1위의 이 비율 이상인 2위를 우선 */
+  runnerUpShare: 0.9,
+  recPitchers: { SP: 3, RP: 3 },
+  recFielders: 6,
+  /** 경기: 투수 최대 아웃, 이 회 수비 시작부터 선발 야수 교체, 정규 이닝 */
+  maxOuts: 6,
+  regularsOutFrom: 6,
+  innings: 9,
+  /** 선발이 올스타전 전 이 일수 안에 등판했으면 던지지 않는다 */
+  starterRestDays: 2,
+  /** 미스터 올스타 점수와 편차(±) */
+  mvp: { single: 1, double: 2, triple: 3, hr: 4, rbi: 1, run: 1, sb: 1, scorelessInning: 2, k: 0.5, noise: 1 },
+  /** 홈런 레이스: 팀별 인원, 라운드당 스윙, 스윙 홈런 로짓 가산, 연장 스윙·횟수 */
+  hrRace: { perTeam: 4, swings: 15, logitShift: 2.6, tieSwings: 3, tieRounds: 3 },
+  /** 경기 ID(정규 경기와 겹치지 않는 값) = base + 시즌 */
+  fixtureBase: 900_000,
+  /** 엔진 구단 번호(드림·나눔) */
+  engineClub: { dream: 91, nanum: 92 },
+  /** 8e-2 투표 캠페인: 행동력, 비용(2026 원), 투표 점수 가산 */
+  campaignAp: 2,
+  campaignCostWon: 100_000_000,
+  campaignBonus: 0.05,
+  /** 8e-2 유치 신청: 행동력, 점수 가중치, AI 신청 조건 */
+  applyAp: 2,
+  hostScore: { occupancy: 0.5, stadium: 0.3, capacity: 0.2 },
+  aiApplyMinStadium: 2,
+  aiApplyChance: 0.3,
+  /** 8e-2 개최 효과: 입장 수입 배수(평균 객단가 × 수용 인원 × 배수), 행사 비용(2026 원), 개최 구단 만족도 */
+  hostTicketMultiplier: 2,
+  hostCostWon: 300_000_000,
+  hostSatisfaction: 3,
+  /** 8e-2 선정 효과: 선정 1명당 만족도, 상한 */
+  satisfactionPerPick: 0.5,
+  satisfactionCap: 3,
+  /** 8e-2 직전 시즌 올스타 선정 선수 연봉 요구액 가산 */
+  salaryBonus: 0.05,
+  /** 8e-2 한정 유니폼 판매 기간(올스타전 ± 일), 선정 1명당 수요 가산 */
+  merchWindowDays: 14,
+  merchPerPick: 0.5,
 } as const;

@@ -45,11 +45,14 @@ export interface MerchState {
   totals: Record<string, Record<Sku, SkuTotals>>;
 }
 
-const zero = (): Record<Sku, number> => ({ uniform: 0, cap: 0, cheer: 0 });
-export const emptyTotals = (): Record<Sku, SkuTotals> => ({ uniform: { sold: 0, revenueWon: 0, cogsWon: 0, received: 0 }, cap: { sold: 0, revenueWon: 0, cogsWon: 0, received: 0 }, cheer: { sold: 0, revenueWon: 0, cogsWon: 0, received: 0 } });
+const zero = (): Record<Sku, number> => ({ uniform: 0, cap: 0, cheer: 0, allstar: 0 });
+/** 유니폼류(업체 유니폼 수요 배수를 쓴다) */
+const isUniform = (sku: Sku) => sku === 'uniform' || sku === 'allstar';
+const emptySku = (): SkuTotals => ({ sold: 0, revenueWon: 0, cogsWon: 0, received: 0 });
+export const emptyTotals = (): Record<Sku, SkuTotals> => ({ uniform: emptySku(), cap: emptySku(), cheer: emptySku(), allstar: emptySku() });
 
 export function newMerch(season: number): MerchState {
-  return { vendor: { kind: 'standard', season }, stock: { uniform: { qty: 0, avgCostWon: 0 }, cap: { qty: 0, avgCostWon: 0 }, cheer: { qty: 0, avgCostWon: 0 } }, orders: [], auto: true, targetWeeks: M.targetWeeksDefault, week: zero(), recent: [], lastDemand: zero(), totals: {} };
+  return { vendor: { kind: 'standard', season }, stock: { uniform: { qty: 0, avgCostWon: 0 }, cap: { qty: 0, avgCostWon: 0 }, cheer: { qty: 0, avgCostWon: 0 }, allstar: { qty: 0, avgCostWon: 0 } }, orders: [], auto: true, targetWeeks: M.targetWeeksDefault, week: zero(), recent: [], lastDemand: zero(), totals: {} };
 }
 
 export const unitPrice = (sku: Sku, inflation: number) => Math.round((M.skus[sku].priceWon * inflation) / 100) * 100;
@@ -62,7 +65,7 @@ export const merchFanFactor = (satisfaction: number) => (satisfaction < 20 ? M.b
 export function gameDemand(seed: string, fixtureKey: string | number, sku: Sku, attendance: number, vendor: VendorKind, satisfaction: number): number {
   const v = M.vendors[vendor];
   const noise = 1 + Math.max(-2, Math.min(2, stableNormal(seed, 'merch', fixtureKey, sku))) * (M.noise / 2);
-  return Math.max(0, Math.round(attendance * M.skus[sku].buyRate * (sku === 'uniform' ? v.uniformDemand : v.demand) * merchFanFactor(satisfaction) * noise));
+  return Math.max(0, Math.round(attendance * M.skus[sku].buyRate * (isUniform(sku) ? v.uniformDemand : v.demand) * merchFanFactor(satisfaction) * noise));
 }
 
 /** 도착한 발주를 재고에 넣는다(이동평균 원가). 입고 수량을 돌려준다 */
@@ -111,12 +114,14 @@ export function rollWeek(s: MerchState): void {
 /** 첫 발주용 주간 수요 추정(판매 기록이 없을 때) */
 export function baselineWeekly(sku: Sku, capacity: number, vendor: VendorKind): number {
   const v = M.vendors[vendor];
-  const perGame = capacity * M.baselineOccupancy * M.skus[sku].buyRate * (sku === 'uniform' ? v.uniformDemand : v.demand);
+  const perGame = capacity * M.baselineOccupancy * M.skus[sku].buyRate * (isUniform(sku) ? v.uniformDemand : v.demand);
   return Math.round(perGame * (M.baselineGamesPerWeek + (7 - M.baselineGamesPerWeek) * M.onlineShare));
 }
 
 /** 자동 재주문 수량: 최근 평균 판매 × 목표 주수 − (재고 + 입고 예정). 최소 발주량 미만이면 최소 발주량 */
 export function reorderQty(s: MerchState, sku: Sku, baseline: number): number {
+  // 8e-2: 한정 상품은 자동 재주문 대상이 아니다
+  if (sku === 'allstar') return 0;
   const weekly = s.recent.length ? s.recent.reduce((a, w) => a + w[sku], 0) / s.recent.length : baseline;
   const onOrder = s.orders.filter((o) => o.sku === sku).reduce((a, o) => a + o.qty, 0);
   const need = Math.round(Math.max(weekly, baseline * 0.25) * s.targetWeeks) - s.stock[sku].qty - onOrder;

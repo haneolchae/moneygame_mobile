@@ -40,7 +40,7 @@ describe('굿즈·브랜드 리스트 (6d)', () => {
     expect(s.stock.cap.qty).toBe(0);
     expect(s.totals['2027']!.cap).toMatchObject({ sold: 200, cogsWon: 200 * 15_000, received: 200 });
     // 재주문: 최근 평균 100개/주 × 4주 − 재고 0 − 입고 예정 150 = 250
-    s.recent = [{ uniform: 0, cap: 100, cheer: 0 }];
+    s.recent = [{ uniform: 0, cap: 100, cheer: 0, allstar: 0 }];
     s.orders.push({ sku: 'cap', qty: 150, unitCostWon: 1, arrive: '2027-04-01' });
     expect(reorderQty(s, 'cap', 100)).toBe(250);
     s.orders.push({ sku: 'cap', qty: 400, unitCostWon: 1, arrive: '2027-04-01' });
@@ -69,7 +69,7 @@ describe('굿즈·브랜드 리스트 (6d)', () => {
       await until(d, '2027-04-20');
       const m = (await call(d, 'business.view')).merch;
       expect(m.vendor).toBe(partner.label);
-      expect(m.skus.every((x) => x.sold > 0)).toBe(true); // 개막 전 자동 발주가 입고돼 팔렸다
+      expect(m.skus.filter((x) => x.sku !== 'allstar').every((x) => x.sold > 0)).toBe(true); // 8e-2: 한정 유니폼은 자동 재주문 대상이 아니다. // 개막 전 자동 발주가 입고돼 팔렸다
       const ledger = repo.ledgerEntries(1, 100000);
       expect(ledger.filter((e) => e.category === 'merchSales').reduce((a, e) => a + e.amount, 0)).toBe(m.skus.reduce((a, x) => a + x.revenueWon, 0));
       expect(ledger.some((e) => e.category === 'merchOrder' && e.amount < 0)).toBe(true);
