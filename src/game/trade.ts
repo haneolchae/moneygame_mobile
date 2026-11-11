@@ -328,6 +328,50 @@ export class TradeOps {
     });
   }
 
+  /**
+   * 받은 제안 응답(7b, D-157 (2)). 수락은 그 주 그 구단과의 세션 비용(열려 있으면 무료), 거절은 무료.
+   * 수락 때 다시 검증·평가하고 성립하지 않으면 비용 없이 철회 처리한다.
+   */
+  respondOffer(meta: GameMeta, offerId: number, accept: boolean, commandId: string): TradeResponse {
+    this.requireCommandId(commandId);
+    const prior = this.logged(meta, commandId);
+    if (prior) return { result: prior.result === 'error' ? 'reject' : prior.result, message: prior.message, counter: null, apCharged: 0 };
+    const o = (meta.tradeOffers ?? []).find((x) => x.id === offerId);
+    if (!o || o.status !== 'open' || diffDays(meta.currentDate, o.expires) > 0) throw new GameError('NOT_AVAILABLE', '받을 수 있는 제안이 아닙니다(기한이 지났거나 이미 처리했습니다).');
+    const club = this.repo.getClubs().find((c) => c.id === o.clubId)!;
+    const close = (status: 'accepted' | 'declined' | 'withdrawn', result: 'accept' | 'reject', message: string, ap: number) => {
+      this.repo.updateMeta({ tradeOffers: (this.repo.getMeta().tradeOffers ?? []).map((x) => (x.id === offerId ? { ...x, status } : x)) });
+      this.appendLog({ commandId, command: 'trade.respondOffer', target: `offer:${offerId}`, date: meta.currentDate, ap, talkClubId: o.clubId, result, message });
+      return { result, message, counter: null, apCharged: ap } satisfies TradeResponse;
+    };
+    if (!accept) return this.repo.transaction(() => close('declined', 'reject', `${club.shortName}의 제안을 거절했습니다.`, 0));
+    const v = this.validate(meta, o.clubId, o.pkg);
+    const ev = v.errors.length ? null : this.evaluate(meta, o.clubId, v.pkg);
+    if (!ev || ev.decision.kind !== 'accept') {
+      return this.repo.transaction(() => close('withdrawn', 'reject', `${club.shortName}이(가) 제안을 거둬들였습니다: ${v.errors[0] ?? '상황이 바뀌어 조건이 맞지 않습니다.'}`, 0));
+    }
+    const s = this.session(meta, o.clubId);
+    return this.repo.transaction(() => {
+      let ap = 0;
+      const t = s.talk;
+      if (!s.open) {
+        try {
+          this.repo.spendAp(s.weekId, T.sessionAp);
+        } catch {
+          throw new GameError('AP_SHORT', '이번 주 행동력이 부족합니다(트레이드 협상 시작 행동력 1).');
+        }
+        this.org.charge(meta, { kind: 'direct', weekId: s.weekId }, 'ops', TASK_WP.tradeRound);
+        t.weeksPaid = [...t.weeksPaid, s.weekId];
+        ap = T.sessionAp;
+      }
+      const msg = this.execute(meta, o.clubId, v.pkg);
+      const message = `${club.shortName}의 제안 수락으로 성사: ${msg}`;
+      t.log = [...t.log, { date: meta.currentDate, weekId: s.weekId, kind: 'offerAccepted', pkg: v.pkg, result: 'accept', message }];
+      this.saveTalk(t);
+      return close('accepted', 'accept', message, ap);
+    });
+  }
+
   // ───────── 실행 ─────────
 
   /** 양 구단 일괄 이적. 호출자가 트랜잭션을 연다. 우리 구단 기준 문장을 돌려준다 */

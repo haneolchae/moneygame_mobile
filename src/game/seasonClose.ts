@@ -102,11 +102,13 @@ export class SeasonClose {
     if (ks && (ks.high === meta.userClubId || ks.low === meta.userClubId)) xp += CLOSE_RULES.xp.ksFinal;
     if (ps?.champion === meta.userClubId) xp += CLOSE_RULES.xp.ksTitle;
     const rebuilding = meta.rebuild && season >= meta.rebuild.from && season <= meta.rebuild.until;
+    // 7b(D-157 (4)): 시즌 중에 부임한 시즌은 미달로 세지 않는다
+    const exempt = meta.goalExemptSeason === season;
     let misses = meta.goalMisses ?? 0;
-    if (met || rebuilding) misses = 0;
+    if (met || rebuilding || exempt) misses = 0;
     else misses += 1;
     update.goalMisses = misses;
-    lines.push(met ? '성적 기본 목표 달성' : rebuilding ? '리빌딩 기간: 성적 목표 미달을 해임 판정에 넣지 않습니다' : `성적 기본 목표 미달 (연속 ${misses}시즌)`);
+    lines.push(met ? '성적 기본 목표 달성' : exempt ? '시즌 중 부임: 이번 시즌 성적은 해임 판정에 넣지 않습니다' : rebuilding ? '리빌딩 기간: 성적 목표 미달을 해임 판정에 넣지 않습니다' : `성적 기본 목표 미달 (연속 ${misses}시즌)`);
     const lv = addXp(meta.ownerLevel, meta.ownerXp, xp);
     update.ownerLevel = lv.level;
     update.ownerXp = lv.xp;

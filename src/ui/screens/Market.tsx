@@ -5,6 +5,7 @@ import type { Nav } from '../App';
 import { api, ApiError } from '../api';
 import { POSITION_LABELS, won } from '../format';
 import { Icon } from '../icons';
+import { TradeOffersPanel } from '../Career';
 
 type Tab = 'fa' | 'salary' | 'foreign' | 'roster';
 const EOK = 100_000_000;
@@ -179,6 +180,7 @@ export function Market({ nav }: { nav: Nav }) {
           <span className="value">{v.apRemaining}</span>
         </div>
       </div>
+      <TradeOffersPanel nav={nav} />
       <div className="toolbar">
         <div className="seg">
           {(

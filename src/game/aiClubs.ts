@@ -1,13 +1,13 @@
 // 7a AI 구단 운영 상태·재정 긴축·AI 구단 간 트레이드(19·09 문서, D-155).
 // 운영 상태는 매월 1일에만 바뀐다. AI 간 거래는 사용자 거래와 같은 평가 함수·수락 조건·선수단 검사를 쓰고
 // 히든 값과 난수 흐름을 쓰지 않는다(같은 날 같은 상태면 같은 결과).
-import { ageOn, weekday, type GameDate } from '../engine/calendar';
+import { addDays, ageOn, diffDays, weekday, type GameDate } from '../engine/calendar';
 import { assessStance, emergencySupport, STANCE_LABEL, type ClubStance } from '../engine/aiClub';
 import { AI_CLUB as A, TRADE as T } from '../engine/config';
 import type { LedgerEntry } from '../engine/finance';
 import { EOK } from '../engine/money';
 import type { ClubId, ClubProfile, PlayerTruth } from '../engine/types';
-import type { GameMeta, GameRepository, InboxMessage, StanceState } from './ports';
+import type { GameMeta, GameRepository, InboxMessage, StanceState, TradeOffer } from './ports';
 import type { TradeOps } from './trade';
 import { weekIdFor } from './week';
 
@@ -63,6 +63,9 @@ export class AiClubOps {
     const inbox: InboxMessage[] = [];
     if (date.slice(8, 10) === '01') this.reassess(meta, date, ledger, inbox);
     if (weekday(date) === 1) inbox.push(...this.weeklyTrade(this.repo.getMeta(), date));
+    // 7b(D-157): 기한이 지난 받은 제안 정리, 월요일 AI 선제안
+    this.expireOffers(date);
+    if (weekday(date) === 1) inbox.push(...this.weeklyOffer(this.repo.getMeta(), date));
     return { ledger, inbox };
   }
 
@@ -95,6 +98,86 @@ export class AiClubOps {
     this.cache = null;
   }
 
+  // ───────── AI 선제안 트레이드(7b, D-157) ─────────
+
+  private expireOffers(date: GameDate): void {
+    // 매일 부르므로 메타 전체를 해석하지 않고 제안 항목만 읽는다
+    const offers = this.repo.getMetaValue<TradeOffer[]>('tradeOffers') ?? [];
+    if (!offers.some((o) => o.status === 'open' && diffDays(date, o.expires) > 0)) return;
+    this.repo.updateMeta({ tradeOffers: offers.map((o) => (o.status === 'open' && diffDays(date, o.expires) > 0 ? { ...o, status: 'expired' as const } : o)) });
+  }
+
+  /**
+   * 월요일: 우승 경쟁 구단은 우리 베테랑을 요구하고 자기 젊은 선수를 내놓는다. 리빌딩·긴축 구단은 그 반대.
+   * 제안 구단이 자기 수락 조건을 통과하는 안 중 여유가 가장 작은 1건만 보낸다(양쪽 가치가 모두 0보다 큰 안만).
+   */
+  private weeklyOffer(meta: GameMeta, date: GameDate): InboxMessage[] {
+    if (meta.gameOver || this.trades.windowReason(meta)) return [];
+    const O = A.offer;
+    const offers = meta.tradeOffers ?? [];
+    const period = tradePeriod(meta);
+    const weekId = weekIdFor(date);
+    if (offers.some((o) => weekIdFor(o.date) === weekId)) return [];
+    if (offers.filter((o) => o.status === 'open').length >= O.maxOpen) return [];
+    if (offers.filter((o) => o.season === meta.season && o.period === period).length >= O.maxPerPeriod) return [];
+    const user = meta.userClubId;
+    const players = this.repo.getPlayers();
+    const rosterOf = (id: ClubId) => players.filter((p) => p.clubId === id && !p.retired);
+    const age = (p: PlayerTruth) => ageOn(p.birthDate, date);
+    const veteran = (p: PlayerTruth) => age(p) >= A.trade.veteranMinAge;
+    const prospect = (p: PlayerTruth) => age(p) <= A.trade.prospectMaxAge && p.origin === 'domestic';
+    const ours = rosterOf(user);
+    let best: { clubId: ClubId; give: number; get: number; surplus: number } | null = null;
+    for (const club of [...this.clubs.values()].sort((a, b) => a.id - b.id)) {
+      if (club.id === user) continue;
+      const stance = this.stance(club.id);
+      if (stance !== 'contend' && stance !== 'rebuild' && stance !== 'austerity') continue;
+      if (offers.some((o) => o.clubId === club.id && diffDays(date, o.date) < O.clubGapDays)) continue;
+      const buying = stance === 'contend';
+      const pick = (list: PlayerTruth[], owner: ClubId, n: number) =>
+        list
+          .map((p) => ({ p, r: this.trades.rating(meta, club.id, p) }))
+          .sort((x, y) => y.r - x.r || x.p.id - y.p.id)
+          .map((x) => x.p)
+          .reduce<PlayerTruth[]>((acc, p) => (acc.length < n && this.trades.tradableReason(meta, p, owner) === null ? [...acc, p] : acc), []);
+      const theirs = rosterOf(club.id);
+      const wanted = pick(ours.filter(buying ? veteran : prospect), user, buying ? A.trade.veteranCandidates : A.trade.prospectCandidates);
+      const offered = pick(theirs.filter(buying ? prospect : veteran), club.id, buying ? A.trade.prospectCandidates : A.trade.veteranCandidates);
+      for (const w of wanted) {
+        for (const g of offered) {
+          if (this.trades.swapErrors(players, user, club.id, [w.id], [g.id]).length) continue;
+          const ev = this.trades.evaluate(meta, club.id, { give: [w.id], get: [g.id], cashWon: 0 }, players);
+          if (ev.decision.kind !== 'accept' || ev.G <= 0 || ev.L <= 0) continue;
+          const surplus = ev.G - ev.decision.required;
+          if (!best || surplus < best.surplus) best = { clubId: club.id, give: w.id, get: g.id, surplus };
+        }
+      }
+    }
+    if (!best) return [];
+    const byId = new Map(players.map((p) => [p.id, p]));
+    const club = this.clubs.get(best.clubId)!;
+    const give = byId.get(best.give)!;
+    const get = byId.get(best.get)!;
+    const expires = addDays(date, O.validDays - 1);
+    const id = offers.reduce((a, o) => Math.max(a, o.id), 0) + 1;
+    this.repo.updateMeta({
+      tradeOffers: [
+        ...offers,
+        { id, clubId: club.id, date, expires, season: meta.season, period, pkg: { give: [give.id], get: [get.id], cashWon: 0 }, status: 'open', audit: { give: this.trades.truthValue(meta, give), get: this.trades.truthValue(meta, get) } },
+      ],
+    });
+    const label = (p: PlayerTruth) => `${p.name}(${p.isPitcher ? '투수' : p.position}, ${age(p)}세)`;
+    return [
+      {
+        date,
+        kind: 'task',
+        sender: club.shortName,
+        title: `트레이드 제안: ${club.shortName}`,
+        body: `${club.name}(${STANCE_LABEL[this.stance(club.id)!]})이(가) 트레이드를 제안했습니다.\n우리가 보냄: ${label(give)}\n우리가 받음: ${label(get)}\n${expires.slice(5).replace('-', '/')}까지 [계약·이적] 화면에서 수락하거나 거절할 수 있습니다. 수락은 그 주 협상 비용(행동력 1, 이미 협상 중이면 무료), 거절은 무료입니다.`,
+      },
+    ];
+  }
+
   // ───────── AI 구단 간 트레이드 ─────────
 
   private dealCount(meta: GameMeta, clubId: ClubId): number {
@@ -124,13 +207,11 @@ export class AiClubOps {
           .filter((p) => age(p) >= A.trade.veteranMinAge)
           .map((p) => ({ p, r: this.trades.rating(meta, b.id, p) }))
           .sort((x, y) => y.r - x.r || x.p.id - y.p.id)
-          .filter((x) => tradable(x.p, s.id))
-          .slice(0, A.trade.veteranCandidates);
+          .reduce<Array<{ p: PlayerTruth; r: number }>>((acc, x) => (acc.length < A.trade.veteranCandidates && tradable(x.p, s.id) ? [...acc, x] : acc), []);
         const young = prospects
           .map((p) => ({ p, r: this.trades.rating(meta, s.id, p) }))
           .sort((x, y) => y.r - x.r || x.p.id - y.p.id)
-          .filter((x) => tradable(x.p, b.id))
-          .slice(0, A.trade.prospectCandidates);
+          .reduce<Array<{ p: PlayerTruth; r: number }>>((acc, x) => (acc.length < A.trade.prospectCandidates && tradable(x.p, b.id) ? [...acc, x] : acc), []);
         for (const v of veterans) {
           for (const y of young) {
             if (this.trades.swapErrors(players, b.id, s.id, [y.p.id], [v.p.id]).length) continue;

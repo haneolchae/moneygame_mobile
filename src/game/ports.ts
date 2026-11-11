@@ -44,13 +44,15 @@ export interface GameMeta {
   /** 이번 시즌 포스트시즌 대진·진행 (정규시즌 종료 후) */
   postseason?: PostseasonState;
   /** 시즌 성적 기본 목표(예상 순위 이내, 02 문서) */
-  seasonGoal?: { season: number; expectedRank: number };
+  seasonGoal?: { season: number; expectedRank: number } | null;
+  /** 7b: 시즌 중 부임한 시즌(성적 판정에서 미달로 세지 않는다) */
+  goalExemptSeason?: number | null;
   /** 성적 기본 목표 연속 미달 횟수 */
   goalMisses?: number;
   /** 시즌별 모기업 지원 삭감(bp)·차감(원) */
   supportCutBp?: Record<string, number>;
   supportDeduction?: Record<string, number>;
-  rebuild?: { declaredSeason: number; from: number; until: number };
+  rebuild?: { declaredSeason: number; from: number; until: number } | null;
   /** 7a(D-155) AI 구단 운영 상태: 구단 ID → 상태. 매월 1일에만 바뀐다 */
   clubStance?: Record<string, StanceState>;
   /** 운영 상태 변경 기록(최근 400건) */
@@ -58,9 +60,13 @@ export interface GameMeta {
   /** AI 구단 긴급 지원 차감: 시즌 → 구단 ID → 원 */
   aiSupportDeduction?: Record<string, Record<string, number>>;
   /** 해임·파산 */
-  gameOver?: { kind: 'dismissed' | 'bankrupt'; date: GameDate; reason: string };
+  gameOver?: { kind: 'dismissed' | 'bankrupt'; date: GameDate; reason: string } | null;
+  /** 7b(D-157): 구단별 재임 기록. 없으면 게임 시작부터 지금 구단 */
+  tenures?: Tenure[];
+  /** 7b(D-157): AI 구단이 먼저 보낸 트레이드 제안 */
+  tradeOffers?: TradeOffer[];
   cashCrisisSince?: GameDate | null;
-  emergencyUsedSeason?: number;
+  emergencyUsedSeason?: number | null;
   /** 우리 구단 은퇴 고민 선수(설득 기한) */
   retirementPending?: Array<{ playerId: PlayerId; reason: string; deadline: GameDate }>;
   /** 우리 구단 드래프트 지명 우선순위 */
@@ -117,7 +123,7 @@ export interface TradePackage {
 export interface TradeLogEntry {
   date: GameDate;
   weekId: string;
-  kind: 'proposal' | 'counterAccepted';
+  kind: 'proposal' | 'counterAccepted' | 'offerAccepted';
   pkg: TradePackage;
   result: 'accept' | 'counter' | 'reject';
   message: string;
@@ -152,6 +158,30 @@ export interface TradeRecord {
   aToB: PlayerId[];
   bToA: PlayerId[];
   cashAtoB: number;
+}
+
+export interface Tenure {
+  clubId: ClubId;
+  from: GameDate;
+  to: GameDate | null;
+  reason: string | null;
+  startCashWon: number;
+  endCashWon: number | null;
+}
+
+/** AI 구단이 먼저 보낸 1:1 제안. pkg는 우리 구단 기준(give = 우리가 보냄) */
+export interface TradeOffer {
+  id: number;
+  clubId: ClubId;
+  date: GameDate;
+  /** 이 날짜까지 유효 */
+  expires: GameDate;
+  season: number;
+  period: 'stove' | 'season';
+  pkg: TradePackage;
+  status: 'open' | 'accepted' | 'declined' | 'expired' | 'withdrawn';
+  /** 검증용 실제 가치(우리가 주는·받는). 화면 응답에 넣지 않는다 */
+  audit: { give: number; get: number };
 }
 
 export interface ActionLogEntry {

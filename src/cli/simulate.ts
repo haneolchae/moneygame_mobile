@@ -13,7 +13,7 @@ import { CLOSE_RULES } from '../game/seasonClose';
 import { Dispatcher } from '../host/dispatcher';
 import { coreAverage } from '../engine/development';
 import { checkInvariants, injuryStats, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
-import type { AdvanceResult, DashboardView, DelegationPolicyView, BusinessView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView, TradeResultView, TradeView } from '../shared/protocol';
+import type { AdvanceResult, DashboardView, DelegationPolicyView, BusinessView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView, TradeOffersView, TradeResultView, TradeView } from '../shared/protocol';
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -63,10 +63,28 @@ async function main() {
       // 행동력 부족 등 규칙상 거부
     }
   };
+  // 7b(D-157·D-158 ④): 위임 구단주도 시즌(스토브리그 + 시즌)마다 받은 트레이드 제안 1건을 수락해 본다. 나머지는 기한까지 둔다.
+  let offerAccepted = false;
+  const offerStats = { tried: 0, done: 0 };
+  const tryOffer = async () => {
+    if (offerAccepted) return;
+    const ov = await call<TradeOffersView>('trade.offers');
+    const o = ov.offers[0];
+    if (!o) return;
+    offerStats.tried++;
+    try {
+      const r = await call<{ result: string }>('trade.respondOffer', { offerId: o.id, accept: true, commandId: `sim-offer-${o.id}` });
+      offerAccepted = true;
+      if (r.result === 'accept') offerStats.done++;
+    } catch {
+      // 행동력 부족 등 규칙상 거부
+    }
+  };
   const tStove = performance.now();
   let stoveWeeks = 0;
   while ((await call<DashboardView>('game.dashboard')).phase === 'stove') {
     await trySponsor();
+    await tryOffer();
     await advance('week');
     stoveWeeks++;
   }
@@ -77,6 +95,7 @@ async function main() {
   let firstCoreMean: number | undefined;
   const tradeStats: Array<{ season: number; attempts: number; done: number }> = [];
   let aiTradesBefore = 0;
+  let offersBefore = 0;
   let extensions = 0;
   let prevCore = new Map<number, number>();
   for (let s = 1; s <= seasons; s++) {
@@ -101,6 +120,7 @@ async function main() {
           }
         }
         await trySponsor();
+        await tryOffer();
         await advance('week');
       }
     stoveErrors.push(...[...checkRosterLimits(d.saves.repository()), ...checkRosterComposition(d.saves.repository())].map((e) => `스토브리그 후 ${e}`));
@@ -307,6 +327,15 @@ async function main() {
     const stanceCount = (k: string) => stanceNow.filter((x) => x === k).length;
     const stanceChanged = new Set((meta7.stanceLog ?? []).map((x) => x.clubId)).size;
     if (aiTrades < 1) inv.push(`사전 등록 7a ② 위반: 시즌 ${s} AI 구단 간 트레이드 ${aiTrades}건`);
+    // 7b 사전 등록 ②③(D-158): 받은 제안 시즌마다 1~8건, 실제 가치 비율(받는 / 주는, 둘 다 1억 이상) 중앙값 0.4~1.6(마지막 시즌에 전체 표본으로, 3건 미만이면 보류)
+    const offersAll = meta7.tradeOffers ?? [];
+    const offersNow = offersAll.length - offersBefore;
+    offersBefore = offersAll.length;
+    if (offersNow < 1 || offersNow > 8) inv.push(`사전 등록 7b ② 위반: 시즌 ${s} 받은 트레이드 제안 ${offersNow}건`);
+    const ratios = offersAll.filter((o) => o.audit.give >= 1e8 && o.audit.get >= 1e8).map((o) => o.audit.get / o.audit.give).sort((a, b) => a - b);
+    const offerRatioMedian = ratios.length ? +((ratios[Math.floor((ratios.length - 1) / 2)]! + ratios[Math.ceil((ratios.length - 1) / 2)]!) / 2).toFixed(2) : null;
+    if (s === seasons && ratios.length >= 3 && (offerRatioMedian! < 0.4 || offerRatioMedian! > 1.6)) inv.push(`사전 등록 7b ③ 위반: 받은 제안 실제 가치 비율 중앙값 ${offerRatioMedian}`);
+    offerAccepted = false;
     if (stanceCount('contend') < 1 || stanceCount('rebuild') < 1) inv.push(`사전 등록 7a ③ 위반: 우승 경쟁 ${stanceCount('contend')}·리빌딩 ${stanceCount('rebuild')}`);
     if (s === seasons && seasons >= 2 && stanceChanged < 2) inv.push(`사전 등록 7a ③ 위반: 운영 상태가 바뀐 AI 구단 ${stanceChanged}개`);
     if (milestone && s === seasons) {
@@ -344,6 +373,7 @@ async function main() {
       userFacilityLevels: Object.values(repo5.getMeta().facilities?.['1']?.levels ?? {}).join('/'),
       trades: tradeStats.find((t) => t.season === s) ?? null,
       aiTrades,
+      offers: { received: offersNow, ratioMedian: offerRatioMedian, ratioSample: ratios.length, ...offerStats },
       stances: `우승 경쟁 ${stanceCount('contend')}·중위권 ${stanceCount('middle')}·리빌딩 ${stanceCount('rebuild')}·긴축 ${stanceCount('austerity')} (변경 구단 ${stanceChanged})`,
       coreMean,
       coreP95,

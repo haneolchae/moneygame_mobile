@@ -748,6 +748,50 @@ export interface TradeResultView {
   apCharged: number;
   view: TradeView;
 }
+/** 7b(D-157) 받은 트레이드 제안. 상대 선수는 스카우트 추정 범위로만 */
+export interface TradeOfferView {
+  id: number;
+  club: ClubRef;
+  stance: string | null;
+  date: string;
+  expires: string;
+  give: PlayerListItem[];
+  get: PlayerListItem[];
+  /** 수락 때 낼 행동력(그 주 그 구단과 세션이 열려 있으면 0) */
+  apCost: number;
+}
+
+export interface TradeOffersView {
+  offers: TradeOfferView[];
+  apRemaining: number;
+}
+
+export interface TradeOfferResultView {
+  result: 'accept' | 'counter' | 'reject';
+  message: string;
+  apCharged: number;
+  view: TradeOffersView;
+}
+
+/** 7b(D-157) 재임 기록과 해임 뒤 영입 제안 */
+export interface TenureView {
+  club: ClubRef;
+  from: string;
+  to: string | null;
+  reason: string | null;
+  seasons: Array<{ season: number; rank: number; wins: number; losses: number; ties: number; postseason: string }>;
+  titles: number;
+  postseasons: number;
+  startCashWon: number;
+  endCashWon: number;
+}
+
+export interface CareerView {
+  level: number;
+  tenures: TenureView[];
+  jobOffers: Array<{ club: ClubRef; rank: number | null; stance: string | null; payrollWon: number; city: string }>;
+}
+
 // ───────── 4b-2 집중 훈련 (11·D-128) ─────────
 
 export type TrainingIntensityView = 'low' | 'normal' | 'high';
@@ -958,6 +1002,10 @@ export interface RequestMap {
   'trade.preview': { payload: { clubId: number } & TradePackageView; result: TradePreviewView };
   'trade.propose': { payload: { clubId: number; commandId: string } & TradePackageView; result: TradeResultView };
   'trade.acceptCounter': { payload: { clubId: number; commandId: string }; result: TradeResultView };
+  'trade.offers': { payload: void; result: TradeOffersView };
+  'trade.respondOffer': { payload: { offerId: number; accept: boolean; commandId: string }; result: TradeOfferResultView };
+  'owner.career': { payload: void; result: CareerView };
+  'owner.acceptJob': { payload: { clubId: number }; result: DashboardView };
   'roster.view': { payload: void; result: RosterView };
   'roster.move': { payload: { promote: number[]; demote: number[] }; result: { message: string; view: RosterView } };
   'roster.setPlan': { payload: { mode: 'auto' | 'manual'; plan?: GamePlanView }; result: { message: string; view: RosterView } };
@@ -1033,6 +1081,10 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'trade.preview',
   'trade.propose',
   'trade.acceptCounter',
+  'trade.offers',
+  'trade.respondOffer',
+  'owner.career',
+  'owner.acceptJob',
   'roster.view',
   'roster.move',
   'roster.setPlan',

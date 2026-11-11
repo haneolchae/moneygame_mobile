@@ -37,6 +37,7 @@ import { Growth } from './growth';
 import { TrainingOps } from './training';
 import { TradeOps } from './trade';
 import { AiClubOps } from './aiClubs';
+import { CareerOps } from './career';
 import { BusinessOps } from './business';
 import { SponsorOps } from './sponsors';
 import { MerchOps } from './merch';
@@ -88,6 +89,9 @@ import {
   type TradePackageView,
   type TradePreviewView,
   type TradeResultView,
+  type TradeOffersView,
+  type TradeOfferResultView,
+  type CareerView,
   type TradeView,
   type BusinessView,
 } from '../shared/protocol';
@@ -260,6 +264,7 @@ export class GameService {
   readonly training: TrainingOps;
   readonly trades: TradeOps;
   readonly aiClubs: AiClubOps;
+  readonly career: CareerOps;
   readonly business: BusinessOps;
   readonly sponsors: SponsorOps;
   readonly merch: MerchOps;
@@ -325,6 +330,7 @@ export class GameService {
     // 7a(D-155): AI 구단 운영 상태·긴축·AI 간 트레이드
     this.aiClubs = new AiClubOps(repo, this.clubMap, this.trades, () => this.stanceRanks());
     this.business.austere = (id) => this.aiClubs.stance(id) === 'austerity';
+    this.career = new CareerOps(repo, this.clubMap, () => this.stanceRanks());
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -809,6 +815,9 @@ export class GameService {
       if (days >= 0 && days <= 28) out.push({ title: `신인 드래프트 지명 순위 정하기 (${dd.slice(5).replace('-', '/')})`, detail: (meta.draftBoard ?? []).length ? `지명 순위 ${meta.draftBoard!.length}명 지정됨` : '지정하지 않으면 스카우트 평가 순으로 지명합니다.', due: dd, level: '권장', target: 'draft' });
       if (meta.seasonGoal?.season === meta.season) out.push({ title: `시즌 목표: 정규시즌 ${meta.seasonGoal.expectedRank}위 이내`, detail: `연속 미달 ${meta.goalMisses ?? 0}시즌${meta.rebuild && meta.season >= meta.rebuild.from && meta.season <= meta.rebuild.until ? ' (리빌딩 유예 중)' : ''} — 2시즌 연속 미달이면 경고, 3시즌 연속이면 해임`, due: null, level: '정보', target: 'standings' });
     }
+    // 7b(D-157): 받은 트레이드 제안
+    const openOffers = (meta.tradeOffers ?? []).filter((o) => o.status === 'open' && diffDays(meta.currentDate, o.expires) <= 0);
+    if (openOffers.length) out.unshift({ title: `받은 트레이드 제안 ${openOffers.length}건`, detail: `${openOffers.map((o) => this.ref(o.clubId).shortName).join(', ')} — 기한 안에 수락하거나 거절하세요(거절 무료).`, due: openOffers[0]!.expires, level: '권장', target: 'market' });
     const vacancies = this.orgVacancies(meta);
     if (vacancies.length) out.push({ title: `조직 공석 ${vacancies.length}자리`, detail: vacancies.slice(0, 3).map((v) => v.label).join(', ') + ' — 공석인 팀은 본부장이 겸임해 처리량이 줄어듭니다.', due: null, level: '권장', target: 'org' });
     out.push({ title: '재정 확인', detail: '현금과 이번 시즌 수입·지출을 확인하세요.', due: null, level: '선택', target: 'finance' });
@@ -1679,9 +1688,59 @@ export class GameService {
       limits: { maxPlayers: TRADE.maxPlayersPerSide, maxCashWon: TRADE.maxCashWon, proposalsPerSession: TRADE.proposalsPerSession },
       ours: rows('mine', meta.userClubId),
       theirs: rows(club.id, club.id),
-      log: [...s.talk.log].reverse().slice(0, 12).map((l) => ({ date: l.date, kind: l.kind === 'proposal' ? '제안' : '역제안 수락', result: l.result, message: l.message, give: l.pkg.give.map(name), get: l.pkg.get.map(name), cashWon: l.pkg.cashWon })),
+      log: [...s.talk.log].reverse().slice(0, 12).map((l) => ({ date: l.date, kind: l.kind === 'proposal' ? '제안' : l.kind === 'offerAccepted' ? '받은 제안 수락' : '역제안 수락', result: l.result, message: l.message, give: l.pkg.give.map(name), get: l.pkg.get.map(name), cashWon: l.pkg.cashWon })),
       history: (meta.tradeHistory ?? []).filter((h) => h.clubB === club.id || h.clubA === club.id).reverse().map((h) => ({ date: h.date, sent: (h.clubA === meta.userClubId ? h.aToB : h.bToA).map(name), received: (h.clubA === meta.userClubId ? h.bToA : h.aToB).map(name), cashWon: h.clubA === meta.userClubId ? h.cashAtoB : -h.cashAtoB })),
     };
+  }
+
+  /** 받은 트레이드 제안(7b, D-157): 조회만. 상대 선수는 스카우트 추정 범위로만 */
+  tradeOffersView(): TradeOffersView {
+    const meta = this.meta();
+    const open = (meta.tradeOffers ?? []).filter((o) => o.status === 'open' && diffDays(meta.currentDate, o.expires) <= 0);
+    const week = this.repo.getApWeek(weekIdFor(meta.currentDate));
+    const mine = open.length ? this.players({ scope: 'mine', group: 'all', level: 'all', sortKey: 'name', sortDesc: false }) : [];
+    return {
+      apRemaining: week ? week.granted - week.used : 0,
+      offers: open.map((o) => {
+        const theirs = this.players({ scope: o.clubId, group: 'all', level: 'all', sortKey: 'name', sortDesc: false });
+        const s = this.aiClubs.state(o.clubId);
+        return {
+          id: o.id,
+          club: this.ref(o.clubId),
+          stance: s ? STANCE_LABEL[s.stance] : null,
+          date: o.date,
+          expires: o.expires,
+          give: mine.filter((p) => o.pkg.give.includes(p.id)),
+          get: theirs.filter((p) => o.pkg.get.includes(p.id)),
+          apCost: this.trades.session(meta, o.clubId).open ? 0 : TRADE.sessionAp,
+        };
+      }),
+    };
+  }
+
+  tradeRespondOffer(offerId: number, accept: boolean, commandId: string): TradeOfferResultView {
+    const r = this.trades.respondOffer(this.meta(), Number(offerId), accept === true, commandId);
+    return { result: r.result, message: r.message, apCharged: r.apCharged, view: this.tradeOffersView() };
+  }
+
+  /** 재임 기록과 해임 뒤 영입 제안(7b, D-157) */
+  careerView(): CareerView {
+    const meta = this.meta();
+    const ranks = this.stanceRanks();
+    const players = this.repo.getPlayers();
+    return {
+      level: meta.ownerLevel,
+      tenures: this.career.summaries(meta).map((t) => ({ club: this.ref(t.clubId), from: t.from, to: t.to, reason: t.reason, seasons: t.seasons, titles: t.titles, postseasons: t.postseasons, startCashWon: t.startCashWon, endCashWon: t.endCashWon })),
+      jobOffers: this.career.jobOffers(meta).map((id) => {
+        const s = this.aiClubs.state(id);
+        return { club: this.ref(id), rank: ranks.get(id) ?? null, stance: s ? STANCE_LABEL[s.stance] : null, payrollWon: players.filter((p) => p.clubId === id && !p.retired).reduce((a, p) => a + p.salary, 0), city: this.clubMap.get(id)!.city };
+      }),
+    };
+  }
+
+  /** 영입 제안 수락(행동력 0). 디스패처가 이 뒤에 서비스를 다시 만든다 */
+  acceptJob(clubId: number): { message: string } {
+    return this.repo.transaction(() => this.career.acceptJob(this.meta(), Number(clubId)));
   }
 
   /** 미리보기: 규칙 검사·인원·연봉 변화(무료, 상대 반응 없음) */

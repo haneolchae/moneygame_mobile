@@ -330,6 +330,24 @@ export function checkAiClubs(repo: GameRepository): string[] {
     }
     if (h.clubA === meta.userClubId || h.clubB === meta.userClubId) errors.push(`AI 간 거래에 우리 구단 포함: ${h.date}`);
   }
+  // 7b(D-157·D-158 ①): 우리 구단에는 운영 상태가 없다, 받은 제안은 주 1건·기간당 4건·열린 제안 2건 이하, 같은 구단 30일 간격
+  if (meta.clubStance?.[String(meta.userClubId)]) errors.push('우리 구단에 AI 운영 상태가 남아 있음');
+  const offers = meta.tradeOffers ?? [];
+  const offerWeek = new Map<string, number>();
+  const offerPeriod = new Map<string, number>();
+  const offerClub = new Map<number, string>();
+  for (const o of offers) {
+    const w = weekIdFor(o.date);
+    offerWeek.set(w, (offerWeek.get(w) ?? 0) + 1);
+    const k = `${o.season}:${o.period}`;
+    offerPeriod.set(k, (offerPeriod.get(k) ?? 0) + 1);
+    const prev = offerClub.get(o.clubId);
+    if (prev && diffDays(o.date, prev) < AI_CLUB.offer.clubGapDays) errors.push(`받은 제안 구단 간격 위반: 구단 ${o.clubId} ${prev} → ${o.date}`);
+    offerClub.set(o.clubId, o.date);
+  }
+  for (const [w, n] of offerWeek) if (n > 1) errors.push(`받은 제안 주 ${n}건(${w})`);
+  for (const [k, n] of offerPeriod) if (n > AI_CLUB.offer.maxPerPeriod) errors.push(`받은 제안 기간 상한 초과: ${k} ${n}건`);
+  if (offers.filter((o) => o.status === 'open').length > AI_CLUB.offer.maxOpen) errors.push('열린 받은 제안이 상한을 넘음');
   for (const [w, n] of perWeek) if (n > 1) errors.push(`AI 간 거래 주 ${n}건(${w})`);
   for (const [k, n] of perClub) if (n > AI_CLUB.trade.maxPerClubPeriod) errors.push(`AI 간 거래 구단별 상한 초과: ${k} ${n}건`);
   return errors;

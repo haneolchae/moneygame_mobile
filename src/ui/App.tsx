@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AppStatus, DashboardView, ProgressEvent } from '../shared/protocol';
 import { api, ApiError, onProgress } from './api';
 import { ApprovalPopup } from './ApprovalPopup';
+import { GameOverPanel } from './Career';
 import { Emblem } from './Emblem';
 import { dateKo } from './format';
 import monogram from './assets/diamond-office/diamond_monogram.svg';
@@ -244,17 +245,7 @@ export function App() {
         platformDetail={status?.platform.steam.detail ?? ''}
       />
       <main className="content" key={refreshKey}>
-        {d.gameOver && (
-          <div className="panel" style={{ borderColor: 'var(--error)', marginBottom: 14 }}>
-            <div className="panel-head" style={{ background: 'var(--error)' }}>
-              <h2>{d.gameOver.kind === 'dismissed' ? '해임되었습니다' : '구단이 파산했습니다'}</h2>
-              <span className="meta" style={{ color: 'var(--text)' }}>{d.gameOver.date}</span>
-            </div>
-            <div className="panel-body">
-              {d.gameOver.reason} 재임 기록은 [명예의 전당]에서 볼 수 있습니다. 새 게임으로 다시 시작할 수 있습니다(다른 구단 영입 제안은 다음 단계).
-            </div>
-          </div>
-        )}
+        {d.gameOver && <GameOverPanel nav={nav} gameOver={d.gameOver} />}
         {route.name === 'dashboard' && <Dashboard nav={nav} />}
         {route.name === 'inbox' && <Inbox nav={nav} />}
         {route.name === 'players' && <Players nav={nav} />}

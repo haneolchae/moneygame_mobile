@@ -1,5 +1,6 @@
 // 팀 기록: 현재 팀 통계(리그 순위)와 업적 (24 문서). 구단 역사·기록·레전드는 명예의 전당(HallOfFame)
 import { useEffect, useState } from 'react';
+import { CareerPanel } from '../Career';
 import type { TeamRecordsView, TeamStatItem } from '../../shared/protocol';
 import type { Nav } from '../App';
 import { api } from '../api';
@@ -94,6 +95,7 @@ export function TeamRecords({ nav }: { nav: Nav }) {
         </button>
       </div>
 
+      {tab === 'stats' && <CareerPanel refreshKey={nav.refreshKey} />}
       {tab === 'stats' && (
         <div className="columns even">
           <StatGrid title="팀 타격" items={v.batting} />

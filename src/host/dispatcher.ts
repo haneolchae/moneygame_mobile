@@ -142,6 +142,20 @@ export class Dispatcher {
         const p = payload as RequestMap['trade.acceptCounter']['payload'];
         return this.game().tradeAcceptCounter(p.clubId, p.commandId) as R;
       }
+      case 'trade.offers':
+        return this.game().tradeOffersView() as R;
+      case 'trade.respondOffer': {
+        const p = payload as RequestMap['trade.respondOffer']['payload'];
+        return this.game().tradeRespondOffer(p.offerId, p.accept, p.commandId) as R;
+      }
+      case 'owner.career':
+        return this.game().careerView() as R;
+      case 'owner.acceptJob': {
+        // 구단이 바뀌면 구단별로 기억한 값(스카우트 보고서 등)을 버리고 서비스를 다시 만든다
+        this.game().acceptJob((payload as RequestMap['owner.acceptJob']['payload']).clubId);
+        this.service = null;
+        return this.dashboard() as R;
+      }
       case 'roster.view':
         return this.game().rosterView() as R;
       case 'roster.move': {

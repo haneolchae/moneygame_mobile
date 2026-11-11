@@ -492,6 +492,23 @@ export const AI_CLUB = {
     veteranCandidates: 5,
     prospectCandidates: 8,
   },
+  /** 7b(D-157): AI 구단이 우리 구단에 먼저 보내는 트레이드 제안 */
+  offer: {
+    maxPerPeriod: 4,
+    maxOpen: 2,
+    clubGapDays: 30,
+    /** 받은 날 포함 유효 일수. 스토브리그는 주 단위로 진행하므로 받은 다음 주까지 응답할 수 있어야 한다 */
+    validDays: 14,
+  },
+} as const;
+
+/** 7b 해임 뒤 영입 제안(D-157 (3) 초기안) */
+export const CAREER = {
+  /** 재임 중 포스트시즌 진출이 있거나 이 레벨 이상이면 2개 구단 */
+  twoOffersLevel: 3,
+  /** 이 레벨 이상이거나 재임 정규시즌이 이 수 이상이면 1개 구단 */
+  oneOfferLevel: 2,
+  oneOfferSeasons: 2,
 } as const;
 
 /** 4b-2 집중 훈련(D-128). 효과·강도·코치 계수는 사용자 확정, 코치 배정·담당 한도·AI 계획 수는 초기안 */

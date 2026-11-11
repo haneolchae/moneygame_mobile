@@ -1,6 +1,6 @@
-# 검증 리포트: 7a
+# 검증 리포트: 7b
 
-- 일시: 2026. 11. 11. 오전 8:54:30
+- 일시: 2026. 11. 11. 오전 9:24:35
 - 단계: 차수 종료 검증 (--stage phase), 장기 실행 2시즌, 시드 verify-1
 - 환경: Node 24.18.0, win32/x64
 - **종합 판정: 조건부 통과(경고 있음)**
@@ -8,14 +8,14 @@
 | 단계 | 판정 | 시간(초) | 요약 |
 | --- | --- | --- | --- |
 | 실행 환경 | PASS | 0 | 준비됨 |
-| 타입 검사 | PASS | 1.4 | 오류 0건 |
-| 계층 경계 검사 | PASS | 1 | 계층 경계 검사 통과 (110개 파일) |
-| 자동 테스트 | PASS | 97.4 | 140/140개 통과 |
-| 빌드 | PASS | 1.3 | 완료 |
-| 실제 Electron 자체 점검 | PASS | 14.1 | 스토브리그 12주 2110ms, 시즌 720/720 7583ms, 화면 지연 8ms, 저장 322ms·불러오기 261ms, Steam mock |
-| 장기 실행 2시즌 (시드 verify-1) | WARN | 33.1 | 2시즌, 규칙 위반 0건, 마지막 시즌 저장 700ms·저장본 15.8MB, 불러오기 253ms, 현금 485억 → 600억 |
-| 문서 정합성 | WARN | 0.3 | 실패 0건, 경고 1건, 임시 가정 44건 |
-| 저장소 상태 | PASS | 0 | HEAD bcf13a5, 커밋되지 않은 변경 14개 |
+| 타입 검사 | PASS | 1.5 | 오류 0건 |
+| 계층 경계 검사 | PASS | 0.8 | 계층 경계 검사 통과 (112개 파일) |
+| 자동 테스트 | PASS | 116.4 | 142/142개 통과 |
+| 빌드 | PASS | 1.6 | 완료 |
+| 실제 Electron 자체 점검 | PASS | 23.5 | 스토브리그 12주 2398ms, 시즌 720/720 13440ms, 화면 지연 10ms, 저장 760ms·불러오기 490ms, Steam mock |
+| 장기 실행 2시즌 (시드 verify-1) | WARN | 53.4 | 2시즌, 규칙 위반 0건, 마지막 시즌 저장 1011ms·저장본 15.8MB, 불러오기 613ms, 현금 466억 → 638억 |
+| 문서 정합성 | WARN | 0.5 | 실패 0건, 경고 1건, 임시 가정 44건 |
+| 저장소 상태 | PASS | 0 | HEAD a1b2326, 커밋되지 않은 변경 16개 |
 
 ## 상세
 
@@ -25,16 +25,17 @@
 
 ### 장기 실행 2시즌 (시드 verify-1) (WARN)
 
-- 2027시즌 시즌 진행 7.76s (경고 7s)
-- 2028시즌 시즌 진행 9.08s (경고 7s)
+- 2027시즌 시즌 진행 12.69s (경고 7s)
+- 2028시즌 시즌 진행 14.98s (경고 7s)
+- 2028시즌 선수 목록 정렬 246ms (경고 200ms)
 
-로그: `verify-reports\logs\20261111-0852_7a\sim.log`
+로그: `verify-reports\logs\20261111-0921_7b\sim.log`
 
 ### 문서 정합성 (WARN)
 
-- [경고] 실제 테스트 140개 > 문서 기록 138개. 이번 차수 결과가 06_progress.md에 아직 없을 수 있음
+- [경고] 실제 테스트 142개 > 문서 기록 140개. 이번 차수 결과가 06_progress.md에 아직 없을 수 있음
 
-로그: `verify-reports\logs\20261111-0852_7a\docs.log`
+로그: `verify-reports\logs\20261111-0921_7b\docs.log`
 
 ### 저장소 상태 (PASS)
 
@@ -66,7 +67,7 @@
 | 6c | 스폰서 | 완료 표시 |
 | 6d | 굿즈·브랜드 리스트 | 완료 표시 |
 | 6e | 예산 배분·특별 운영회의 | 미완료 |
-| 7a | AI 구단 운영 상태·긴축·AI 간 트레이드 | 미완료 |
+| 7a | AI 구단 운영 상태·긴축·AI 간 트레이드 | 완료 표시 |
 | 7b | AI 선제안 트레이드·해임 뒤 이어하기 | 미완료 |
 | 7c | 장기 밸런스 관측·반복 조작 점검 | 미완료 |
 | 9a | 성능 개선·최종 10시즌 검증 | 미완료 |
@@ -89,13 +90,13 @@
 - `src/engine/config.ts:290` (D-149) 6c 스폰서(D-149 초기안). ASSUMPTION(D-149): 금액 규모(mainBaseWon·subBaseWon)는 사용자 결정 대기인 임시값이다.
 - `src/engine/config.ts:426` (D-131) ASSUMPTION(D-131): 한 거래 현금 한도
 - `src/engine/config.ts:428` (D-131) ASSUMPTION(D-131): 거래 기간 — 스토브리그 K+5부터, 시즌은 7/31까지 [KBO·확인 필요]
-- `src/engine/config.ts:512` (D-128) ASSUMPTION(D-128): 담당 코치 공석일 때 지도력
-- `src/engine/config.ts:514` (D-128) ASSUMPTION(D-128): 코치당 담당 한도 = loadBase + ⌊소통력 / loadPer⌋
-- `src/engine/config.ts:522` (D-128) ASSUMPTION(D-128): 육성팀 목표 선택 오차 σ = delegateNoiseBase + delegateNoiseSpan × (1 − 역량)
-- `src/engine/config.ts:525` (D-128) ASSUMPTION(D-128): AI 구단은 스프링캠프 시작에 정점 전 유망주 이만큼 계획
-- `src/engine/config.ts:531` (D-124) ASSUMPTION(D-124): 정점 전 연간 성장 = (잠재 − 현재) × growthShare × 계수
-- `src/engine/config.ts:536` (D-124) ASSUMPTION(D-124): 하락 = (declineBase + declinePerYear × 정점+2 이후 연수) × 노화 계수 × 능력 배수
-- `src/engine/config.ts:560` (D-120) ASSUMPTION(D-120): 시범경기 — 개막 16일 전 목요일~개막 4일 전 화요일, 월요일 휴식, 9회까지(연장 없음)
+- `src/engine/config.ts:529` (D-128) ASSUMPTION(D-128): 담당 코치 공석일 때 지도력
+- `src/engine/config.ts:531` (D-128) ASSUMPTION(D-128): 코치당 담당 한도 = loadBase + ⌊소통력 / loadPer⌋
+- `src/engine/config.ts:539` (D-128) ASSUMPTION(D-128): 육성팀 목표 선택 오차 σ = delegateNoiseBase + delegateNoiseSpan × (1 − 역량)
+- `src/engine/config.ts:542` (D-128) ASSUMPTION(D-128): AI 구단은 스프링캠프 시작에 정점 전 유망주 이만큼 계획
+- `src/engine/config.ts:548` (D-124) ASSUMPTION(D-124): 정점 전 연간 성장 = (잠재 − 현재) × growthShare × 계수
+- `src/engine/config.ts:553` (D-124) ASSUMPTION(D-124): 하락 = (declineBase + declinePerYear × 정점+2 이후 연수) × 노화 계수 × 능력 배수
+- `src/engine/config.ts:577` (D-120) ASSUMPTION(D-120): 시범경기 — 개막 16일 전 목요일~개막 4일 전 화요일, 월요일 휴식, 9회까지(연장 없음)
 - `src/engine/contracts.ts:11` (D-075) FA 협상 설정 (ASSUMPTION, D-075)
 - `src/engine/finance.ts:84` (D-038) 2026년 기준 금액 (17·21 문서, D-038). 직원 급여는 2c 조직 구현 전까지 임시 총액이다(ASSUMPTION).
 - `src/engine/finance.ts:90` (D-112) broadcastRenewalBpAssumed: 1500, // ASSUMPTION(D-112): 관중 추세 모델 전까지 10~20%의 중간값
@@ -118,7 +119,7 @@
 - `src/game/records.ts:15` (D-079) ASSUMPTION(D-079): 시작 이전 기록의 규정 기준(144경기)
 - `src/game/seasonClose.ts:20` (D-043, D-085) ASSUMPTION(D-043·D-085): 목표·해임·파산·은퇴 수치
 - `src/game/seasonClose.ts:42` (D-085) ASSUMPTION(D-085): 파산 판정 적용 여부. 입장·스폰서·굿즈 등 사업 수입이 구현되기 전에는 모기업이 없는 구단이
-- `src/game/service.ts:609` (D-056) ASSUMPTION(D-056, 임시): 포스트시즌·스토브리그 없이 다음 시즌 정규시즌을 시작한다. 장기 데이터 검증용. 건너뛴 기간의 수입·지출은 처리되지 않는다.
+- `src/game/service.ts:615` (D-056) ASSUMPTION(D-056, 임시): 포스트시즌·스토브리그 없이 다음 시즌 정규시즌을 시작한다. 장기 데이터 검증용. 건너뛴 기간의 수입·지출은 처리되지 않는다.
 
 ## 판정 기준
 
