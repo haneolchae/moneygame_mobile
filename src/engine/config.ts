@@ -564,6 +564,32 @@ export const TACTICS = {
   },
 } as const;
 
+/** 6e 예산 배분·특별 운영회의(D-176·D-177) */
+export const BUDGET_PLAN = {
+  minMultiplier: 0.5,
+  maxMultiplier: 2,
+  multiplierStep: 0.25,
+  /** 한도 단위(원) */
+  capStepWon: 100_000_000,
+  /** 2026 기준 기본 한도: 선수 연봉 총액 = 샐러리캡 + payrollExtra(외국인 몫) */
+  defaultCapsWon: { payrollExtra: 6_000_000_000, facility: 30_000_000_000, marketing: 3_000_000_000, merch: 5_000_000_000 },
+  /** 운영비 배수 2배마다 효과(배수 0.5면 반대 방향) */
+  effects: { scoutingPerDoubling: 0.06, trainingPerDoubling: 0.06, medicalPerDoubling: 0.04 },
+  /** AI 구단 운영 상태별 2군·선수단 운영비 배수 */
+  aiOps: {
+    contend: { futures: 1.25, teamOps: 1.25 },
+    middle: { futures: 1, teamOps: 1 },
+    rebuild: { futures: 1.5, teamOps: 1 },
+    austerity: { futures: 0.75, teamOps: 0.75 },
+  },
+  /** 예산안 수립(스토브리그 다음 시즌): 그 주 첫 확정의 행동력, 경영지원팀 처리량(직접은 50%) */
+  planAp: 1,
+  planWp: 30,
+  /** 특별 운영회의 행동력, 남겨 둘 보고 수 */
+  meetingAp: 1,
+  meetingKeep: 10,
+} as const;
+
 /** 4c-3 경기 관전·승부처 참여(D-160·D-174) */
 export const LIVE = {
   /** 경기당 구단주 참여 타석 상한 */

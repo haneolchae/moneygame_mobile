@@ -152,6 +152,12 @@ export class Dispatcher {
         return this.game().liveDecide((payload as RequestMap['live.decide']['payload']).choice) as R;
       case 'live.settings':
         return this.game().liveSettings((payload as RequestMap['live.settings']['payload']).participate) as R;
+      case 'budget.view':
+        return this.game().budgetView() as R;
+      case 'budget.set':
+        return this.game().budgetSet(payload as RequestMap['budget.set']['payload']) as R;
+      case 'meeting.convene':
+        return this.game().meetingConvene() as R;
       case 'trade.respondOffer': {
         const p = payload as RequestMap['trade.respondOffer']['payload'];
         return this.game().tradeRespondOffer(p.offerId, p.accept, p.commandId) as R;

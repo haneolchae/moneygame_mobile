@@ -12,6 +12,7 @@ import { GameError } from '../shared/protocol';
 import type { BusinessOps } from './business';
 import type { Organization } from './organization';
 import type { GameMeta, GameRepository, InboxMessage } from './ports';
+import { NO_GUARD, type BudgetGuard } from './budget';
 
 const won = (n: number) => (Math.abs(n) >= EOK ? `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억` : `${Math.round(n / 10_000).toLocaleString('ko-KR')}만`);
 const md = (d: GameDate) => d.slice(5).replace('-', '/');
@@ -44,6 +45,9 @@ export class MerchOps {
     return meta.mode === 'stove' && meta.currentDate >= `${k}-${SPONSOR.offerMonthDay}` && meta.currentDate <= `${k + 1}-${SPONSOR.defaultMonthDay}`;
   }
 
+  /** 6e(D-177): 우리 구단 굿즈 발주 한도. 서비스가 연결한다 */
+  budget: BudgetGuard = NO_GUARD;
+
   /** 우리 구단 자동 재주문 담당자(상품팀장, 없으면 사업본부장). AI 구단은 항상 가능 */
   private canAuto(meta: GameMeta, clubId: ClubId): boolean {
     return clubId !== meta.userClubId || this.org.teamDelegate(clubId, 'merch') !== null;
@@ -65,6 +69,7 @@ export class MerchOps {
     const ordering = date >= addDays(key.opening, -M.firstOrderDaysBeforeOpening) && date <= key.regularSeasonEnd;
     const inflation = this.inflation(meta);
     const all: Record<string, MerchState> = {};
+    const blocked: string[] = [];
     for (const club of this.clubs.values()) {
       const s = this.stateOf(meta, club.id);
       // 새 시즌: 스토브리그에 고른 업체(없으면 국내 전문 제작사)로 바꾼다
@@ -92,9 +97,18 @@ export class MerchOps {
         if (selling) rollWeek(s);
         if (s.auto && this.canAuto(meta, club.id)) {
           const placed: string[] = [];
+          const mine = club.id === meta.userClubId;
+          // 6e(D-177 (3)): 우리 구단 자동 재주문은 굿즈 발주 한도 안까지만(오늘 넣은 발주 포함)
+          let orderedToday = 0;
           for (const sku of SKUS) {
             const qty = reorderQty(s, sku, baselineWeekly(sku, club.stadiumCapacity, s.vendor.kind));
             if (qty <= 0) continue;
+            const cost = qty * unitCost(sku, s.vendor.kind, inflation);
+            if (mine && this.budget.spendError(meta, 'merch', orderedToday + cost)) {
+              blocked.push(M.skus[sku].label);
+              continue;
+            }
+            if (mine) orderedToday += cost;
             ledger.push(this.placeOrder(meta, s, club.id, sku, qty, date));
             placed.push(`${M.skus[sku].label} ${qty.toLocaleString('ko-KR')}개`);
           }
@@ -104,6 +118,14 @@ export class MerchOps {
       all[String(club.id)] = s;
     }
     this.repo.updateMeta({ merch: all });
+    if (blocked.length) {
+      // 한도에 닿은 첫 주에만 알린다(시즌별)
+      const key = `${meta.season}:merch`;
+      if (!(meta.budgetAlerts ?? []).includes(key)) {
+        this.repo.updateMeta({ budgetAlerts: [...(meta.budgetAlerts ?? []).slice(-20), key] });
+        inbox.push({ date, kind: 'report', sender: '상품팀', title: '굿즈 발주 예산 한도 도달', body: `${meta.season} 예산의 굿즈 발주 한도에 닿아 ${blocked.join(', ')} 자동 재주문을 멈췄습니다. 품절을 막으려면 특별 운영회의에서 한도를 늘리세요.` });
+      }
+    }
     return { ledger, inbox };
   }
 
@@ -152,6 +174,8 @@ export class MerchOps {
     if (!Number.isInteger(qty) || qty < min || qty > M.maxManualOrder) throw new GameError('INVALID', `발주 수량은 ${min.toLocaleString('ko-KR')}~${M.maxManualOrder.toLocaleString('ko-KR')}개입니다(${M.vendors[s.vendor.kind].label} 최소 발주량).`);
     const cost = qty * unitCost(sku, s.vendor.kind, this.inflation(meta));
     if (this.repo.cashBalance(meta.userClubId) < cost) throw new GameError('CASH_SHORT', `현금이 부족합니다. 발주 금액 ${won(cost)}.`);
+    const over = this.budget.spendError(meta, 'merch', cost);
+    if (over) throw new GameError('BUDGET_OVER', over);
     return this.repo.transaction(() => {
       const entry = this.placeOrder(meta, s, meta.userClubId, sku, qty, meta.currentDate);
       this.save(meta.userClubId, s);

@@ -9,6 +9,7 @@ import { EOK } from '../engine/money';
 import type { ClubId, ClubProfile, Fixture } from '../engine/types';
 import { GameError } from '../shared/protocol';
 import type { AttendanceTotals, GameMeta, GameRepository, InboxMessage } from './ports';
+import { NO_GUARD, type BudgetGuard } from './budget';
 
 const won = (n: number) => (Math.abs(n) >= EOK ? `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억` : `${Math.round(n / 10_000).toLocaleString('ko-KR')}만`);
 const md = (d: GameDate) => d.slice(5).replace('-', '/');
@@ -18,6 +19,8 @@ export class BusinessOps {
   private priorCache: { season: number; pct: Map<ClubId, number> } | null = null;
   /** 그날 정규시즌 홈경기 관중(구단별). 굿즈 수요가 같은 날 읽는다(6d) */
   gateToday = new Map<ClubId, number>();
+  /** 6e(D-177): 우리 구단 재량 지출 한도. 서비스가 연결한다 */
+  budget: BudgetGuard = NO_GUARD;
   /** 7a(D-155): 재정 긴축 구단은 캠페인·시설 투자를 하지 않는다. 서비스가 연결한다 */
   austere: (clubId: ClubId) => boolean = () => false;
 
@@ -125,6 +128,8 @@ export class BusinessOps {
     if ((meta.campaigns?.[String(meta.userClubId)] ?? []).some((c) => c.kind === kind && diffDays(meta.currentDate, c.end) <= 0)) throw new GameError('DUPLICATE', '같은 캠페인이 이미 진행 중입니다.');
     const c = this.newCampaign(meta, kind, meta.currentDate);
     if (this.repo.cashBalance(meta.userClubId) < c.costWon) throw new GameError('CASH_SHORT', `현금이 부족합니다. 캠페인 비용 ${won(c.costWon)}.`);
+    const over = this.budget.spendError(meta, 'marketing', c.costWon);
+    if (over) throw new GameError('BUDGET_OVER', over);
     return c;
   }
 
@@ -268,6 +273,8 @@ export class BusinessOps {
     if (f.projects.some((p) => p.kind === kind)) throw new GameError('DUPLICATE', '이 시설은 이미 공사 중입니다.');
     const project = planProject(kind, f.levels[kind] + 1, meta.currentDate, this.inflation(meta));
     if (this.repo.cashBalance(meta.userClubId) < project.payments[0]!.amountWon) throw new GameError('CASH_SHORT', `현금이 부족합니다. 착공 때 ${won(project.payments[0]!.amountWon)}을 지급합니다.`);
+    const over = this.budget.spendError(meta, 'facility', this.budget.inYear(meta, project.payments));
+    if (over) throw new GameError('BUDGET_OVER', over);
     return project;
   }
 

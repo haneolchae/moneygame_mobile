@@ -13,7 +13,7 @@ import { CLOSE_RULES } from '../game/seasonClose';
 import { Dispatcher } from '../host/dispatcher';
 import { coreAverage } from '../engine/development';
 import { checkInvariants, injuryStats, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
-import type { AdvanceResult, DashboardView, DelegationPolicyView, BusinessView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView, TradeOffersView, TradeResultView, TradeView } from '../shared/protocol';
+import type { AdvanceResult, BudgetPlanInput, BudgetView, DashboardView, DelegationPolicyView, BusinessView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView, TradeOffersView, TradeResultView, TradeView } from '../shared/protocol';
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -61,6 +61,34 @@ async function main() {
       await call('business.signSponsor', { offerId: pick.id });
     } catch {
       // 행동력 부족 등 규칙상 거부
+    }
+  };
+  // 6e(D-176 (2)·D-177): 위임 구단주도 스토브리그에 다음 시즌 예산안을 정한다(스카우트 1.25·2군 1.5·선수단 1.25배, 한도는 기본).
+  // 시즌 중에는 특별 운영회의를 한 번 열고 굿즈 발주 한도를 25% 늘린다. 규칙상 거부(행동력 등)는 다음 주에 다시 한다.
+  let budgetYear = 0;
+  const budgetStats = { planned: 0, meetings: 0 };
+  const tryBudget = async () => {
+    const bv = await call<BudgetView>('budget.view');
+    if (!bv.planning || budgetYear === bv.planning.year) return;
+    const caps = Object.fromEntries(bv.planning.caps.map((c) => [c.kind, c.limitWon])) as BudgetPlanInput['caps'];
+    try {
+      await call('budget.set', { year: bv.planning.year, ops: { scouting: 1.25, futures: 1.5, teamOps: 1.25 }, caps });
+      budgetYear = bv.planning.year;
+      budgetStats.planned++;
+    } catch {
+      // 행동력 부족 등
+    }
+  };
+  const tryMeeting = async () => {
+    try {
+      const r = await call<{ view: BudgetView }>('meeting.convene');
+      const cur = r.view.current;
+      const caps = Object.fromEntries(cur.caps.map((c) => [c.kind, c.limitWon])) as BudgetPlanInput['caps'];
+      const ops = Object.fromEntries(cur.ops.map((o) => [o.kind, o.multiplier])) as BudgetPlanInput['ops'];
+      await call('budget.set', { year: cur.year, ops, caps: { ...caps, merch: Math.round((caps.merch * 1.25) / 1e8) * 1e8 } });
+      budgetStats.meetings++;
+    } catch {
+      // 행동력 부족, 이미 연 주 등
     }
   };
   // 7b(D-157·D-158 ④): 위임 구단주도 시즌(스토브리그 + 시즌)마다 받은 트레이드 제안 1건을 수락해 본다. 나머지는 기한까지 둔다.
@@ -121,6 +149,7 @@ async function main() {
         }
         await trySponsor();
         await tryOffer();
+        await tryBudget();
         await advance('week');
       }
     stoveErrors.push(...[...checkRosterLimits(d.saves.repository()), ...checkRosterComposition(d.saves.repository())].map((e) => `스토브리그 후 ${e}`));
@@ -187,6 +216,7 @@ async function main() {
     } catch {
       // 행동력·현금 부족, 종료된 게임 등
     }
+    await tryMeeting();
     // 5a·5b(D-132 ⑤·D-137 ③): 위임 구단주도 시즌마다 트레이드를 시도한다. 상대 선택·제안은 게임 명령으로만 하고
     // 규칙 판정(기간·자격·선수단·현금·AI 응답)은 게임 쪽이 한다. 역제안은 받아들인다. 계약 마지막 해 선수 1명은 요구 조건으로 연장을 시도한다.
     {
@@ -380,6 +410,7 @@ async function main() {
       aiTrades,
       offers: { received: offersNow, ratioMedian: offerRatioMedian, ratioSample: ratios.length, ...offerStats },
       live: { games: liveNow.games, points: liveNow.points, perGameAll: livePerGame },
+      budget: { ...budgetStats },
       stances: `우승 경쟁 ${stanceCount('contend')}·중위권 ${stanceCount('middle')}·리빌딩 ${stanceCount('rebuild')}·긴축 ${stanceCount('austerity')} (변경 구단 ${stanceChanged})`,
       coreMean,
       coreP95,

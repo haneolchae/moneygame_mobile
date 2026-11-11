@@ -160,6 +160,8 @@ export interface FinanceContext {
   staffPayroll: Won;
   /** 오늘 치른 홈경기 수 */
   homeGamesToday: number;
+  /** 6e(D-177): 운영비 배수(분석·스카우트, 2군, 선수단). 없으면 1 */
+  ops?: { scouting: number; futures: number; teamOps: number };
 }
 
 export function scheduledEntries(ctx: FinanceContext): LedgerEntry[] {
@@ -169,6 +171,8 @@ export function scheduledEntries(ctx: FinanceContext): LedgerEntry[] {
     if (amount !== 0) out.push({ clubId: club.id, date, category, amount, memo });
   };
   const inf = (base: Won) => inflate(base, seasonYear, inflationBp);
+  // 6e: 운영비는 기준 × 물가 × 배수(배수 1이면 6e 전과 같은 금액)
+  const scaled = (base: Won, m = 1) => (m === 1 ? inf(base) : Math.round(inf(base) * m));
 
   if (ctx.homeGamesToday > 0) {
     add('gameOps', -prorate(inf(FINANCE_BASE.gameOps), ctx.homeGamesToday, FINANCE_BASE.homeGamesPerSeason), `홈경기 ${ctx.homeGamesToday}경기`);
@@ -184,11 +188,11 @@ export function scheduledEntries(ctx: FinanceContext): LedgerEntry[] {
   add('staffPayroll', -monthly(ctx.staffPayroll), label);
   add('stadiumFee', -monthly(inf(stadiumFee(club))), label);
   add('generalAdmin', -monthly(inf(FINANCE_BASE.generalAdmin)), label);
-  add('futuresOps', -monthly(inf(FINANCE_BASE.futuresOps)), label);
-  add('analysisScouting', -monthly(inf(FINANCE_BASE.analysisScouting)), label);
+  add('futuresOps', -monthly(scaled(FINANCE_BASE.futuresOps, ctx.ops?.futures)), label);
+  add('analysisScouting', -monthly(scaled(FINANCE_BASE.analysisScouting, ctx.ops?.scouting)), label);
 
   // 선수단 운영비: 2~10월(9개월)
-  if (idx <= 8) add('teamOps', -(splitEvenly(inf(FINANCE_BASE.teamOps), 9)[idx] ?? 0), label);
+  if (idx <= 8) add('teamOps', -(splitEvenly(scaled(FINANCE_BASE.teamOps, ctx.ops?.teamOps), 9)[idx] ?? 0), label);
 
   // 선수 연봉: 2~11월 10회 분할 (D-059)
   if (idx <= 9) {

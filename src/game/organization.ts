@@ -102,9 +102,12 @@ export class Organization {
     return Math.max(0, Math.min(1, staff.reduce((a, s) => a + (s.abilities.expertise ?? 50), 0) / staff.length / 100));
   }
 
+  /** 6e(D-177): 분석·스카우트 운영비 배수의 추정 오차 배율. 서비스가 연결한다 */
+  scoutingBudget: (meta: GameMeta) => number = () => 1;
+
   scoutingScale(meta: GameMeta): number {
     // 6a 분석·스카우팅 사무실(D-141): 완공 단계당 추정 오차 −3%
-    return scoutingSdScale(this.staff(meta.userClubId)) * scoutingBoost(meta.facilities?.[String(meta.userClubId)]);
+    return scoutingSdScale(this.staff(meta.userClubId)) * scoutingBoost(meta.facilities?.[String(meta.userClubId)]) * this.scoutingBudget(meta);
   }
 
   lookaheadDays(meta: GameMeta): number {

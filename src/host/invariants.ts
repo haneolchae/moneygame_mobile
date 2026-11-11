@@ -11,6 +11,9 @@ import { planProblems } from '../engine/lineup';
 import { exhibitionDates } from '../game/rosterOps';
 import { compositionViolations } from '../engine/roster';
 import type { GameRepository } from '../game/ports';
+import { aiOps, defaultPlan } from '../engine/budget';
+import { FINANCE_BASE, inflate } from '../engine/finance';
+import { EOK, splitEvenly } from '../engine/money';
 
 export function checkInvariants(repo: GameRepository, season: number): string[] {
   const errors: string[] = [];
@@ -42,6 +45,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   errors.push(...checkDevelopment(repo));
   errors.push(...checkHealthPlay(repo, season));
   errors.push(...checkTraining(repo));
+  errors.push(...checkBudget(repo));
   errors.push(...checkBusiness(repo));
   errors.push(...checkAiClubs(repo));
   errors.push(...checkManagers(repo));
@@ -459,3 +463,35 @@ export function injuryStats(repo: GameRepository, season: number) {
   }
   return { perClub: +(n / clubs).toFixed(1), longPerClub: +(long / clubs).toFixed(1), concurrent: +(injuredDays / days / clubs).toFixed(2), seasonOutPerClub: +(out / clubs).toFixed(2) };
 }
+
+/**
+ * 6e(D-177·D-178 ⑤): 우리 구단 이번 예산 연도 시설·캠페인·굿즈 집행액 ≤ 한도,
+ * AI 구단 2군·선수단 운영비 장부 배수가 운영 상태 배수 중 하나(긴축 0.75 ~ 리빌딩 1.5).
+ */
+export function checkBudget(repo: GameRepository): string[] {
+  const errors: string[] = [];
+  const meta = repo.getMeta();
+  const year = meta.season;
+  const infl = inflate(EOK, year, meta.inflationBp) / EOK;
+  const plan = meta.budgets?.[String(year)] ?? defaultPlan(year, infl, meta.currentDate);
+  const byCat = new Map(repo.ledgerByCategory(meta.userClubId, year).map((r) => [r.category, r.amount]));
+  for (const [cap, cat] of [['facility', 'facilityConstruction'], ['marketing', 'marketing'], ['merch', 'merchOrder']] as const) {
+    const used = 0 - (byCat.get(cat) ?? 0);
+    if (used > plan.caps[cap]) errors.push(`예산 한도 초과: ${year} ${cap} 집행 ${used} > 한도 ${plan.caps[cap]}`);
+  }
+  const allowed = new Set(Object.values(AI_OPS_SET()).flat());
+  for (const c of repo.getClubs()) {
+    if (c.id === meta.userClubId) continue;
+    for (const e of repo.ledgerEntries(c.id, 400)) {
+      if (e.season !== year || (e.category !== 'futuresOps' && e.category !== 'teamOps')) continue;
+      const base = e.category === 'futuresOps' ? FINANCE_BASE.futuresOps : FINANCE_BASE.teamOps;
+      const parts = e.category === 'futuresOps' ? 12 : 9;
+      const unit = splitEvenly(inflate(base, year, meta.inflationBp), parts)[0]!;
+      const ratio = -e.amount / unit;
+      if (![...allowed].some((m) => Math.abs(ratio - m) < 0.01)) errors.push(`AI 운영비 배수 이상: ${c.id} ${e.category} ${e.date} 배수 ${ratio.toFixed(3)}`);
+    }
+  }
+  return errors;
+}
+
+const AI_OPS_SET = () => Object.fromEntries(STANCES.map((s) => [s, [aiOps(s).futures, aiOps(s).teamOps]]));

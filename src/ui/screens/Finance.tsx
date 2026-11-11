@@ -1,11 +1,12 @@
 // 재정(D-140 Diamond Office 배치): game.finance 응답만 쓴다. 현금·시즌 수입·지출·수지, 항목별 합계(수입/지출), 최근 장부.
 // 비중은 같은 시즌·같은 분모(시즌 운영 수입 또는 지출 합계)일 때만 보여 주고 분모가 0이면 숨긴다.
-// 예산·전년비·인사이트처럼 원천 데이터가 없는 값은 만들지 않는다. 기초 현금은 운영 수입이 아니라 비중에서 뺀다.
+// 전년비·인사이트처럼 원천 데이터가 없는 값은 만들지 않는다. 기초 현금은 운영 수입이 아니라 비중에서 뺀다. 예산·운영회의는 BudgetPanel(6e).
 import { useEffect, useState } from 'react';
 import type { FinanceView } from '../../shared/protocol';
 import type { Nav } from '../App';
 import { api } from '../api';
 import { dateKo, won } from '../format';
+import { BudgetPanel } from '../BudgetPanel';
 import { Icon } from '../icons';
 
 const signed = (n: number) => (n > 0 ? `+${won(n)}` : n < 0 ? `-${won(-n)}` : '0');
@@ -95,6 +96,7 @@ export function Finance({ nav }: { nav: Nav }) {
           <span className="value" style={{ color: net < 0 ? 'var(--do-danger)' : undefined }}>{signed(net)}</span>
         </div>
       </div>
+      <BudgetPanel nav={nav} />
       <div className="columns even">
         <section className="panel">
           <div className="panel-head">

@@ -752,6 +752,45 @@ export interface TradeResultView {
   apCharged: number;
   view: TradeView;
 }
+// ───────── 6e 예산 배분·특별 운영회의 (D-176·D-177) ─────────
+
+export interface BudgetPlanView {
+  year: number;
+  setBy: 'owner' | 'auto';
+  /** 운영비 배수(장부 금액과 효과) */
+  ops: Array<{ kind: 'scouting' | 'futures' | 'teamOps'; label: string; multiplier: number; annualWon: number; effect: string }>;
+  /** 재량 지출 한도와 집행·예약액(연봉은 현재 총액) */
+  caps: Array<{ kind: 'payroll' | 'facility' | 'marketing' | 'merch'; label: string; limitWon: number; usedWon: number }>;
+  editable: boolean;
+  editNote: string;
+}
+
+export interface MeetingView {
+  weekId: string;
+  date: string;
+  cashWon: number;
+  fixedInWon: number;
+  fixedOutWon: number;
+  payrollWon: number;
+  payrollLimitWon: number;
+  execution: Array<{ cap: string; label: string; limit: number; used: number }>;
+  items: Array<{ who: string; text: string }>;
+}
+
+export interface BudgetView {
+  current: BudgetPlanView;
+  /** 스토브리그의 다음 시즌 예산안 */
+  planning: BudgetPlanView | null;
+  meeting: { heldThisWeek: boolean; ap: number; latest: MeetingView | null };
+  limits: { minMultiplier: number; maxMultiplier: number; step: number; capStepWon: number };
+}
+
+export interface BudgetPlanInput {
+  year: number;
+  ops: { scouting: number; futures: number; teamOps: number };
+  caps: { payroll: number; facility: number; marketing: number; merch: number };
+}
+
 // ───────── 4c-3 경기 관전·승부처 참여 (D-160·D-174) ─────────
 
 export interface LiveFeedItem {
@@ -1102,6 +1141,9 @@ export interface RequestMap {
   'live.start': { payload: void; result: LiveGameView };
   'live.decide': { payload: { choice: LiveChoice }; result: LiveGameView };
   'live.settings': { payload: { participate: boolean }; result: LiveGameView };
+  'budget.view': { payload: void; result: BudgetView };
+  'budget.set': { payload: BudgetPlanInput; result: { message: string; apCharged: number; view: BudgetView } };
+  'meeting.convene': { payload: void; result: { message: string; view: BudgetView } };
   'trade.respondOffer': { payload: { offerId: number; accept: boolean; commandId: string }; result: TradeOfferResultView };
   'owner.career': { payload: void; result: CareerView };
   'owner.acceptJob': { payload: { clubId: number }; result: DashboardView };
@@ -1185,6 +1227,9 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'live.start',
   'live.decide',
   'live.settings',
+  'budget.view',
+  'budget.set',
+  'meeting.convene',
   'trade.respondOffer',
   'owner.career',
   'owner.acceptJob',

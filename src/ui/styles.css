@@ -299,3 +299,7 @@ button.danger:hover:not(:disabled) { background: rgba(230, 106, 114, 0.15); }
 .live-form { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .live-form select { margin-left: 6px; max-width: 100%; }
 .live-decision .warn { color: var(--do-warn); }
+
+/* 6e 특별 운영회의 보고 */
+.meeting-items { margin: 0; padding-left: 18px; font-size: 13px; }
+.meeting-items li { margin-bottom: 6px; line-height: 1.5; }

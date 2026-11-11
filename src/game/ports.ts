@@ -3,6 +3,7 @@ import type { ScoutingSnapshot } from '../engine/scouting';
 // 이 인터페이스 덕분에 게임 진행 로직은 저장 방식(SQLite 드라이버 등)을 모른다.
 import type { ClubStance } from '../engine/aiClub';
 import type { OwnerPrePa } from '../engine/gamesim';
+import type { BudgetPlan } from '../engine/budget';
 import type { CountTactic } from '../engine/tactics';
 import type { GameDate } from '../engine/calendar';
 import type { Campaign, ClubFacilities, FanState, TicketPolicy } from '../engine/business';
@@ -61,6 +62,12 @@ export interface GameMeta {
   liveSettings?: { participate: boolean };
   /** 4c-3: 시즌 → 우리 경기 수·참여 지점 수 */
   liveStats?: Record<string, { games: number; points: number }>;
+  /** 6e(D-177): 예산 연도 → 우리 구단 예산안, 예산안 수립 행동력을 낸 주, 특별 운영회의 보고(최근 10회) */
+  budgets?: Record<string, BudgetPlan>;
+  budgetPlanWeeks?: string[];
+  meetings?: MeetingRecord[];
+  /** 6e: 한 번만 보내는 예산 알림 키(시즌:항목) */
+  budgetAlerts?: string[];
   /** 4c-2b(D-166·D-172): AI 구단 성적 목표 연속 미달 시즌 수(감독 교체 판정) */
   aiGoalMisses?: Record<string, number>;
   /** 4c-1(D-167): 경기 계산에 쓴 승리 확률 표·볼카운트 기준표 버전(새 게임·시즌 시작 때 기록) */
@@ -149,6 +156,20 @@ export interface TradeTalk {
   log: TradeLogEntry[];
   /** 상대 역제안(그 주 안에서만 유효) */
   counter: { pkg: TradePackage; weekId: string } | null;
+}
+
+/** 6e 특별 운영회의 보고(D-177 (6)) */
+export interface MeetingRecord {
+  weekId: string;
+  date: GameDate;
+  cashWon: number;
+  /** 앞으로 365일 확정 수입·지출 */
+  fixedInWon: number;
+  fixedOutWon: number;
+  payrollWon: number;
+  payrollLimitWon: number;
+  execution: Array<{ cap: string; label: string; limit: number; used: number }>;
+  items: Array<{ who: string; text: string }>;
 }
 
 /** 4c-3 경기 진행 기록: 결정 키별 타석 시작 지시, '타석 순번:볼:스트라이크'별 카운트 지시 */

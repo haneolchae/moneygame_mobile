@@ -36,6 +36,7 @@ import { dealWindowReason } from './trade';
 import { weekIdFor } from './week';
 import { GameError } from '../shared/protocol';
 import type { FaEntry, GameMeta, GameRepository, InboxMessage, OfferRow, SalaryTalk } from './ports';
+import { NO_GUARD, type BudgetGuard } from './budget';
 
 const won = (n: number) => (Math.abs(n) >= EOK ? `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억` : `${Math.round(n / 10_000).toLocaleString('ko-KR')}만`);
 const describe = (o: ContractOffer) => `${o.years}년 총액 ${won(offerTotal(o))} (계약금 ${won(o.bonus)}, 연봉 ${won(o.salary)})`;
@@ -74,10 +75,17 @@ export function stoveDates(kDate: GameDate): StoveDates {
 /** 명령 출처. 직접 행동과 위임 실행은 같은 도메인 로직을 쓰고 비용 출처만 다르다(claude.md 공통 구현 계약). */
 export type ActionSource = { kind: 'direct'; weekId: string } | { kind: 'delegated' };
 
+/** 6e: 연봉 한도 검사 결과를 비용 없이 거부로 바꾼다 */
+const payrollGuard = (msg: string | null) => {
+  if (msg) throw new GameError('BUDGET_OVER', msg);
+};
+
 /** 팀 처리량 차감. 직접 행동은 50%(초과 허용), 위임은 준비 단계에서 이미 100%를 차감한다. */
 export type WpCharge = (source: ActionSource, team: TeamKey, fullCost: number) => void;
 
 export class Market {
+  /** 6e(D-177): 우리 구단 연봉 총액 한도. 서비스가 연결한다 */
+  budget: BudgetGuard = NO_GUARD;
   constructor(
     private readonly repo: GameRepository,
     private readonly clubs: Map<ClubId, ClubProfile>,
@@ -662,6 +670,7 @@ export class Market {
     const cash = this.repo.cashBalance(meta.userClubId);
     if (cash < offer.bonus + comp) throw new GameError('CASH_SHORT', `현금이 부족합니다. 계약금 ${won(offer.bonus)}${comp ? ` + 보상금 ${won(comp)}` : ''}이 필요합니다.`);
     const p = this.players().find((x) => x.id === playerId)!;
+    payrollGuard(this.budget.payrollError(meta, offer.salary - (p.clubId === meta.userClubId ? p.salary : 0)));
     const year = this.contractYear(meta);
     return this.repo.transaction(() => {
       this.pay(meta, source, playerId, TASK_WP.faRound);
@@ -719,6 +728,7 @@ export class Market {
     if (errors.length) throw new GameError('FOREIGN_RULE', errors.join(' '));
     const record: ContractOffer = { years: 1, salary: usdToWon(salaryUsd), bonus: 0 };
     if (source.kind === 'direct') this.assertNewOffer(meta, playerId, 'foreign', record);
+    payrollGuard(this.budget.payrollError(meta, record.salary - (p.clubId === meta.userClubId ? p.salary : 0)));
     return this.repo.transaction(() => {
       this.pay(meta, source, playerId, TASK_WP.foreignContract);
       if (salaryUsd >= demand) {
@@ -759,6 +769,8 @@ export class Market {
     const { p, demand } = this.extensionTarget(meta, playerId);
     if (source.kind === 'direct') this.assertNewOffer(meta, playerId, 'extension', offer);
     if (this.repo.cashBalance(meta.userClubId) < offer.bonus) throw new GameError('CASH_SHORT', `현금이 부족합니다. 계약금 ${won(offer.bonus)}이 필요합니다.`);
+    // 연장 계약 연봉은 다음 시즌부터: 지금 연봉과의 차이만큼 연봉 한도로 본다
+    payrollGuard(this.budget.payrollError(meta, offer.salary - p.salary));
     const year = meta.season + 1;
     return this.repo.transaction(() => {
       this.pay(meta, source, playerId, TASK_WP.faRound);
@@ -798,6 +810,7 @@ export class Market {
     const { p, demand } = this.domesticTarget(meta, playerId);
     const record: ContractOffer = { years: 1, salary: round1m(salary), bonus: 0 };
     if (source.kind === 'direct') this.assertNewOffer(meta, playerId, 'domestic', record);
+    payrollGuard(this.budget.payrollError(meta, record.salary));
     return this.repo.transaction(() => {
       this.pay(meta, source, playerId, TASK_WP.salaryTalk);
       if (record.salary >= demand) {

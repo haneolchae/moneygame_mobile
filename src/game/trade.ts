@@ -14,6 +14,7 @@ import type { Organization } from './organization';
 import type { ActionLogEntry, GameMeta, GameRepository, InboxMessage, TradePackage, TradeTalk } from './ports';
 import type { RosterOps } from './rosterOps';
 import { weekIdFor } from './week';
+import { NO_GUARD, type BudgetGuard } from './budget';
 
 const EOK = 100_000_000;
 const won = (n: number) => (Math.abs(n) >= EOK ? `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억` : `${Math.round(n / 10_000).toLocaleString('ko-KR')}만`);
@@ -47,6 +48,8 @@ export function dealWindowReason(meta: GameMeta, what: string): string | null {
 }
 
 export class TradeOps {
+  /** 6e(D-177): 우리 구단 연봉 총액 한도. 서비스가 연결한다 */
+  budget: BudgetGuard = NO_GUARD;
   constructor(
     private readonly repo: GameRepository,
     private readonly org: Organization,
@@ -144,6 +147,9 @@ export class TradeOps {
     const next = this.after(players, meta.userClubId, clubId, pkg);
     errors.push(...this.rosterErrors('우리', next.ours), ...this.rosterErrors('상대', next.theirs));
     const salary = (ids: number[]) => ids.reduce((a, id) => a + (byId.get(id)?.salary ?? 0), 0);
+    // 6e(D-177 (3)): 우리 연봉 총액이 늘어나는 거래는 연봉 한도 안이어야 한다
+    const over = this.budget.payrollError(meta, salary(pkg.get) - salary(pkg.give));
+    if (over) errors.push(over);
     return {
       pkg,
       errors,

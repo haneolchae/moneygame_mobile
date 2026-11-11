@@ -44,6 +44,7 @@ import { AiClubOps } from './aiClubs';
 import { ManagerOps } from './managers';
 import { MANAGER_KEYS, MANAGER_LABEL } from '../engine/manager';
 import { CareerOps } from './career';
+import { BudgetOps } from './budget';
 import { BusinessOps } from './business';
 import { SponsorOps } from './sponsors';
 import { MerchOps } from './merch';
@@ -101,6 +102,8 @@ import {
   type TradeView,
   type BusinessView,
   type LiveChoice,
+  type BudgetPlanInput,
+  type BudgetView,
   type LiveDecisionView,
   type LiveFeedItem,
   type LiveGameGameView,
@@ -281,6 +284,7 @@ export class GameService {
   readonly business: BusinessOps;
   readonly sponsors: SponsorOps;
   readonly merch: MerchOps;
+  readonly budget: BudgetOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -337,14 +341,28 @@ export class GameService {
     // 6a 시설 효과(D-141): 재활센터 → 메디컬 역량, 실내 훈련장 → 집중 훈련 효과
     // 4c-2b(D-172): 감독 컨디션 관리(경기 사이 피로)·육성(집중 훈련 효과)
     this.managers = new ManagerOps(repo, this.clubMap, this.seasonClose);
-    this.health = new HealthOps(repo, this.rosterOps, (id) => Math.min(1, this.org.medicalQuality(id) + this.business.rehabBoost(id)), (id) => this.managers.conditionFactor(id));
-    this.training = new TrainingOps(repo, this.org, (id) => this.business.trainingBoost(id) * this.managers.developmentFactor(id));
+    // 6e(D-177): 선수단 운영비 → 메디컬 역량, 2군 운영비 → 집중 훈련 효과, 분석·스카우트 운영비 → 추정 오차
+    this.health = new HealthOps(repo, this.rosterOps, (id) => Math.max(0, Math.min(1, this.org.medicalQuality(id) + this.business.rehabBoost(id) + this.budget.medicalBonus(id))), (id) => this.managers.conditionFactor(id));
+    this.training = new TrainingOps(repo, this.org, (id) => this.business.trainingBoost(id) * this.managers.developmentFactor(id) * this.budget.trainingFactor(id));
     this.sponsors = new SponsorOps(repo, this.clubMap, this.org, this.business);
     this.merch = new MerchOps(repo, this.clubMap, this.org, this.business);
     this.trades = new TradeOps(repo, this.org, this.rosterOps, (id) => this.aiClubs.stance(id));
     // 7a(D-155): AI 구단 운영 상태·긴축·AI 간 트레이드
     this.aiClubs = new AiClubOps(repo, this.clubMap, this.trades, () => this.stanceRanks());
     this.business.austere = (id) => this.aiClubs.stance(id) === 'austerity';
+    // 6e(D-176·D-177): 예산안·재량 지출 한도·특별 운영회의
+    this.budget = new BudgetOps(repo, this.clubMap, {
+      stance: (id) => this.aiClubs.stance(id),
+      unavailable: (m, ps) => this.health.unavailableOn(m, m.currentDate, ps),
+      tired: (m, ps) => this.health.tiredOn(m.currentDate, ps),
+      managerTrust: (id) => this.repo.getStaff(id).find((s) => s.title === '감독')?.manager?.trust ?? null,
+      chargeAdmin: (m, weekId, wp) => this.org.charge(m, { kind: 'direct', weekId }, 'admin', wp),
+    });
+    this.org.scoutingBudget = (m) => this.budget.scoutingFactor(m);
+    this.business.budget = this.budget;
+    this.merch.budget = this.budget;
+    this.market.budget = this.budget;
+    this.trades.budget = this.budget;
     this.career = new CareerOps(repo, this.clubMap, () => this.stanceRanks());
     this.records = new Records(repo, (id) => this.clubMap.get(id)?.shortName ?? `#${id}`);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
@@ -431,6 +449,7 @@ export class GameService {
 
   /** 하루 처리의 경기 전 단계(일정 사건·시장·조직·운영 상태·성장·건강·개막·시범경기). 관전 미리보기도 같은 단계를 거친다 */
   private dayPrelude(meta: GameMeta, date: GameDate) {
+    this.budget.reset();
     // 1) 일정 사건 → 리그 소식, 선수 시장(FA·연봉 협상·외국인·명단 정리)
     const inbox: InboxMessage[] = this.repo.getCalendarEvents(date, date).map((e) => ({ date, kind: 'news', sender: 'KBO 소식', title: e.title, body: this.eventBody(e, meta) }));
     const market = this.market.onDay(date, meta);
@@ -525,6 +544,8 @@ export class GameService {
     const mc = this.merch.onDay(this.meta(), date);
     ledger.push(...mc.ledger);
     inbox.push(...mc.inbox);
+    // 6e: 오늘 바뀐 운영 상태를 운영비 배수에 반영한다
+    this.budget.reset();
     for (const club of this.clubMap.values()) {
       ledger.push(
         ...scheduledEntries({
@@ -537,6 +558,7 @@ export class GameService {
           releasedSalaries: obligations.filter((o) => o.clubId === club.id).map((o) => o.salary),
           homeGamesToday: results.filter((r) => r.home === club.id).length,
           staffPayroll: staffPayroll.get(club.id) ?? 0,
+          ops: this.budget.ops(club.id),
         }),
       );
     }
@@ -559,6 +581,12 @@ export class GameService {
       this.training.planAi(meta, next);
       Object.assign(metaUpdate, camp.update);
       inbox.push(...camp.inbox);
+      // 6e(D-177 (4)): 새 예산 연도 예산안이 없으면 경영지원팀이 편성한다
+      const budget = this.budget.onSeasonStart({ ...meta, inflationBp: metaUpdate.inflationBp }, season, next);
+      if (budget) {
+        metaUpdate.budgets = budget.budgets;
+        inbox.push(...budget.inbox);
+      }
       // 지난 시즌 상세 기록 압축(D-106): 새 시즌이 시작될 때 직전 시즌의 원시 기록을 시즌 합계로 바꾼다.
       this.repo.compressSeason(meta.season);
       // 성적 기본 목표: 시즌 모드 시작 때 예상 순위로 고정한다(02 문서).
@@ -1342,6 +1370,7 @@ export class GameService {
       this.managers.reset();
       this.aiClubs.reset();
       this.business.reset();
+      this.budget.reset();
     }
     return out!;
   }
@@ -1393,6 +1422,27 @@ export class GameService {
   }
 
   /** 승부처 참여 설정(행동력 0). 끄면 관전만 한다 */
+  // ───────── 6e 예산 배분·특별 운영회의 (D-176·D-177) ─────────
+
+  budgetView(): BudgetView {
+    return this.budget.view(this.meta());
+  }
+
+  /** 예산안 확정·수정(스토브리그 다음 시즌 예산안은 행동력 1, 이번 연도 수정은 회의 뒤 무료) */
+  budgetSet(input: BudgetPlanInput): { message: string; apCharged: number; view: BudgetView } {
+    const meta = this.meta();
+    if (!input || typeof input.year !== 'number' || !input.ops || !input.caps) throw new GameError('INVALID', '예산안 형식이 올바르지 않습니다.');
+    const r = this.budget.setPlan(meta, weekIdFor(meta.currentDate), input.year, { scouting: Number(input.ops.scouting), futures: Number(input.ops.futures), teamOps: Number(input.ops.teamOps) }, { payroll: Number(input.caps.payroll), facility: Number(input.caps.facility), marketing: Number(input.caps.marketing), merch: Number(input.caps.merch) });
+    return { ...r, view: this.budgetView() };
+  }
+
+  /** 특별 운영회의: 행동력 1, 주 1회 */
+  meetingConvene(): { message: string; view: BudgetView } {
+    const meta = this.meta();
+    const r = this.budget.convene(meta, weekIdFor(meta.currentDate));
+    return { message: r.message, view: this.budgetView() };
+  }
+
   liveSettings(participate: boolean): LiveGameView {
     this.repo.updateMeta({ liveSettings: { participate: participate === true } });
     return this.liveView();
