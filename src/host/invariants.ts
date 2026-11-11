@@ -12,7 +12,8 @@ import { exhibitionDates } from '../game/rosterOps';
 import { compositionViolations } from '../engine/roster';
 import type { GameRepository } from '../game/ports';
 import { aiOps, defaultPlan } from '../engine/budget';
-import { AWARDS } from '../engine/config';
+import { ACHIEVEMENT_XP, AWARDS } from '../engine/config';
+import { ACHIEVEMENTS } from '../game/achievements';
 import { FINANCE_BASE, inflate } from '../engine/finance';
 import { EOK, splitEvenly } from '../engine/money';
 
@@ -48,6 +49,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   errors.push(...checkTraining(repo));
   errors.push(...checkBudget(repo));
   errors.push(...checkAwards(repo));
+  errors.push(...checkAchievements(repo));
   errors.push(...checkBusiness(repo));
   errors.push(...checkAiClubs(repo));
   errors.push(...checkManagers(repo));
@@ -542,5 +544,22 @@ export function checkAwards(repo: GameRepository): string[] {
     if (dates((k) => !k.startsWith('monthly_') && k !== 'ks_mvp' && k !== 'gg' && k !== 'platinum' && !k.startsWith('best')) > 1) errors.push(`${y} KBO 시상식 날짜가 여럿`);
     if (dates((k) => k === 'gg' || k === 'platinum' || k.startsWith('best')) > 1) errors.push(`${y} 골든글러브 시상식 날짜가 여럿`);
   }
+  return errors;
+}
+
+/** 8b(D-183 ②④): 달성한 단계의 아래 단계가 같은 날 이전에 있다(같은 시즌 또는 1회형), 시즌별 업적 경험치 ≤ 상한 */
+export function checkAchievements(repo: GameRepository): string[] {
+  const errors: string[] = [];
+  const got = repo.getAchievements();
+  const def = new Map(ACHIEVEMENTS.map((a) => [a.key, a]));
+  for (const a of got) {
+    const d = def.get(a.key);
+    if (!d || d.stage <= 1) continue;
+    for (let st = 1; st < d.stage; st++) {
+      const lower = got.find((x) => x.key === `${d.series}.${st}` && x.date <= a.date && (d.repeat ? x.season === a.season : true));
+      if (!lower) errors.push(`아래 단계 없음: ${a.key}(${a.date}) → ${d.series}.${st}`);
+    }
+  }
+  for (const [season, xp] of Object.entries(repo.getMeta().achievementXp ?? {})) if (xp > ACHIEVEMENT_XP.seasonCap) errors.push(`업적 경험치 상한 초과: ${season} ${xp}`);
   return errors;
 }

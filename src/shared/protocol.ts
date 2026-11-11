@@ -357,6 +357,12 @@ export interface TeamHistoryRow {
 
 export interface AchievementView {
   key: string;
+  /** 8b 계열·단계(D-182). 이전 개발 빌드 업적은 series 'legacy' */
+  series: string;
+  seriesTitle: string;
+  stage: number;
+  stageLabel: string;
+  type: 'once' | 'season' | 'cumulative' | 'legacy';
   title: string;
   category: string;
   description: string;

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { SEASON_2026_STANDINGS } from '../src/engine/clubs';
+import { checkAchievements } from '../src/host/invariants';
 import type { Dispatcher } from '../src/host/dispatcher';
 import { call, cleanup, makeDispatcher, tempDir } from './helpers';
 
@@ -91,22 +92,39 @@ describe('우리 선수 능력치·기간별 기록 (D-078·D-079)', () => {
   });
 });
 
-describe('업적 (D-080)', () => {
-  it('실제 기록으로 판정하고 경험치를 주며, 같은 시드면 같은 업적·같은 날짜다. 불러와도 중복되지 않는다', async () => {
+describe('업적 (D-080·D-182·D-183)', () => {
+  it('실제 기록으로 판정하고 경험치를 주며, 같은 시드면 같은 업적·같은 날짜다. 불러와도 중복되지 않는다. 아래 단계 함께·판정 값 = 기록', async () => {
     const a = await playSeason('ach');
     const b = await playSeason('ach');
     const list = (d: Dispatcher) => JSON.stringify(d.saves.repository().getAchievements());
     expect(list(a)).toBe(list(b));
     const got = a.saves.repository().getAchievements();
-    expect(got.some((x) => x.key === 'first_win')).toBe(true);
-    // 시즌 업적은 정규시즌 마지막 날 판정된다.
-    const seasonKeys = got.filter((x) => x.season === 2027);
-    for (const s of seasonKeys) expect(s.date).toBe('2027-09-19');
+    expect(got.some((x) => x.key === 'A_first.1')).toBe(true);
+    // 팀 시즌 성적·왕조 업적은 정규시즌 마지막 날 판정된다(포스트시즌 단계 제외).
+    for (const s of got.filter((x) => /^(E_|F_)/.test(x.key) && x.date <= '2027-09-19')) expect(s.date).toBe('2027-09-19');
+    // ② 아래 단계가 같은 날 이전에 모두 있다, ④ 시즌 업적 경험치 ≤ 300
+    expect(checkAchievements(a.saves.repository())).toEqual([]);
+    // ③ 타자·투수 시즌 기록: 판정 값이 단계 기준 이상이고 시즌 최종 기록(우리 구단 소속) 이하
+    const repo = a.saves.repository();
+    const bat = repo.battingTotals(2027, undefined, 7);
+    const pit = repo.pitchingTotals(2027, undefined, 7);
+    const players = new Map(repo.getPlayers().map((p) => [p.name, p.id]));
+    const sample = got.filter((x) => /^(B_hr|B_h|B_rbi|C_w|C_k|C_sv)\./.test(x.key));
+    expect(sample.length).toBeGreaterThan(0);
+    for (const x of sample) {
+      const m = /^2027 (.+) (\d+)(?:홈런|안타|타점|승|탈삼진|세이브)\((\d+)\)$/.exec(x.detail)!;
+      expect(m, x.detail).not.toBeNull();
+      const [, who, threshold, value] = m;
+      expect(Number(value)).toBeGreaterThanOrEqual(Number(threshold));
+      const id = players.get(who!)!;
+      const final = x.key.startsWith('B_hr') ? bat.get(id)!.HR : x.key.startsWith('B_h.') ? bat.get(id)!.H : x.key.startsWith('B_rbi') ? bat.get(id)!.RBI : x.key.startsWith('C_w') ? pit.get(id)!.W : x.key.startsWith('C_k') ? pit.get(id)!.K : pit.get(id)!.SV;
+      expect(Number(value)).toBeLessThanOrEqual(final);
+    }
     const meta = a.saves.repository().getMeta();
     const totalXp = got.reduce((s, x) => s + x.xp, 0);
     expect(meta.ownerLevel > 1 || meta.ownerXp === totalXp).toBe(true);
     // 업적 판정 근거와 기록이 맞는지: 첫 승 날짜에 우리 구단 승리가 있다
-    const firstWin = got.find((x) => x.key === 'first_win')!;
+    const firstWin = got.find((x) => x.key === 'A_first.1')!;
     const games = a.saves.repository().getGames(2027).filter((g) => g.date === firstWin.date && (g.home === 7 || g.away === 7));
     expect(games.some((g) => (g.home === 7 ? g.homeRuns > g.awayRuns : g.awayRuns > g.homeRuns))).toBe(true);
     await call(a, 'save.save', { slot: 'x' });

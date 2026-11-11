@@ -567,6 +567,12 @@ export const TACTICS = {
   },
 } as const;
 
+/** 8b 업적 경험치(D-182·02 문서): 단계 1~5 경험치, 업적 경험치 시즌 상한 */
+export const ACHIEVEMENT_XP = {
+  byTier: [10, 20, 35, 60, 100] as readonly number[],
+  seasonCap: 300,
+} as const;
+
 /** 8a 리그 시상(D-180·25 문서) */
 export const AWARDS = {
   rankPointsTop: 10,

@@ -1,7 +1,7 @@
 // 팀 기록: 현재 팀 통계(리그 순위)와 업적 (24 문서). 구단 역사·기록·레전드는 명예의 전당(HallOfFame)
 import { useEffect, useState } from 'react';
 import { CareerPanel } from '../Career';
-import type { TeamRecordsView, TeamStatItem } from '../../shared/protocol';
+import type { AchievementView, TeamRecordsView, TeamStatItem } from '../../shared/protocol';
 import type { Nav } from '../App';
 import { api } from '../api';
 import { Icon } from '../icons';
@@ -114,44 +114,75 @@ export function TeamRecords({ nav }: { nav: Nav }) {
         </section>
       )}
 
-      {tab === 'achievements' && (
-        <section className="panel">
-          <div className="panel-head">
-            <h2>업적</h2>
-            <span className="meta">실제 기록으로 판정 · 달성하면 구단주 경험치 · 시즌 업적은 매 시즌 다시 달성(경험치 절반)</span>
-          </div>
-          <table className="grid dense">
-            <thead>
-              <tr>
-                <th>분류</th>
-                <th>업적</th>
-                <th>조건</th>
-                <th className="num">경험치</th>
-                <th>달성</th>
-              </tr>
-            </thead>
-            <tbody>
-              {v.achievements.map((a) => (
-                <tr key={a.key} className={a.achieved.length ? 'mine' : ''}>
-                  <td>{a.category}</td>
-                  <td>
-                    {a.achieved.length ? '★ ' : ''}
-                    {a.title}
-                  </td>
-                  <td className="small" style={{ whiteSpace: 'normal' }}>
-                    {a.description}
-                    {a.repeat && <span className="muted"> (시즌마다)</span>}
-                  </td>
-                  <td className="num">{a.xp}</td>
-                  <td className="small" style={{ whiteSpace: 'normal' }}>
-                    {a.achieved.length === 0 ? <span className="muted">미달성</span> : a.achieved.map((x) => `${x.detail}`).join(' / ')}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
+      {tab === 'achievements' && <AchievementBoard list={v.achievements} />}
     </div>
+  );
+}
+
+const TYPE_LABEL: Record<string, string> = { once: '1회', season: '시즌마다', cumulative: '재임 누적', legacy: '' };
+
+/** 8b(D-182): 분류별 계열 표. 단계는 칩으로, 달성한 단계는 강조 */
+function AchievementBoard({ list }: { list: AchievementView[] }) {
+  const cats = [...new Set(list.map((a) => a.category))];
+  const [cat, setCat] = useState(cats[0] ?? '');
+  const series = [...new Map(list.filter((a) => a.category === cat).map((a) => [a.series === 'legacy' ? a.key : a.series, a])).keys()];
+  const xpTotal = list.reduce((a, x) => a + x.achieved.reduce((b, y) => b + y.xp, 0), 0);
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <h2>업적</h2>
+        <span className="meta">실제 기록으로 판정 · 상위 단계를 넘으면 아래 단계도 함께 · 시즌마다 업적은 두 번째부터 경험치 절반 · 업적 경험치 시즌 상한 300 · 받은 경험치 합 {xpTotal}</span>
+      </div>
+      <div className="panel-body">
+        <div className="seg" style={{ flexWrap: 'wrap', marginBottom: 8 }}>
+          {cats.map((c) => {
+            const n = list.filter((a) => a.category === c && a.achieved.length > 0).length;
+            const t = list.filter((a) => a.category === c).length;
+            return (
+              <button key={c} className={cat === c ? 'active' : ''} onClick={() => setCat(c)}>
+                {c} <span className="muted small">{n}/{t}</span>
+              </button>
+            );
+          })}
+        </div>
+        <table className="grid dense">
+          <thead>
+            <tr>
+              <th>계열</th>
+              <th>단계</th>
+              <th>조건</th>
+              <th>최근 달성</th>
+            </tr>
+          </thead>
+          <tbody>
+            {series.map((id) => {
+              const stages = list.filter((a) => (a.series === 'legacy' ? a.key === id : a.series === id)).sort((a, b) => a.stage - b.stage);
+              const first = stages[0]!;
+              const got = stages.flatMap((a) => a.achieved.map((x) => ({ ...x, title: a.title }))).sort((a, b) => (a.date < b.date ? 1 : -1));
+              return (
+                <tr key={id} className={got.length ? 'mine' : ''}>
+                  <td>
+                    {first.seriesTitle}
+                    {TYPE_LABEL[first.type] && <span className="muted small"> · {TYPE_LABEL[first.type]}</span>}
+                  </td>
+                  <td>
+                    <div className="seg" style={{ flexWrap: 'wrap' }}>
+                      {stages.map((a) => (
+                        <span key={a.key} className={`badge ${a.achieved.length ? 'rec' : ''}`} title={`경험치 ${a.xp}${a.achieved.length ? ` · 달성 ${a.achieved.length}회` : ''}`}>
+                          {a.achieved.length ? '★ ' : ''}
+                          {a.stageLabel || '달성'}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="small" style={{ whiteSpace: 'normal' }}>{first.description}</td>
+                  <td className="small" style={{ whiteSpace: 'normal' }}>{got.length ? `${got[0]!.detail} (+${got[0]!.xp})` : <span className="muted">미달성</span>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

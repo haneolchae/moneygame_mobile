@@ -66,6 +66,9 @@ export interface GameMeta {
   budgets?: Record<string, BudgetPlan>;
   budgetPlanWeeks?: string[];
   meetings?: MeetingRecord[];
+  /** 8b(D-182): 경기한 날 쌓는 업적 상태(시즌 누적 수·투수 연속 상태), 시즌 → 업적 경험치 합 */
+  achState?: unknown;
+  achievementXp?: Record<string, number>;
   /** 8a(D-180): 시즌 → 구단 ID → 개막 때 기대 순위(감독상 예상 승수) */
   awardBase?: Record<string, Record<string, number>>;
   /** 6e: 한 번만 보내는 예산 알림 키(시즌:항목) */
@@ -618,6 +621,9 @@ export interface GameRepository {
   awardFielding(season: number): { fielding: Map<PlayerId, { PO: number; A: number; E: number }>; catcher: Map<PlayerId, { SB: number; CS: number; PB: number }> };
   positionOutChecks(season: number): Array<{ gameId: number; clubId: ClubId; fieldOuts: number; dhOuts: number; defOuts: number }>;
   insertAwards(rows: AwardRecord[]): void;
+  /** 8b 업적(D-182) */
+  flagTotals(season: number, clubId: ClubId): Map<PlayerId, { HLD: number; BS: number; QS: number }>;
+  clubBatterGames(season: number, clubId: ClubId, playerIds?: PlayerId[]): Array<{ gameId: number; date: GameDate; batterId: PlayerId; H: number; OB: number }>;
   getAwards(filter?: { season?: number; playerId?: PlayerId; clubId?: ClubId; award?: string }): AwardRecord[];
   /** 수비 합계(자살·보살·실책) */
   fieldingTotals(season: number, playerId: PlayerId): { PO: number; A: number; E: number };

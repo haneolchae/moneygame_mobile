@@ -4,7 +4,7 @@ import { addBatting, addPitching, EMPTY_BATTING, EMPTY_PITCHING } from '../engin
 import { computeStandings } from '../engine/standings';
 import { battingRates, formatInnings, pitchingRates, type BattingTotals, type PitchingTotals } from '../engine/stats';
 import type { ClubId, PlayerTruth } from '../engine/types';
-import type { ClubRef, FieldingLineView, PlayerRecordView, StatLineView, TeamHistoryRow, TeamRecordsView, TeamStatItem } from '../shared/protocol';
+import type { AchievementView, ClubRef, FieldingLineView, PlayerRecordView, StatLineView, TeamHistoryRow, TeamRecordsView, TeamStatItem } from '../shared/protocol';
 import { clubHistory } from '../engine/data/history';
 import { ACHIEVEMENTS, QUALIFY_PA_PER_GAME } from './achievements';
 import type { GameMeta, GameRepository } from './ports';
@@ -238,7 +238,12 @@ export class Records {
       .filter((l) => l.TC > 0)
       .sort((a, b) => b.TC - a.TC || a.playerId - b.playerId);
     const got = isUser ? this.repo.getAchievements() : [];
-    const achievements = ACHIEVEMENTS.map((a) => ({ ...a, achieved: got.filter((g) => g.key === a.key).map((g) => ({ season: g.season, date: g.date, detail: g.detail, xp: g.xp })) }));
+    const known = new Set(ACHIEVEMENTS.map((a) => a.key));
+    const achievements: AchievementView[] = [
+      ...ACHIEVEMENTS.map((a) => ({ ...a, achieved: got.filter((g) => g.key === a.key).map((g) => ({ season: g.season, date: g.date, detail: g.detail, xp: g.xp })) })),
+      // 이전 개발 빌드의 업적 키(D-182 (6)): 정의가 없어도 달성 기록은 보인다
+      ...[...new Set(got.filter((g) => !known.has(g.key)).map((g) => g.key))].map((key) => ({ key, series: 'legacy', seriesTitle: key, stage: 1, stageLabel: '', type: 'legacy' as const, title: key, category: '이전 업적', description: '이전 개발 빌드에서 달성한 업적', xp: 0, repeat: false, achieved: got.filter((g) => g.key === key).map((g) => ({ season: g.season, date: g.date, detail: g.detail, xp: g.xp })) })),
+    ];
     return {
       club: ref,
       statsSeason,

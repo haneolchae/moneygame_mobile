@@ -411,6 +411,8 @@ async function main() {
       offers: { received: offersNow, ratioMedian: offerRatioMedian, ratioSample: ratios.length, ...offerStats },
       live: { games: liveNow.games, points: liveNow.points, perGameAll: livePerGame },
       budget: { ...budgetStats },
+      // 8b(D-183 ⑥ 참고): 이번 시즌 업적 수·경험치(정규시즌 끝 기준)
+      achievements: { xp: repo5.getMeta().achievementXp?.[String(dash.season)] ?? 0, count: repo5.getAchievements().length, level: repo5.getMeta().ownerLevel },
       // 8a(D-181 ⑥ 참고): 직전 시즌 수상 분포(구단별 수, 월간 제외)
       awardsPrev: (() => { const aw = repo5.getAwards({ season: dash.season - 1 }).filter((x) => !x.award.startsWith('monthly_')); const by: Record<string, number> = {}; for (const x of aw) by[String(x.clubId)] = (by[String(x.clubId)] ?? 0) + 1; return { season: dash.season - 1, total: aw.length, byClub: by }; })(),
       stances: `우승 경쟁 ${stanceCount('contend')}·중위권 ${stanceCount('middle')}·리빌딩 ${stanceCount('rebuild')}·긴축 ${stanceCount('austerity')} (변경 구단 ${stanceChanged})`,

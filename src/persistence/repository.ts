@@ -446,6 +446,21 @@ export class SqliteGameRepository implements GameRepository {
     return pos.map((r) => ({ gameId: num(r.g), clubId: num(r.c), fieldOuts: num(r.f), dhOuts: num(r.dh), defOuts: def.get(`${num(r.g)}:${num(r.c)}`) ?? 0 }));
   }
 
+  /** 8b: 구단 소속 투수의 정규시즌 홀드·블론세이브·퀄리티 스타트(구단 기준) */
+  flagTotals(season: number, clubId: ClubId): Map<PlayerId, { HLD: number; BS: number; QS: number }> {
+    const rows = this.stmt("SELECT pitcher_id AS id, SUM(hld) AS HLD, SUM(bs) AS BS, SUM(qs) AS QS FROM pitcher_flags WHERE stage = 'regular' AND season = ? AND club_id = ? GROUP BY pitcher_id").all(season, clubId) as Row[];
+    return new Map(rows.map((r) => [num(r.id), { HLD: num(r.HLD), BS: num(r.BS), QS: num(r.QS) }]));
+  }
+
+  /** 8b: 구단 타자의 경기별 안타·출루(정규시즌, 날짜·경기 순, 압축 전 시즌) */
+  clubBatterGames(season: number, clubId: ClubId, playerIds?: PlayerId[]): Array<{ gameId: number; date: GameDate; batterId: PlayerId; H: number; OB: number }> {
+    const rows = this.db.prepare(
+      `SELECT game_id AS g, date, batter_id AS id, SUM(outcome IN ('1B','2B','3B','HR')) AS H, SUM(outcome IN ('1B','2B','3B','HR','BB','HBP')) AS OB
+         FROM plate_appearances WHERE stage = 'regular' AND season = ? AND batting_club = ?${this.idFilter('batter_id', playerIds)} GROUP BY game_id, batter_id ORDER BY date, game_id`,
+    ).all(season, clubId) as Row[];
+    return rows.map((r) => ({ gameId: num(r.g), date: String(r.date), batterId: num(r.id), H: num(r.H), OB: num(r.OB) }));
+  }
+
   insertAwards(rows: AwardRecord[]): void {
     const ins = this.stmt('INSERT INTO awards (season, award, slot, subject, player_id, club_id, staff_id, date, score, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     this.tx(() => {
