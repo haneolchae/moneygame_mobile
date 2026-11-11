@@ -62,6 +62,10 @@ export function Business({ nav }: { nav: Nav }) {
           <span className="label">팬 만족도 (0~100){v.fans.backlash ? ' · 팬 반발' : ''}</span>
           <span className="value" style={{ color: v.fans.backlash ? 'var(--do-danger)' : undefined }}>{v.fans.satisfaction.toFixed(1)}</span>
         </div>
+        <div className="kpi" title="언론 관계가 좋으면 사건 때 여론 하락이 줄어듭니다. 매주 50 쪽으로 조금씩 돌아갑니다.">
+          <span className="label">언론 관계 (0~100)</span>
+          <span className="value">{v.fans.press.toFixed(1)}</span>
+        </div>
         <div className="kpi">
           <span className="label">현금 (남은 공사 지급 {v.committedWon > 0 ? won(v.committedWon) : '없음'})</span>
           <span className="value">{won(v.cashWon)}</span>

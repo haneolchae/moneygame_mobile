@@ -21,11 +21,12 @@ export function pitcherFatigue(usage: Array<{ daysAgo: number; pitches: number }
 }
 
 /** 출전 1회 부상 확률 */
-export function injuryChance(p: PlayerTruth, fatigue: number, age: number): number {
+export function injuryChance(p: PlayerTruth, fatigue: number, age: number, eventMult = 1): number {
   const ageF = 1 + Math.max(0, age - H.agePivot) * H.agePerYear;
   const durF = H.durabilityMax - (H.durabilitySpan * p.hidden.durability) / 100;
-  // 4b-2(D-128): 집중 훈련 강도 배수(계획 없으면 1)
-  return H.baseInjuryChance * (1 + fatigue / H.fatigueDivisor) * ageF * durF * intensityInjury(p);
+  // 4b-2(D-128): 집중 훈련 강도 배수(계획 없으면 1). EV-2(D-205 (3)): 카드 부상 위험 배율과 곱해 상한 ×3.0
+  const mult = eventMult === 1 ? intensityInjury(p) : Math.min(H.maxRiskMult, intensityInjury(p) * eventMult);
+  return H.baseInjuryChance * (1 + fatigue / H.fatigueDivisor) * ageF * durF * mult;
 }
 
 /** 부상 위험 등급(특별 검사 보고용): 기준 확률 대비 */
@@ -38,9 +39,9 @@ export function riskLevel(chance: number): '낮음' | '보통' | '높음' {
  * 경기 뒤 부상 판정(출전한 선수만, 날짜·선수당 한 번). 부상이면 상태를 만들어 돌려준다.
  * medical: 컨디셔닝·메디컬팀 역량(0~1) — 실제 기간을 줄이고 진단 범위를 좁힌다.
  */
-export function rollInjury(seed: string, date: GameDate, p: PlayerTruth, fatigue: number, age: number, medical: number, active: boolean): InjuryState | null {
+export function rollInjury(seed: string, date: GameDate, p: PlayerTruth, fatigue: number, age: number, medical: number, active: boolean, eventMult = 1): InjuryState | null {
   const rng = Rng.derive(seed, 'injury', date, p.id);
-  if (!rng.chance(injuryChance(p, fatigue, age))) return null;
+  if (!rng.chance(injuryChance(p, fatigue, age, eventMult))) return null;
   let pick = rng.next();
   const sev = H.severities.find((s) => (pick -= s.share) < 0) ?? H.severities[H.severities.length - 1]!;
   const base = rng.int(sev.min, sev.max);

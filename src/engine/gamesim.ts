@@ -215,6 +215,8 @@ export interface GameOptions {
   tactics?: 'on' | 'off';
   /** 4c-3: 구단주 승부처 참여(D-174) */
   owner?: OwnerControl;
+  /** EV-2(D-205 (2)): 선수별 컨디션 로짓(카드 효과). 수행 편차에 더한다 */
+  condition?: ReadonlyMap<PlayerId, number>;
   /** 8e(D-189 (8)): 올스타 방식 — 투수 1명 최대 아웃, 이 회부터 선발 야수 교체 */
   allStar?: { maxOuts: number; regularsOutFrom: number };
 }
@@ -769,6 +771,8 @@ function perfOf(g: GameState, p: PlayerTruth): number {
   let v = g.perf.get(p.id);
   if (v === undefined) {
     v = consistencyPerformance(p.hidden.consistency, Rng.fromInts(g.bbKey, g.fixtureId, -p.id).next() * 2 - 1);
+    const cond = g.opts.condition?.get(p.id);
+    if (cond) v += cond;
     g.perf.set(p.id, v);
   }
   return v;
@@ -884,8 +888,8 @@ export function preparePa(g: GameState): PreparedPa {
   const bases0 = g.bases;
   const pressure = pressureIndex({ inning, scoreDiff: g.score.home - g.score.away, runners: (bases0[0] ? 1 : 0) + (bases0[1] ? 1 : 0) + (bases0[2] ? 1 : 0), postseason: g.opts.postseason === true });
   // 4c-2b 리더십: 압박 손실·경기별 수행 편차 크기 배율(D-172 (2))
-  const batPerf = (perfOf(g, batter) - pressureLoss(pressure, batter.batting.mental, batter.hidden.pressureSensitivity)) * leadershipFactor(bat.manager);
-  const pitPerf = (perfOf(g, pitcher) - pressureLoss(pressure, pitcher.pitching?.mental ?? 50, pitcher.hidden.pressureSensitivity)) * leadershipFactor(g.teams[defSide].manager);
+  const batPerf = (perfOf(g, batter) - pressureLoss(pressure, batter.batting.mental, batter.hidden.pressureSensitivity, batter.mood)) * leadershipFactor(bat.manager);
+  const pitPerf = (perfOf(g, pitcher) - pressureLoss(pressure, pitcher.pitching?.mental ?? 50, pitcher.hidden.pressureSensitivity, pitcher.mood)) * leadershipFactor(g.teams[defSide].manager);
   const fr = g.framing[defSide];
   const context = {} as SideLogits;
   // 4c-2a 좌우 상대(D-170 (2)): 같은 손이면 투수 쪽, 다르면 타자 쪽

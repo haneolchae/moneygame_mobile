@@ -17,8 +17,10 @@ export const TEAM_LABEL: Record<string, string> = { medical: '컨디셔닝·메�
 /** 26 4장 효과 전체 */
 export const EFFECT_TYPES = ['CASH', 'RECUR', 'DEMAND', 'MERCH', 'FAN_NOW', 'FAN_TARGET', 'PRESS', 'MOOD', 'COND', 'INJ_RISK', 'REST', 'SUSPEND', 'GROWTH', 'TRUST', 'CLUBHOUSE', 'FLAG', 'SPAWN', 'CONTRACT'] as const;
 export type EffectType = (typeof EFFECT_TYPES)[number];
-/** EV-1이 실제 모델에 연결한 효과. 나머지는 EV-2(상태 모델)·EV-4(징계·계약)에서 연결한다 */
-export const CONNECTED: ReadonlySet<EffectType> = new Set<EffectType>(['CASH', 'FAN_NOW', 'REST', 'TRUST', 'FLAG', 'SPAWN']);
+/** 실제 모델에 연결한 효과(EV-1 6종 + EV-2 10종). SUSPEND·CONTRACT는 EV-4에서 연결한다 */
+export const CONNECTED: ReadonlySet<EffectType> = new Set<EffectType>(['CASH', 'FAN_NOW', 'REST', 'TRUST', 'FLAG', 'SPAWN', 'MOOD', 'CLUBHOUSE', 'COND', 'INJ_RISK', 'DEMAND', 'MERCH', 'RECUR', 'FAN_TARGET', 'PRESS', 'GROWTH']);
+/** 기간(주)이 필요한 효과 */
+export const TIMED: ReadonlySet<EffectType> = new Set<EffectType>(['COND', 'INJ_RISK', 'DEMAND', 'MERCH', 'RECUR', 'FAN_TARGET']);
 export const COST_GRADES = ['small', 'medium', 'large'] as const;
 
 /** 조건식에서 쓸 수 있는 변수(flag.이름은 따로 허용) */
@@ -38,6 +40,8 @@ export interface CardEffect {
   /** FLAG 이름, SPAWN 카드 */
   name?: string;
   card?: string;
+  /** GROWTH·MOOD 대상: 카드 대상 선수(기본) 또는 우리 1군 전원 */
+  who?: 'target' | 'club';
 }
 
 export interface CardOutcome {
@@ -90,6 +94,10 @@ function effectErrors(e: unknown, where: string, cardIds: Set<string>): string[]
   if (x.type === 'CASH' && !(Number.isInteger(x.won) || within(COST_GRADES, x.grade))) bad.push(`${where}: CASH는 won(정수) 또는 grade`);
   if (['FAN_NOW', 'TRUST', 'MOOD', 'PRESS', 'CLUBHOUSE', 'COND', 'FAN_TARGET'].includes(x.type) && typeof x.value !== 'number') bad.push(`${where}: ${x.type} value 필요`);
   if (x.type === 'REST' && !(Number.isInteger(x.days) && x.days! > 0)) bad.push(`${where}: REST days 필요`);
+  if (TIMED.has(x.type) && !(Number.isInteger(x.weeks) && x.weeks! >= 1)) bad.push(`${where}: ${x.type} weeks 필요`);
+  if (['INJ_RISK', 'DEMAND', 'MERCH', 'GROWTH'].includes(x.type) && !(typeof x.value === 'number' && x.value > 0)) bad.push(`${where}: ${x.type} 배율 value 필요`);
+  if (x.type === 'RECUR' && !(Number.isInteger(x.won) || within(COST_GRADES, x.grade))) bad.push(`${where}: RECUR는 won 또는 grade`);
+  if (x.who !== undefined && x.who !== 'target' && x.who !== 'club') bad.push(`${where}: who 오류`);
   if (x.type === 'FLAG' && !isText(x.name)) bad.push(`${where}: FLAG name 필요`);
   if (x.type === 'SPAWN' && !(isText(x.card) && cardIds.has(x.card) && Number.isInteger(x.weeks) && x.weeks! >= 1)) bad.push(`${where}: SPAWN card·weeks 오류`);
   return bad;
@@ -203,8 +211,17 @@ export function pickCandidate(cands: readonly Candidate[], rng: Rng, lastCategor
     for (let i = 0; i < list.length; i++) if ((r -= w[i]!) < 0) return list[i]!;
     return list[list.length - 1]!;
   };
+  // EV-2(D-205 (9)): 카드 가중치로 카드를 고른 뒤 그 카드의 대상 중 하나를 고른다(대상 수가 가중치를 키우지 않게)
+  const byCard = (list: readonly Candidate[]) => {
+    const groups = new Map<string, Candidate[]>();
+    for (const c of list) groups.set(c.card.id, [...(groups.get(c.card.id) ?? []), c]);
+    const reps = [...groups.values()].map((g) => g[0]!);
+    const rep = weighted(reps);
+    const g = groups.get(rep.card.id)!;
+    return g.length === 1 ? g[0]! : g[rng.int(0, g.length - 1)]!;
+  };
   const urgent = cands.filter((c) => c.spawned || c.card.priority);
-  if (urgent.length) return { pick: weighted(urgent), empty: false };
+  if (urgent.length) return { pick: byCard(urgent), empty: false };
   if (rng.next() < E.emptyShare) return { pick: null, empty: true };
-  return { pick: weighted(cands), empty: false };
+  return { pick: byCard(cands), empty: false };
 }

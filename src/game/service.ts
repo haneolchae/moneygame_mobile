@@ -46,7 +46,7 @@ import { MANAGER_KEYS, MANAGER_LABEL } from '../engine/manager';
 import { CareerOps } from './career';
 import { AwardOps, goldenGloveDate } from './awards';
 import { AllStarOps, lineText } from './allStar';
-import { EventOps } from './events';
+import { conditionLogits, EventOps, growthMultiplier, weekNumber } from './events';
 import { CATEGORY_LABEL as CARD_CATEGORY_LABEL } from '../engine/events/cards';
 import { allStarDates, SLOT_LABEL, SLOT_SIZE, TEAM_LABEL } from '../engine/allStar';
 import { awardTitle } from '../engine/awards';
@@ -373,6 +373,10 @@ export class GameService {
     });
     this.org.scoutingBudget = (m) => this.budget.scoutingFactor(m);
     this.business.budget = this.budget;
+    // EV-2(D-205): 카드 기간 효과를 관중·팬·굿즈·훈련 모델에 넘긴다
+    this.business.eventState = () => this.meta().eventState;
+    this.merch.eventState = () => this.meta().eventState;
+    this.training.playerFactor = (p, date) => growthMultiplier(this.meta().eventState, weekNumber(date), p);
     this.merch.budget = this.budget;
     this.market.budget = this.budget;
     this.trades.budget = this.budget;
@@ -382,7 +386,7 @@ export class GameService {
     this.awards = new AwardOps(repo, this.clubMap, (m, c, s) => this.seasonClose.expectedRank(m, c, s));
     // 8e(D-189·D-190): 올스타전
     // EV-1(D-203): 턴 브리핑·결정 카드
-    this.events = new EventOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), fatigue: (d, ps) => this.health.fatigueMap(d, ps), adjustTrust: (c, v, d, s) => this.managers.adjustTrust(c, v, d, s) });
+    this.events = new EventOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), fatigue: (d, ps) => this.health.fatigueMap(d, ps), adjustTrust: (c, v, d, s) => this.managers.adjustTrust(c, v, d, s), prQuality: (c) => this.org.teamQuality(c, 'pr') });
     this.allStar = new AllStarOps(repo, this.clubMap, (id) => this.managers.profileOf(id), (s, d, ps, env) => this.forms.formsFor(s, d, ps, env), this.budget);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -514,13 +518,15 @@ export class GameService {
       // 4b-1: 부상·휴식 선수 제외, 감독 자동 운영은 피로 높은 야수 휴식
       const out = this.health.unavailableOn(this.meta(), date, active);
       const tired = this.health.tiredOn(date, active);
+      // EV-2(D-205 (2)): 카드 컨디션 효과(선수 수행 편차 로짓)
+      const condition = conditionLogits(meta.eventState, weekNumber(date));
       // 4c-2b(D-172): 감독 능력치·성향·신뢰도를 경기에 넘긴다
       const teamOf = (clubId: ClubId) => ({ ...prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null, clubId === meta.userClubId ? userPlan : null, ROSTER_MOVE.rotationSize, { out, tired }), manager: this.managers.profileOf(clubId) });
       const args = (f: Fixture, owner?: OwnerControl): Parameters<typeof simulateGame> => {
         // 경기 난수는 (시드, 경기 ID)에서 파생한다. 처리 순서와 무관하게 같은 경기는 같은 결과를 낸다.
         const maxInnings = f.stage && f.stage !== 'regular' ? POSTSEASON_MAX_INNINGS : LEAGUE.regularSeasonMaxInnings;
         const postseason = !!f.stage && f.stage !== 'regular';
-        return [f.id, teamOf(f.home), teamOf(f.away), Rng.derive(meta.seed, 'game', f.id), maxInnings, env, { forms, postseason, ...(owner ? { owner } : {}) }];
+        return [f.id, teamOf(f.home), teamOf(f.away), Rng.derive(meta.seed, 'game', f.id), maxInnings, env, { forms, postseason, ...(owner ? { owner } : {}), ...(condition.size ? { condition } : {}) }];
       };
       return { fixtures, args };
     }
@@ -2676,6 +2682,8 @@ export class GameService {
       draftInfo: p.draft ? `${p.draft.year} 신인 드래프트 ${p.draft.round}라운드 ${p.draft.pick}순위 (${p.draft.school})` : null,
       retired: p.retired ? `${p.retired.season} 시즌 뒤 은퇴 (${p.retired.reason})` : null,
       health: this.health.view(meta, p, own),
+      // EV-2(D-205 (1)): 우리 선수 기분(다른 구단 선수는 보내지 않는다)
+      mood: own ? (p.mood ?? 50) : null,
       development: own && p.dev?.base ? this.developmentOf(p) : own ? { since: null, settled: false, changes: [] } : null,
     };
   }

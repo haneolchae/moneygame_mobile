@@ -4,6 +4,7 @@ import { addDays, ageOn, diffDays, weekday, type GameDate } from '../engine/cale
 import { HEALTH } from '../engine/config';
 import { allStarDates } from '../engine/allStar';
 import { allStarAppearances } from './allStar';
+import { injuryMultiplier, weekNumber } from './events';
 import type { GameResult } from '../engine/gamesim';
 import { estimatedDaysLeft, hitterFatigue, injuredOn, injuryChance, pitcherFatigue, riskLevel, rollInjury } from '../engine/health';
 import { overall } from '../engine/worldgen';
@@ -166,7 +167,8 @@ export class HealthOps {
     const fatigue = this.fatigueMap(date, who, true);
     const injured: PlayerTruth[] = [];
     for (const p of who) {
-      const inj = rollInjury(meta.seed, date, p, (fatigue.get(p.id) ?? 0) * this.condition(p.clubId!), ageOn(p.birthDate, date), this.medicalQuality(p.clubId!), p.level === '1군');
+      // EV-2(D-205 (3)): 카드 부상 위험 배율
+      const inj = rollInjury(meta.seed, date, p, (fatigue.get(p.id) ?? 0) * this.condition(p.clubId!), ageOn(p.birthDate, date), this.medicalQuality(p.clubId!), p.level === '1군', injuryMultiplier(meta.eventState, weekNumber(date), p.id));
       if (!inj) continue;
       p.health = { injury: inj, history: p.health?.history ?? [], ...(p.health?.lastCheck ? { lastCheck: p.health.lastCheck } : {}) };
       injured.push(p);
@@ -236,7 +238,7 @@ export class HealthOps {
         msg = `${p.name} 정밀 검사: ${inj.part} ${inj.severity}, 복귀 추정 ${md(inj.estimate.from)}~${md(inj.estimate.to)}로 좁혀졌습니다.`;
       } else {
         const fat = this.fatigueMap(meta.currentDate, [p]).get(p.id) ?? 0;
-        const level = riskLevel(injuryChance(p, fat, ageOn(p.birthDate, meta.currentDate)));
+        const level = riskLevel(injuryChance(p, fat, ageOn(p.birthDate, meta.currentDate), injuryMultiplier(meta.eventState, weekNumber(meta.currentDate), p.id)));
         msg = `${p.name} 검사: 현재 피로 ${fat}, 부상 위험 ${level}. ${level === '높음' ? '휴식 지시를 검토하세요.' : '특이 소견 없음.'}`;
       }
       this.repo.savePlayers([p]);

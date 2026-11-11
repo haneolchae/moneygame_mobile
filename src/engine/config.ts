@@ -191,6 +191,8 @@ export const ROSTER_MOVE = {
 
 /** 4b-1 건강: 피로·부상·휴식·검사 (D-126 초기안) */
 export const HEALTH = {
+  /** EV-2(D-205 (3)): 훈련 강도 × 카드 부상 위험 배율 합계 상한 */
+  maxRiskMult: 3,
   /** 피로(0~100)는 최근 7일 출전 기록에서 계산 */
   fatigueDays: 7,
   fatigueDecay: 0.85,
@@ -875,4 +877,18 @@ export const EVENTS = {
   /** 주전: 1군에서 능력 순 타자 9명·투수 6명 */
   starterHitters: 9,
   starterPitchers: 6,
+  /** EV-2(D-205): 기분 주간 회복, 컨디션 점당 로짓·상한, 언론 관계 시작·주간 회복, 홍보팀 완화 */
+  moodRecover: 0.2,
+  condLogitPerPoint: 0.01,
+  condMax: 5,
+  pressStart: 50,
+  pressRecover: 0.05,
+  prRelief: 0.2,
+  prDefaultQuality: 0.3,
+  /** 관중 수요 가산 하한(상한은 MARKETING.maxDemandBoost), 굿즈 수요 배율 범위, 훈련 효과 배율 범위 */
+  demandMin: -0.2,
+  merchMin: 0.7,
+  merchMax: 1.3,
+  growthMin: 0.9,
+  growthMax: 1.1,
 } as const;

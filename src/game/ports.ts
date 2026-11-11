@@ -130,6 +130,8 @@ export interface GameMeta {
   allStarCampaign?: Record<string, GameDate>;
   /** EV-1(D-203) 이벤트 진행 상태 */
   eventState?: EventState;
+  /** EV-2(D-205 (4)) 구단 언론 관계 0~100(없으면 50) */
+  press?: Record<string, number>;
   /** 우리 구단 티켓 가격 정책 */
   ticketPolicy?: TicketPolicy;
   /** 구단 시설 단계·공사: 구단 ID → 시설 */
@@ -208,6 +210,8 @@ export interface EventState {
   flags: Record<string, { value: number; expiresWeek: number | null }>;
   queue: Array<{ week: number; cardId: string; playerId: PlayerId | null; effects: import('../engine/events/cards').CardEffect[]; text: string }>;
   spawns: Array<{ week: number; cardId: string; playerId: PlayerId | null }>;
+  /** EV-2(D-205 (7)) 기간 효과: 끝나는 주(그 주부터 없음), 반복 수입·지출은 남은 횟수 */
+  effects?: Array<{ type: string; clubId: ClubId; playerId: PlayerId | null; value: number; untilWeek: number; left?: number; won?: number; grade?: string }>;
   /** 다음 브리핑의 결과 회수 줄 */
   pendingLines: string[];
   lastCategory: string | null;

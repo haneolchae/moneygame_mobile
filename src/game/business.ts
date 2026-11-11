@@ -1,7 +1,9 @@
 // 6a 관중·티켓·시설 투자(13·14·16 문서, D-141): 홈경기 관중과 입장·매점 수입, 구장 관람료, 가격 정책,
 // 시설 공사(착수·지급·완공·취소)와 유지비, AI 구단 투자, 시설 효과. 모든 구단이 같은 규칙을 쓴다.
 import { addDays, diffDays, weekday, type GameDate } from '../engine/calendar';
-import { ATTENDANCE, FACILITY, MARKETING } from '../engine/config';
+import { ATTENDANCE, EVENTS, FACILITY, MARKETING } from '../engine/config';
+import { demandBoost, demandWith, fanTargetBoost, satisfactionBoost, weekNumber } from './events';
+import type { EventState } from './ports';
 import { blendedPct, CAMPAIGN_KINDS, campaignBoost, FACILITY_KINDS, gate, newFacilities, nextSatisfaction, planProject, rehabBoost, scoutingBoost, startSatisfaction, trainingBoost, unpaid, type Campaign, type CampaignKind, type ClubFacilities, type FacilityKind, type FacilityProject, type FanState, type TicketPolicy } from '../engine/business';
 import { inflate, type LedgerEntry } from '../engine/finance';
 import type { GameResult } from '../engine/gamesim';
@@ -21,6 +23,8 @@ export class BusinessOps {
   gateToday = new Map<ClubId, number>();
   /** 6e(D-177): 우리 구단 재량 지출 한도. 서비스가 연결한다 */
   budget: BudgetGuard = NO_GUARD;
+  /** EV-2: 카드 기간 효과(서비스가 연결) */
+  eventState: () => EventState | undefined = () => undefined;
   /** 7a(D-155): 재정 긴축 구단은 캠페인·시설 투자를 하지 않는다. 서비스가 연결한다 */
   austere: (clubId: ClubId) => boolean = () => false;
 
@@ -102,7 +106,9 @@ export class BusinessOps {
       const pct = blendedPct(t?.w ?? 0, t?.l ?? 0, prior.get(club.id) ?? 0.5);
       const cur = this.fanOf(meta, club.id);
       const active = list.filter((c) => diffDays(date, c.start) >= 0);
-      const next: FanState = { satisfaction: nextSatisfaction(cur.satisfaction, pct, club.loyalty, campaignBoost(active).satisfaction), ...(cur.lowSince ? { lowSince: cur.lowSince } : {}) };
+      // EV-2(D-205 (4)): 카드 팬 목표 가산은 캠페인 가산과 합쳐 같은 상한
+      const rawBoost = active.reduce((a, c) => a + MARKETING.campaigns[c.kind].satisfaction, 0) + fanTargetBoost(this.eventState(), weekNumber(date), club.id);
+      const next: FanState = { satisfaction: nextSatisfaction(cur.satisfaction, pct, club.loyalty, satisfactionBoost(rawBoost, 0)), ...(cur.lowSince ? { lowSince: cur.lowSince } : {}) };
       if (mine && !meta.gameOver) {
         if (next.satisfaction < MARKETING.backlashBelow && !next.lowSince) {
           next.lowSince = date;
@@ -180,7 +186,7 @@ export class BusinessOps {
       const away = this.clubs.get(r.away)!;
       const t = totals(r.home);
       const g = gate(
-        { seed: meta.seed, fixtureId: r.fixtureId, home, away, weekday: weekday(date), wins: t.w, losses: t.l, priorPct: prior.get(r.home) ?? 0.5, policy: r.home === meta.userClubId ? (meta.ticketPolicy ?? 'normal') : 'normal', stadiumLevel: meta.facilities?.[String(r.home)]?.levels.stadium ?? 1, satisfaction: this.fanOf(meta, r.home).satisfaction, campaignDemand: campaignBoost(this.activeCampaigns(meta, r.home, date)).demand },
+        { seed: meta.seed, fixtureId: r.fixtureId, home, away, weekday: weekday(date), wins: t.w, losses: t.l, priorPct: prior.get(r.home) ?? 0.5, policy: r.home === meta.userClubId ? (meta.ticketPolicy ?? 'normal') : 'normal', stadiumLevel: meta.facilities?.[String(r.home)]?.levels.stadium ?? 1, satisfaction: this.fanOf(meta, r.home).satisfaction, campaignDemand: demandWith(campaignBoost(this.activeCampaigns(meta, r.home, date)).demand, demandBoost(this.eventState(), weekNumber(date), r.home)) },
         inflation,
       );
       this.gateToday.set(r.home, (this.gateToday.get(r.home) ?? 0) + g.attendance);
@@ -373,7 +379,7 @@ export class BusinessOps {
       facilities,
       fans: (() => {
         const fan = this.fanOf(meta, club.id);
-        return { satisfaction: fan.satisfaction, backlash: fan.satisfaction < MARKETING.backlashBelow, lowSince: fan.lowSince ?? null, dismissDate: fan.lowSince ? addDays(fan.lowSince, MARKETING.dismissWeeks * 7) : null, recoverAt: MARKETING.recoverAt };
+        return { satisfaction: fan.satisfaction, backlash: fan.satisfaction < MARKETING.backlashBelow, lowSince: fan.lowSince ?? null, dismissDate: fan.lowSince ? addDays(fan.lowSince, MARKETING.dismissWeeks * 7) : null, recoverAt: MARKETING.recoverAt, press: meta.press?.[String(club.id)] ?? EVENTS.pressStart };
       })(),
       campaignAp: MARKETING.campaignAp,
       campaigns: CAMPAIGN_KINDS.map((kind) => {

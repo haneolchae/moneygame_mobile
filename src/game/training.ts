@@ -29,6 +29,9 @@ export class TrainingOps {
     private readonly facilityBoost: (clubId: number) => number = () => 1,
   ) {}
 
+  /** EV-2(D-205 (6)): 카드 훈련 효과 배율(선수별, 서비스가 연결) */
+  playerFactor: (p: PlayerTruth, date: GameDate) => number = () => 1;
+
   private hurt(p: PlayerTruth, date: GameDate): boolean {
     const inj = p.health?.injury;
     return !!inj && diffDays(date, inj.returnDate) < 0;
@@ -85,7 +88,7 @@ export class TrainingOps {
         const plan = activePlan(p)!;
         const part = coachPart(p, plan.primary);
         const coach = coaches.get(part);
-        const factor = coachFactor(coach?.abilities.coaching ?? T.vacantCoaching, p.hidden.coachability) * overloadFactor(loads.get(part) ?? 0, coachCapacity(coach?.abilities.communication ?? 0)) * this.facilityBoost(clubId);
+        const factor = coachFactor(coach?.abilities.coaching ?? T.vacantCoaching, p.hidden.coachability) * overloadFactor(loads.get(part) ?? 0, coachCapacity(coach?.abilities.communication ?? 0)) * this.facilityBoost(clubId) * this.playerFactor(p, date);
         const s = planStrength(plan, factor, this.coverage(p, plan, date));
         if (Object.keys(s).length) out.set(p.id, s);
       }

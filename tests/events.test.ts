@@ -28,7 +28,9 @@ describe('이벤트 엔진·턴 브리핑 (EV-1)', () => {
     // ③ 데이터 파일 규격 오류 0건, 연결 전 효과 카드는 비활성
     expect(CARD_ERRORS).toEqual([]);
     expect(CARDS.find((c) => c.id === 'FAN-01')!.inactive).toBeNull();
-    expect(CARDS.find((c) => c.id === 'PRV-04')!.inactive).toContain('MOOD');
+    // EV-2에서 기분·컨디션 등이 연결돼 켜졌고, 계약 효과(EV-4)를 쓰는 카드는 아직 비활성
+    expect(CARDS.find((c) => c.id === 'PRV-04')!.inactive).toBeNull();
+    expect(CARDS.find((c) => c.id === 'INJ-01')!.inactive).toContain('CONTRACT');
     const bad = parseCards([{ ...CARDS[0], id: 'X', trigger: 'secret.hidden > 1' }, { ...CARDS[0], id: 'Y', delegateDefault: 'nope' }]);
     expect(bad.errors.length).toBe(2);
 
@@ -114,9 +116,13 @@ describe('이벤트 엔진·턴 브리핑 (EV-1)', () => {
       for (const e of log) {
         const nextWeek = addDays(e.weekId, 7);
         if (nextWeek > k.regularSeasonEnd) continue;
-        expect(news.some((n) => n.weekId === nextWeek && n.kind === 'result' && n.text.includes(e.cardId === 'FAN-01' ? '입장문' : '')), e.cardId).toBe(true);
+        const choiceText = CARDS.find((c) => c.id === e.cardId)!.choices.find((c) => c.id === e.choiceId)!.text;
+        expect(news.some((n) => n.weekId === nextWeek && n.kind === 'result' && n.text.includes(choiceText)), e.cardId).toBe(true);
       }
 
+      // EV-2(D-206 ⑧): 켜진 카드가 한 시즌에 실제로 나온다(위임 기본 선택지)
+      expect(log.length).toBeGreaterThan(0);
+      expect(log.every((e) => e.by === 'delegate' && e.choiceId === CARDS.find((c) => c.id === e.cardId)!.delegateDefault)).toBe(true);
       // ⑤ 효과
       const svc2 = svcOf(d);
       const meta = r2.getMeta();

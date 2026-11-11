@@ -169,6 +169,8 @@ export interface PlayerCareer {
 }
 
 export interface PlayerTruth {
+  /** EV-2(D-205 (1)): 기분 0~100(없으면 50). 경기에는 압박 손실 입력으로만 쓴다 */
+  mood?: number;
   id: PlayerId;
   name: string;
   birthDate: GameDate;

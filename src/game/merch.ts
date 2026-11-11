@@ -12,7 +12,8 @@ import type { ClubId, ClubProfile } from '../engine/types';
 import { GameError } from '../shared/protocol';
 import type { BusinessOps } from './business';
 import type { Organization } from './organization';
-import type { GameMeta, GameRepository, InboxMessage } from './ports';
+import type { EventState, GameMeta, GameRepository, InboxMessage } from './ports';
+import { merchMultiplier, weekNumber } from './events';
 import { NO_GUARD, type BudgetGuard } from './budget';
 
 const won = (n: number) => (Math.abs(n) >= EOK ? `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억` : `${Math.round(n / 10_000).toLocaleString('ko-KR')}만`);
@@ -48,6 +49,8 @@ export class MerchOps {
 
   /** 6e(D-177): 우리 구단 굿즈 발주 한도. 서비스가 연결한다 */
   budget: BudgetGuard = NO_GUARD;
+  /** EV-2: 카드 기간 효과(서비스가 연결) */
+  eventState: () => EventState | undefined = () => undefined;
 
   /** 우리 구단 자동 재주문 담당자(상품팀장, 없으면 사업본부장). AI 구단은 항상 가능 */
   private canAuto(meta: GameMeta, clubId: ClubId): boolean {
@@ -93,7 +96,8 @@ export class MerchOps {
           const factor = sku === 'allstar' ? allStarFactor(club.id) : 1;
           if (factor === 0) demand = 0;
           else if (attendance !== undefined) {
-            demand = Math.round(gameDemand(meta.seed, `${date}-${club.id}`, sku, attendance, s.vendor.kind, sat) * factor);
+            // EV-2(D-205 (5)): 카드 굿즈 수요 배율
+            demand = Math.round(gameDemand(meta.seed, `${date}-${club.id}`, sku, attendance, s.vendor.kind, sat) * factor * merchMultiplier(this.eventState(), weekNumber(date), club.id));
             s.lastDemand[sku] = demand;
           } else demand = Math.round(s.lastDemand[sku] * M.onlineShare);
           revenue += sell(s, sku, demand, unitPrice(sku, inflation), meta.season);

@@ -228,6 +228,8 @@ export interface PlayerHealthView {
 export interface PlayerDetailView extends PlayerListItem {
   /** 4b-1 건강. 다른 구단 선수는 부상 여부만 */
   health: PlayerHealthView;
+  /** EV-2 기분 0~100(우리 선수만, 다른 구단은 null) */
+  mood: number | null;
   /** 우리 선수만: 지난 성장·노화 결산 뒤 실제 능력 변화(4a). 다른 구단 선수는 null */
   development: { since: string | null; settled: boolean; changes: Array<{ key: string; label: string; delta: number }> } | null;
   scouting: { confidence: number; date: string; observer: string; stale: boolean; reports: number; nextDate: string; apCost: number };
@@ -683,7 +685,7 @@ export interface BusinessView {
   ticket: { policy: TicketPolicyView; priceWon: number; options: Array<{ key: TicketPolicyView; label: string; priceWon: number; demand: number }> };
   seasons: Array<{ season: number; games: number; total: number; average: number; occupancy: number; sellouts: number; ticketWon: number; leagueOccupancy: number | null }>;
   /** 6b 팬 만족도(0~100). 20 미만은 팬 반발, dismissDate까지 recoverAt 이상으로 회복하지 못하면 해임 */
-  fans: { satisfaction: number; backlash: boolean; lowSince: string | null; dismissDate: string | null; recoverAt: number };
+  fans: { satisfaction: number; backlash: boolean; lowSince: string | null; dismissDate: string | null; recoverAt: number; press: number };
   campaignAp: number;
   /** 6d 굿즈: 제작업체, 상품군별 재고·발주·판매, 자동 재주문 정책 */
   merch: {

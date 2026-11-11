@@ -3,7 +3,7 @@
 import { allStarDates } from '../engine/allStar';
 import { startSatisfaction } from '../engine/business';
 import { addDays, ageOn, diffDays, type GameDate } from '../engine/calendar';
-import { EVENTS as E, TRADE } from '../engine/config';
+import { EVENTS as E, MARKETING, TRADE } from '../engine/config';
 import { CARDS, CATEGORY_LABEL, CONNECTED, passesLimits, pickCandidate, TEAM_LABEL, type CardEffect, type Candidate, type CardPhase, type LoadedCard } from '../engine/events/cards';
 import { isTrue, type ExprValue } from '../engine/events/expr';
 import { FINANCE_BASE, inflate, stadiumFee, type LedgerEntry } from '../engine/finance';
@@ -20,13 +20,46 @@ const eok = (n: number) => `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억`;
 const round1m = (n: number) => Math.round(n / 1_000_000) * 1_000_000;
 /** 절대 주 번호(쿨다운 계산용) */
 export const weekNumber = (date: GameDate) => Math.floor(diffDays(date, '2000-01-03') / 7);
-export const newEventState = (): EventState => ({ flags: {}, queue: [], spawns: [], pendingLines: [], lastCategory: null, last: { rank: null, fan: null, sellouts: 0, cash: null } });
+export const newEventState = (): EventState => ({ flags: {}, queue: [], spawns: [], effects: [], pendingLines: [], lastCategory: null, last: { rank: null, fan: null, sellouts: 0, cash: null } });
+
+// ───────── EV-2 기간 효과 조회(다른 모델이 읽는다, D-205) ─────────
+type Eff = NonNullable<EventState['effects']>[number];
+const activeEffects = (s: EventState | undefined, week: number, type: string): Eff[] => (s?.effects ?? []).filter((e) => e.type === type && e.untilWeek > week);
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/** 선수별 컨디션 로짓: 점 합(±5 상한) × 0.01 */
+export function conditionLogits(s: EventState | undefined, week: number): Map<PlayerId, number> {
+  const pts = new Map<PlayerId, number>();
+  for (const e of activeEffects(s, week, 'COND')) if (e.playerId !== null) pts.set(e.playerId, (pts.get(e.playerId) ?? 0) + e.value);
+  return new Map([...pts].filter(([, v]) => v !== 0).map(([id, v]) => [id, clamp(v, -E.condMax, E.condMax) * E.condLogitPerPoint]));
+}
+/** 선수 출전 1회 부상 확률 배율(효과끼리 곱) */
+export const injuryMultiplier = (s: EventState | undefined, week: number, playerId: PlayerId) => activeEffects(s, week, 'INJ_RISK').filter((e) => e.playerId === playerId).reduce((a, e) => a * e.value, 1);
+/** 구단 팬 만족도 목표 가산 합 */
+export const fanTargetBoost = (s: EventState | undefined, week: number, clubId: ClubId) => activeEffects(s, week, 'FAN_TARGET').filter((e) => e.clubId === clubId).reduce((a, e) => a + e.value, 0);
+/** 구단 관중 수요 가산(배율 − 1 의 합) */
+export const demandBoost = (s: EventState | undefined, week: number, clubId: ClubId) => activeEffects(s, week, 'DEMAND').filter((e) => e.clubId === clubId).reduce((a, e) => a + (e.value - 1), 0);
+/** 구단 굿즈 수요 배율(곱, 0.7~1.3) */
+export const merchMultiplier = (s: EventState | undefined, week: number, clubId: ClubId) => clamp(activeEffects(s, week, 'MERCH').filter((e) => e.clubId === clubId).reduce((a, e) => a * e.value, 1), E.merchMin, E.merchMax);
+/** 집중 훈련 효과 배율(대상 선수 또는 구단 1군 전원, 0.9~1.1) */
+export function growthMultiplier(s: EventState | undefined, week: number, p: PlayerTruth): number {
+  const list = activeEffects(s, week, 'GROWTH').filter((e) => e.playerId === p.id || (e.playerId === null && e.clubId === p.clubId && p.level === '1군'));
+  return list.length ? clamp(list.reduce((a, e) => a * e.value, 1), E.growthMin, E.growthMax) : 1;
+}
+/** 팬 만족도 목표 가산: 캠페인 가산(상한 전 합)과 카드 가산을 합쳐 기존 상한 */
+export const satisfactionBoost = (campaignRaw: number, eventTarget: number) => Math.min(MARKETING.maxSatisfactionBoost, campaignRaw + eventTarget);
+/** 관중 수요 가산: 캠페인과 카드 가산 합을 하한·상한으로 */
+export const demandWith = (campaign: number, event: number) => clamp(campaign + event, E.demandMin, MARKETING.maxDemandBoost);
+/** 사건 여론 완화(D-198): 팬 만족도 하락 × (1.2 − 0.4 × 언론 관계/100) × (1 − 0.2 × 홍보팀 역량) */
+export const fanDropFactor = (press: number, prQuality: number) => (1.2 - (0.4 * press) / 100) * (1 - E.prRelief * prQuality);
 
 export interface EventDeps {
   rankOf: () => Map<ClubId, number>;
   fatigue: (date: GameDate, players: PlayerTruth[]) => Map<PlayerId, number>;
   /** 감독 신뢰도 ±(출처 기록) */
   adjustTrust: (clubId: ClubId, delta: number, date: GameDate, source: string) => void;
+  /** 홍보팀 역량 0~1 */
+  prQuality: (clubId: ClubId) => number;
 }
 
 export interface ApplyCtx {
@@ -82,7 +115,8 @@ export class EventOps {
         const key = String(c.clubId);
         const cur = meta.fans?.[key] ?? { satisfaction: startSatisfaction(this.clubs.get(c.clubId)!.loyalty) };
         let d = e.value ?? 0;
-        // 한 사건이 팬 만족도를 12 넘게 깎지 않는다(D-198)
+        // 사건 여론 완화(D-205 (4)) 뒤 한 사건이 팬 만족도를 12 넘게 깎지 않는다(D-198)
+        if (d < 0) d *= fanDropFactor(meta.press?.[key] ?? E.pressStart, this.deps.prQuality(c.clubId));
         if (d < 0) {
           d = Math.max(d, -(E.fanDropCap - fanDrop));
           fanDrop += -d;
@@ -103,9 +137,85 @@ export class EventOps {
         c.state.flags[e.name!] = { value: e.value ?? 1, expiresWeek: e.weeks ? c.week + e.weeks : null };
       } else if (e.type === 'SPAWN') {
         c.state.spawns.push({ week: c.week + (e.weeks ?? 1), cardId: e.card!, playerId: c.playerId });
+      } else if (e.type === 'MOOD' || e.type === 'CLUBHOUSE') {
+        // 선수단 분위기 = 우리 1군 전원 기분 ±n/2(D-202 (1))
+        const ids = e.type === 'CLUBHOUSE' || e.who === 'club' ? this.repo.getPlayers().filter((p) => p.clubId === c.clubId && p.level === '1군').map((p) => p.id) : c.playerId !== null ? [c.playerId] : [];
+        const d = e.type === 'CLUBHOUSE' ? Math.round((e.value ?? 0) / 2) : (e.value ?? 0);
+        this.changeMood(ids, d);
+        out.push(`${e.type === 'CLUBHOUSE' ? '선수단 분위기' : '기분'} ${d >= 0 ? '▲' : '▼'}`);
+      } else if (e.type === 'PRESS') {
+        const meta = this.repo.getMeta();
+        const key = String(c.clubId);
+        this.repo.updateMeta({ press: { ...(meta.press ?? {}), [key]: clamp((meta.press?.[key] ?? E.pressStart) + (e.value ?? 0), 0, 100) } });
+        out.push(`언론 관계 ${(e.value ?? 0) >= 0 ? '▲' : '▼'}`);
+      } else if (e.type === 'COND' || e.type === 'INJ_RISK') {
+        if (c.playerId === null) continue;
+        (c.state.effects ??= []).push({ type: e.type, clubId: c.clubId, playerId: c.playerId, value: e.value ?? 0, untilWeek: c.week + (e.weeks ?? 1) });
+        out.push(e.type === 'COND' ? `컨디션 ${(e.value ?? 0) >= 0 ? '▲' : '▼'}(${e.weeks}주)` : `부상 위험 ▲(${e.weeks}주)`);
+      } else if (e.type === 'DEMAND' || e.type === 'MERCH' || e.type === 'FAN_TARGET') {
+        (c.state.effects ??= []).push({ type: e.type, clubId: c.clubId, playerId: null, value: e.value ?? 0, untilWeek: c.week + (e.weeks ?? 1) });
+        const up = e.type === 'FAN_TARGET' ? (e.value ?? 0) >= 0 : (e.value ?? 1) >= 1;
+        out.push(`${e.type === 'DEMAND' ? '관중 수요' : e.type === 'MERCH' ? '굿즈 수요' : '팬 만족도 목표'} ${up ? '▲' : '▼'}(${e.weeks}주)`);
+      } else if (e.type === 'RECUR') {
+        // 반복 수입·지출: 지금 한 번, 이후 주 시작마다 남은 횟수만큼
+        const amount = this.recurAmount(c, e.won, e.grade);
+        this.repo.addLedger([{ clubId: c.clubId, date: c.date, category: 'event', amount, memo: `이벤트 ${c.cardId}(반복)` }]);
+        if ((e.weeks ?? 1) > 1) (c.state.effects ??= []).push({ type: 'RECUR', clubId: c.clubId, playerId: null, value: 0, untilWeek: c.week + (e.weeks ?? 1), left: (e.weeks ?? 1) - 1, won: amount });
+        out.push(`매주 ${amount < 0 ? '지출' : '수입'} ${eok(Math.abs(amount))}(${e.weeks}주)`);
+      } else if (e.type === 'GROWTH') {
+        const end = weekNumber(addDays(seasonKeyDates(c.meta.season).regularSeasonEnd, 40));
+        (c.state.effects ??= []).push({ type: 'GROWTH', clubId: c.clubId, playerId: e.who === 'club' ? null : c.playerId, value: e.value ?? 1, untilWeek: end });
+        out.push(`훈련 효과 ${(e.value ?? 1) >= 1 ? '▲' : '▼'}(시즌)`);
       }
     }
     return out;
+  }
+
+  private recurAmount(c: ApplyCtx, won: number | undefined, grade: string | undefined): number {
+    if (won !== undefined) return won;
+    const [lo, hi] = E.costBp[grade ?? 'small']!;
+    return -Math.max(1_000_000, round1m((this.baseBudget(c.meta, c.clubId) * c.rng.int(lo, hi)) / 10_000));
+  }
+
+  /** 기분 ±(0~100). 50이면 값을 지운다 */
+  private changeMood(ids: PlayerId[], delta: number): void {
+    if (!ids.length || delta === 0) return;
+    const set = new Set(ids);
+    const changed = this.repo.getPlayers().filter((p) => set.has(p.id));
+    for (const p of changed) {
+      const v = clamp(Math.round(((p.mood ?? 50) + delta) * 10) / 10, 0, 100);
+      if (v === 50) delete p.mood;
+      else p.mood = v;
+    }
+    this.repo.savePlayers(changed);
+  }
+
+  /** 주 시작 정리(D-205): 기간 효과 만료, 반복 수입·지출, 기분 20%·언론 관계 5% 회복 */
+  private weeklyUpkeep(meta: GameMeta, date: GameDate, week: number, state: EventState): string[] {
+    const lines: string[] = [];
+    const keep: Eff[] = [];
+    for (const e of state.effects ?? []) {
+      if (e.type === 'RECUR' && (e.left ?? 0) > 0) {
+        this.repo.addLedger([{ clubId: e.clubId, date, category: 'event', amount: e.won ?? 0, memo: '이벤트(반복)' }]);
+        e.left = (e.left ?? 0) - 1;
+        if (e.left > 0) keep.push(e);
+        continue;
+      }
+      if (e.untilWeek > week) keep.push(e);
+    }
+    state.effects = keep;
+    const moody = this.repo.getPlayers().filter((p) => p.mood !== undefined);
+    for (const p of moody) {
+      const v = Math.round((50 + (p.mood! - 50) * (1 - E.moodRecover)) * 10) / 10;
+      if (Math.abs(v - 50) < 0.5) delete p.mood;
+      else p.mood = v;
+    }
+    if (moody.length) this.repo.savePlayers(moody);
+    if (meta.press && Object.keys(meta.press).length) {
+      const press = Object.fromEntries(Object.entries(meta.press).map(([k, v]) => [k, Math.round((E.pressStart + (v - E.pressStart) * (1 - E.pressRecover)) * 10) / 10]));
+      this.repo.updateMeta({ press });
+    }
+    return lines;
   }
 
   // ───────── 조건 변수 ─────────
@@ -151,6 +261,8 @@ export class EventOps {
     const rng = new Rng((meta.rngStreams.event as RngState | undefined) ?? Rng.derive(meta.seed, 'event').state());
     // 1) 만료
     for (const [k, f] of Object.entries(state.flags)) if (f.expiresWeek !== null && f.expiresWeek <= week) delete state.flags[k];
+    // 1-2) 기간 효과·반복 지출·기분·언론 관계(EV-2)
+    this.weeklyUpkeep(meta, monday, week, state);
     // 2) 지연 결과
     const results = [...state.pendingLines];
     state.pendingLines = [];
