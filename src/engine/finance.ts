@@ -40,7 +40,8 @@ export type LedgerCategory =
   | 'sponsorship'
   | 'merchSales'
   | 'merchOrder'
-  | 'merchPartner';
+  | 'merchPartner'
+  | 'event';
 
 export const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   startCash: '기초 현금',
@@ -71,6 +72,7 @@ export const CATEGORY_LABEL: Record<LedgerCategory, string> = {
   merchSales: '굿즈 판매',
   merchOrder: '굿즈 발주(재고 취득)',
   merchPartner: '제작 파트너 후원금',
+  event: '이벤트',
 };
 
 export const NOT_YET_IMPLEMENTED = [

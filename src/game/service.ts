@@ -46,6 +46,8 @@ import { MANAGER_KEYS, MANAGER_LABEL } from '../engine/manager';
 import { CareerOps } from './career';
 import { AwardOps, goldenGloveDate } from './awards';
 import { AllStarOps, lineText } from './allStar';
+import { EventOps } from './events';
+import { CATEGORY_LABEL as CARD_CATEGORY_LABEL } from '../engine/events/cards';
 import { allStarDates, SLOT_LABEL, SLOT_SIZE, TEAM_LABEL } from '../engine/allStar';
 import { awardTitle } from '../engine/awards';
 import { BudgetOps } from './budget';
@@ -108,6 +110,8 @@ import {
   type LiveChoice,
   type BudgetPlanInput,
   type AllStarView,
+  type BriefingView,
+  type NewsLogView,
   type AwardsView,
   type BudgetView,
   type LiveDecisionView,
@@ -293,6 +297,7 @@ export class GameService {
   readonly budget: BudgetOps;
   readonly awards: AwardOps;
   readonly allStar: AllStarOps;
+  readonly events: EventOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -376,6 +381,8 @@ export class GameService {
     // 8a(D-180): 리그 시상
     this.awards = new AwardOps(repo, this.clubMap, (m, c, s) => this.seasonClose.expectedRank(m, c, s));
     // 8e(D-189·D-190): 올스타전
+    // EV-1(D-203): 턴 브리핑·결정 카드
+    this.events = new EventOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), fatigue: (d, ps) => this.health.fatigueMap(d, ps), adjustTrust: (c, v, d, s) => this.managers.adjustTrust(c, v, d, s) });
     this.allStar = new AllStarOps(repo, this.clubMap, (id) => this.managers.profileOf(id), (s, d, ps, env) => this.forms.formsFor(s, d, ps, env), this.budget);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -681,6 +688,8 @@ export class GameService {
     }
     // 은퇴 설득 기한·파산 감시
     this.seasonClose.onDay(this.meta(), date);
+    // EV-1(D-203 (7)): 시즌 모드 주 시작(일요일 처리 끝) — 지연 결과·턴 브리핑·결정 카드
+    if (weekday(next) === 1) this.events.weekStart(this.meta(), next);
     this.ensureScouting();
     return { gamesPlayed: results.length };
   }
@@ -989,6 +998,7 @@ export class GameService {
       tasks: this.tasks(meta, unread),
       pendingApprovals: this.org.approvals().length,
       approvals: this.approvalViews(),
+      briefing: this.briefingView(weekIdFor(meta.currentDate)),
       upcomingEvents: this.calendar(meta.currentDate, addDays(meta.currentDate, 45)),
       keyPlayers,
       canAdvanceDay: meta.mode === 'season' && phase !== 'seasonComplete' && !meta.gameOver,
@@ -1452,6 +1462,30 @@ export class GameService {
   // ───────── 8a 리그 시상 (D-180) ─────────
 
   /** 시즌별 수상 목록(전 구단). season이 없으면 가장 최근 시즌 */
+  // ───────── EV-1 턴 브리핑·뉴스 로그 (D-192·D-203) ─────────
+
+  /** 그 주 브리핑(저장된 줄, 난수 없음) */
+  briefingView(weekId: string): BriefingView | null {
+    const rows = this.repo.getNews({ weekId });
+    if (!rows.length) return null;
+    return { weekId, date: rows[0]!.date, season: rows[0]!.season, lines: rows.map((r) => ({ kind: r.kind as BriefingView['lines'][number]['kind'], text: r.text })) };
+  }
+
+  newsLog(season?: number): NewsLogView {
+    const meta = this.meta();
+    const all = this.repo.getNews();
+    const seasons = [...new Set([...all.map((n) => n.season), meta.season])].sort((a, b) => b - a);
+    const s = season !== undefined && seasons.includes(season) ? season : meta.season;
+    const weeks = [...new Set(all.filter((n) => n.season === s).map((n) => n.weekId))].sort().reverse();
+    const players = new Map(this.repo.getPlayers().map((p) => [p.id, p.name]));
+    return {
+      seasons,
+      season: s,
+      briefings: weeks.map((w) => this.briefingView(w)!),
+      cards: this.repo.getEventLog({ season: s }).reverse().map((r) => ({ date: r.date, cardId: r.cardId, category: CARD_CATEGORY_LABEL[r.category as keyof typeof CARD_CATEGORY_LABEL] ?? r.category, player: r.playerId !== null ? (players.get(r.playerId) ?? null) : null, by: r.by === 'owner' ? '구단주' : '담당 팀', text: r.text, outcome: r.outcome })),
+    };
+  }
+
   // ───────── 8e 올스타전 (D-189·D-190) ─────────
 
   allStarView(season?: number): AllStarView {

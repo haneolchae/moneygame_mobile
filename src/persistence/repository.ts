@@ -1,5 +1,5 @@
 import type { ScoutingSnapshot } from '../engine/scouting';
-import type { AllStarSeason, AwardRecord, PlayerNote } from '../game/ports';
+import type { AllStarSeason, AwardRecord, EventLogRow, NewsRow, PlayerNote } from '../game/ports';
 // GameRepository의 SQLite 구현 (node:sqlite).
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
 import type { GameDate } from '../engine/calendar';
@@ -502,6 +502,34 @@ export class SqliteGameRepository implements GameRepository {
          FROM plate_appearances WHERE stage = 'regular' AND season = ? AND batting_club = ?${this.idFilter('batter_id', playerIds)} GROUP BY game_id, batter_id ORDER BY date, game_id`,
     ).all(season, clubId) as Row[];
     return rows.map((r) => ({ gameId: num(r.g), date: String(r.date), batterId: num(r.id), H: num(r.H), OB: num(r.OB) }));
+  }
+
+  /** EV-1 카드 기록(D-203 (9)) */
+  addEventLog(row: EventLogRow): number {
+    const r = this.stmt('INSERT INTO event_log (season, week_id, week, date, card_id, category, player_id, choice_id, by_who, outcome, text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(row.season, row.weekId, row.week, row.date, row.cardId, row.category, row.playerId, row.choiceId, row.by, row.outcome, row.text);
+    return Number(r.lastInsertRowid);
+  }
+
+  getEventLog(filter: { season?: number } = {}): EventLogRow[] {
+    const rows = (filter.season !== undefined ? this.stmt('SELECT * FROM event_log WHERE season = ? ORDER BY id').all(filter.season) : this.stmt('SELECT * FROM event_log ORDER BY id').all()) as Row[];
+    return rows.map((r) => ({ id: num(r.id), season: num(r.season), weekId: String(r.week_id), week: num(r.week), date: String(r.date), cardId: String(r.card_id), category: String(r.category), playerId: r.player_id === null ? null : num(r.player_id), choiceId: String(r.choice_id), by: String(r.by_who) as 'delegate' | 'owner', outcome: r.outcome === null ? null : String(r.outcome), text: String(r.text) }));
+  }
+
+  addNews(rows: NewsRow[]): void {
+    const ins = this.stmt('INSERT INTO news_log (week_id, season, date, seq, kind, text) VALUES (?, ?, ?, ?, ?, ?)');
+    this.tx(() => {
+      for (const n of rows) ins.run(n.weekId, n.season, n.date, n.seq, n.kind, n.text);
+    });
+  }
+
+  getNews(filter: { weekId?: GameDate; season?: number } = {}): NewsRow[] {
+    const rows = (filter.weekId !== undefined ? this.stmt('SELECT * FROM news_log WHERE week_id = ? ORDER BY seq').all(filter.weekId) : filter.season !== undefined ? this.stmt('SELECT * FROM news_log WHERE season = ? ORDER BY week_id, seq').all(filter.season) : this.stmt('SELECT * FROM news_log ORDER BY week_id, seq').all()) as Row[];
+    return rows.map((r) => ({ weekId: String(r.week_id), season: num(r.season), date: String(r.date), seq: num(r.seq), kind: String(r.kind), text: String(r.text) }));
+  }
+
+  ledgerRange(clubId: ClubId, from: GameDate, to: GameDate): { income: number; expense: number } {
+    const r = this.stmt('SELECT COALESCE(SUM(CASE WHEN amount > 0 THEN amount END), 0) AS inc, COALESCE(SUM(CASE WHEN amount < 0 THEN amount END), 0) AS exp FROM ledger WHERE club_id = ? AND date >= ? AND date <= ?').get(clubId, from, to) as Row;
+    return { income: num(r.inc), expense: num(r.exp) };
   }
 
   /** 8e 올스타 기록(D-189 (9)): 정규 기록과 분리된 표 */

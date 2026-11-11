@@ -149,7 +149,7 @@ export class HealthOps {
     // 끝난 휴식 지시 정리
     const orders = Object.fromEntries(Object.entries(meta.restOrders ?? {}).filter(([, until]) => diffDays(date, until) <= 0));
     if (Object.keys(orders).length !== Object.keys(meta.restOrders ?? {}).length) this.repo.updateMeta({ restOrders: orders });
-    if (meta.mode === 'season' && weekday(date) === 1) inbox.push(...this.weeklyReport(meta, date, players));
+    // EV-1(D-203 (8)): 시즌 모드 주간 건강 보고는 턴 브리핑 건강 줄로 옮겼다
     return inbox;
   }
 
@@ -187,22 +187,6 @@ export class HealthOps {
       inbox.push({ date, kind: 'report', sender: '컨디셔닝·메디컬팀', title: `부상 ${mine.length}명: ${mine.map((p) => p.name).join(', ')}`, body: [...lines, ...moves].join('\n') });
     }
     return inbox;
-  }
-
-  private weeklyReport(meta: GameMeta, date: GameDate, players: PlayerTruth[]): InboxMessage[] {
-    const mine = players.filter((p) => p.clubId === meta.userClubId && !p.retired);
-    const hurt = mine.filter((p) => this.hurt(p, date));
-    const fat = this.fatigueMap(date, mine.filter((p) => p.level === '1군'));
-    const tired = mine.filter((p) => (fat.get(p.id) ?? 0) >= 60).sort((a, b) => (fat.get(b.id) ?? 0) - (fat.get(a.id) ?? 0));
-    if (hurt.length === 0 && tired.length === 0) return [];
-    const lines = [
-      `부상 ${hurt.length}명`,
-      ...hurt.map((p) => `· ${p.name}(${p.level}): ${p.health!.injury!.part} ${p.health!.injury!.severity}, 복귀 추정 ${md(p.health!.injury!.estimate.from)}~${md(p.health!.injury!.estimate.to)}`),
-      `피로 높은 1군 ${tired.length}명`,
-      ...tired.slice(0, 8).map((p) => `· ${p.name}: 피로 ${fat.get(p.id)}`),
-      '휴식 지시(행동력 0)는 선수 상세에서, 특별 검사(행동력 1)로 부상 위험이나 복귀 전망을 더 정확히 볼 수 있습니다.',
-    ];
-    return [{ date, kind: 'report', sender: '컨디셔닝·메디컬팀', title: `주간 건강 보고: 부상 ${hurt.length}명 · 고피로 ${tired.length}명`, body: lines.join('\n') }];
   }
 
   // ───────── 구단주 행동 (선수 상세) ─────────

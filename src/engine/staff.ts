@@ -113,6 +113,8 @@ export interface ManagerState {
   baseOff: number;
   baseDef: number;
   recent: Array<{ date: string; side: 'off' | 'def'; kinds: string[]; inning: number; delta: number; score: number }>;
+  /** EV-1(D-203 (6)): 구단 사건 카드로 바뀐 신뢰도(출처 기록) */
+  events?: Array<{ date: string; delta: number; source: string }>;
 }
 
 /** ASSUMPTION(D-076): 직급별 기준 연봉. 능력 평균 50 기준, 능력에 따라 ×0.6~×1.8 */

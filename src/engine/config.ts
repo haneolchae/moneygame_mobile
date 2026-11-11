@@ -848,3 +848,31 @@ export const ALLSTAR = {
   merchWindowDays: 14,
   merchPerPick: 0.5,
 } as const;
+
+/** EV-1 턴 이벤트·브리핑(D-192·D-193·D-203, 초기안) */
+export const EVENTS = {
+  /** 후보가 있어도 카드가 없는 주 비율(사용자 확정 25%) */
+  emptyShare: 0.25,
+  cooldownWeeks: 8,
+  seasonCapDefault: 1,
+  playerCooldownWeeks: 4,
+  /** 직전 주와 같은 분류 가중치 배수 */
+  sameCategoryWeight: 0.3,
+  /** 비용 등급(기준 예산 대비 bp) */
+  costBp: { small: [10, 20], medium: [50, 100], large: [200, 400] } as Record<string, readonly [number, number]>,
+  /** 한 사건 팬 만족도 하락 상한 */
+  fanDropCap: 12,
+  /** 확률 결과 범위 */
+  outcomeMin: 0.25,
+  outcomeMax: 0.85,
+  /** 브리핑 줄 수 */
+  briefingMin: 3,
+  briefingMax: 15,
+  /** 경고: 연패, 팬 만족도 주간 하락, 고피로 기준 */
+  lossStreakWarn: 4,
+  fanDropWarn: 5,
+  tiredFatigue: 60,
+  /** 주전: 1군에서 능력 순 타자 9명·투수 6명 */
+  starterHitters: 9,
+  starterPitchers: 6,
+} as const;

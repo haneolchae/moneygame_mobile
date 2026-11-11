@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from 'react';
 import type { AppStatus, DashboardView, ProgressEvent } from '../shared/protocol';
 import { api, ApiError, onProgress } from './api';
 import { ApprovalPopup } from './ApprovalPopup';
+import { BriefingPopup } from './BriefingPopup';
+import { NewsLog } from './screens/NewsLog';
 import { GameOverPanel } from './Career';
 import { Emblem } from './Emblem';
 import { dateKo } from './format';
@@ -48,6 +50,8 @@ export type Route =
   | { name: 'standings' }
   /** 8e 올스타전 */
   | { name: 'allStar' }
+  /** EV-1 뉴스 로그 */
+  | { name: 'news' }
   | { name: 'finance' }
   | { name: 'business' }
   | { name: 'market' }
@@ -78,6 +82,7 @@ export interface Nav {
 const MENU: Array<{ route: Route; label: string; icon: string }> = [
   { route: { name: 'dashboard' }, label: '구단 현황', icon: 'do-home' },
   { route: { name: 'inbox' }, label: '받은 편지함', icon: 'do-bell' },
+  { route: { name: 'news' }, label: '뉴스 로그', icon: 'do-bell' },
   { route: { name: 'players' }, label: '선수단', icon: 'do-roster' },
   { route: { name: 'roster' }, label: '선수단 운영', icon: 'do-edit' },
   { route: { name: 'market' }, label: '계약·이적', icon: 'do-contract' },
@@ -105,6 +110,8 @@ export function App() {
   // 주 시작 결재 팝업: 같은 주에는 한 번만 띄운다(D-077).
   const [popupWeek, setPopupWeek] = useState<string | null>(null);
   const [popupOpen, setPopupOpen] = useState(false);
+  // EV-1: 이번 주 브리핑을 본 주(결재 팝업보다 먼저 띄운다)
+  const [briefWeek, setBriefWeek] = useState<string | null>(null);
 
   const notify = useCallback((msg: string, kind: 'info' | 'error' = 'info') => {
     setToast({ msg, kind });
@@ -280,6 +287,7 @@ export function App() {
         {route.name === 'boxScore' && <BoxScore nav={nav} fixtureId={route.fixtureId} />}
         {route.name === 'standings' && <Standings nav={nav} />}
         {route.name === 'allStar' && <AllStar nav={nav} />}
+        {route.name === 'news' && <NewsLog nav={nav} />}
         {route.name === 'finance' && <Finance nav={nav} />}
         {route.name === 'business' && <Business nav={nav} />}
         {route.name === 'market' && <Market nav={nav} />}
@@ -313,7 +321,8 @@ export function App() {
           </div>
         </div>
       )}
-      {popupOpen && !busy && <ApprovalPopup approvals={d.approvals} nav={nav} onClose={() => setPopupOpen(false)} />}
+      {d.briefing && d.briefing.weekId !== briefWeek && !busy && <BriefingPopup briefing={d.briefing} onClose={() => setBriefWeek(d.briefing!.weekId)} />}
+      {popupOpen && !busy && (!d.briefing || d.briefing.weekId === briefWeek) && <ApprovalPopup approvals={d.approvals} nav={nav} onClose={() => setPopupOpen(false)} />}
       {toast && <div className={`toast ${toast.kind}`}>{toast.msg}</div>}
     </div>
   );

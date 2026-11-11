@@ -128,6 +128,8 @@ export interface GameMeta {
   /** 8e-2(D-190) 우리 구단 올스타전 유치 신청(대상 시즌), 투표 캠페인 실행일(시즌) */
   allStarApply?: Record<string, true>;
   allStarCampaign?: Record<string, GameDate>;
+  /** EV-1(D-203) 이벤트 진행 상태 */
+  eventState?: EventState;
   /** 우리 구단 티켓 가격 정책 */
   ticketPolicy?: TicketPolicy;
   /** 구단 시설 단계·공사: 구단 ID → 시설 */
@@ -170,6 +172,47 @@ export interface TradeTalk {
   log: TradeLogEntry[];
   /** 상대 역제안(그 주 안에서만 유효) */
   counter: { pkg: TradePackage; weekId: string } | null;
+}
+
+/** EV-1 카드 발생·처리 기록(D-203 (9)) */
+export interface EventLogRow {
+  id?: number;
+  season: number;
+  weekId: GameDate;
+  /** 주 번호(쿨다운 계산용, 절대값) */
+  week: number;
+  date: GameDate;
+  cardId: string;
+  category: string;
+  playerId: PlayerId | null;
+  choiceId: string;
+  /** 처리 주체: 담당 팀(위임 기본 선택지) 또는 구단주 */
+  by: 'delegate' | 'owner';
+  /** 확률 결과 문장(다음 브리핑에서 공개) */
+  outcome: string | null;
+  text: string;
+}
+
+/** EV-1 뉴스 로그 한 줄(턴 브리핑). kind: warn·good·game·money·health·result·league·decide */
+export interface NewsRow {
+  weekId: GameDate;
+  season: number;
+  date: GameDate;
+  seq: number;
+  kind: string;
+  text: string;
+}
+
+/** EV-1 이벤트 진행 상태(저장본 meta): 플래그·지연 결과·연쇄 예약·브리핑 비교 기준 */
+export interface EventState {
+  flags: Record<string, { value: number; expiresWeek: number | null }>;
+  queue: Array<{ week: number; cardId: string; playerId: PlayerId | null; effects: import('../engine/events/cards').CardEffect[]; text: string }>;
+  spawns: Array<{ week: number; cardId: string; playerId: PlayerId | null }>;
+  /** 다음 브리핑의 결과 회수 줄 */
+  pendingLines: string[];
+  lastCategory: string | null;
+  /** 지난 브리핑 때 값(순위·팬 만족도·매진·현금) */
+  last: { rank: number | null; fan: number | null; sellouts: number; cash: number | null };
 }
 
 /** 8e 올스타 선정 한 명(D-189). status: ok = 출전 대상, injured = 부상으로 대체됨(선정 이력 유지), rested = 선발 휴식(출전 안 함) */
@@ -672,6 +715,13 @@ export interface GameRepository {
   awardFielding(season: number): { fielding: Map<PlayerId, { PO: number; A: number; E: number }>; catcher: Map<PlayerId, { SB: number; CS: number; PB: number }> };
   positionOutChecks(season: number): Array<{ gameId: number; clubId: ClubId; fieldOuts: number; dhOuts: number; defOuts: number }>;
   insertAwards(rows: AwardRecord[]): void;
+  /** EV-1 카드 기록·뉴스 로그 */
+  addEventLog(row: EventLogRow): number;
+  getEventLog(filter?: { season?: number }): EventLogRow[];
+  addNews(rows: NewsRow[]): void;
+  getNews(filter?: { weekId?: GameDate; season?: number }): NewsRow[];
+  /** 그 기간 우리 구단 장부 수입·지출 합 */
+  ledgerRange(clubId: ClubId, from: GameDate, to: GameDate): { income: number; expense: number };
   /** 8e 올스타 기록(시즌별 한 행) */
   getAllStar(season: number): AllStarSeason | null;
   putAllStar(row: AllStarSeason): void;

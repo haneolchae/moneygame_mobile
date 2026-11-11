@@ -46,6 +46,18 @@ export class ManagerOps {
     return this.cache.get(clubId) ?? NEUTRAL_MANAGER;
   }
 
+  /** EV-1(D-203 (6)) 카드 효과 TRUST: 신뢰도 ±(0~100), 출처 '구단 사건'을 남긴다 */
+  adjustTrust(clubId: ClubId, delta: number, date: GameDate, source: string): void {
+    const s = this.managerOf(clubId);
+    if (!s) return;
+    const st = s.manager ?? { smallBall: 50, quickHook: 50, trust: M.trust.start, baseOff: 0, baseDef: 0, recent: [] };
+    st.trust = Math.max(0, Math.min(100, st.trust + delta));
+    st.events = [...(st.events ?? []), { date, delta, source }].slice(-M.trust.recentMax);
+    s.manager = st;
+    this.repo.saveStaff([s]);
+    this.reset();
+  }
+
   conditionFactor = (clubId: ClubId) => conditionFactor(this.profileOf(clubId));
   developmentFactor = (clubId: ClubId) => developmentFactor(this.profileOf(clubId));
 

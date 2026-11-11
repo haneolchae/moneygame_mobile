@@ -160,6 +160,8 @@ export interface DashboardView {
   pendingApprovals: number;
   /** 결재 대기 안건(주 시작 팝업용) */
   approvals: ApprovalView[];
+  /** EV-1 이번 주 턴 브리핑(시즌 모드, 결재 팝업보다 먼저) */
+  briefing: BriefingView | null;
   upcomingEvents: CalendarEventView[];
   keyPlayers: PlayerListItem[];
   canAdvanceDay: boolean;
@@ -793,6 +795,23 @@ export interface AwardsView {
   items: AwardItemView[];
 }
 
+// ───────── EV-1 턴 브리핑·뉴스 로그 (D-192·D-203) ─────────
+
+export interface BriefingView {
+  weekId: string;
+  date: string;
+  season: number;
+  /** warn 경고 · good 성과 · game 경기 · money 재정 · health 건강 · result 결과 회수 · league 리그 · decide 결정할 일 */
+  lines: Array<{ kind: 'warn' | 'good' | 'game' | 'money' | 'health' | 'result' | 'league' | 'decide'; text: string }>;
+}
+
+export interface NewsLogView {
+  seasons: number[];
+  season: number;
+  briefings: BriefingView[];
+  cards: Array<{ date: string; cardId: string; category: string; player: string | null; by: string; text: string; outcome: string | null }>;
+}
+
 // ───────── 8e 올스타전 (D-189·D-190) ─────────
 
 export interface AllStarPlayerView {
@@ -1219,6 +1238,7 @@ export interface RequestMap {
   'meeting.convene': { payload: void; result: { message: string; view: BudgetView } };
   'awards.list': { payload: { season?: number }; result: AwardsView };
   'allStar.view': { payload: { season?: number }; result: AllStarView };
+  'events.news': { payload: { season?: number }; result: NewsLogView };
   'allStar.campaign': { payload: Record<string, never>; result: { message: string; view: AllStarView } };
   'allStar.apply': { payload: Record<string, never>; result: { message: string; view: AllStarView } };
   'trade.respondOffer': { payload: { offerId: number; accept: boolean; commandId: string }; result: TradeOfferResultView };
@@ -1309,6 +1329,7 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'meeting.convene',
   'awards.list',
   'allStar.view',
+  'events.news',
   'allStar.campaign',
   'allStar.apply',
   'trade.respondOffer',

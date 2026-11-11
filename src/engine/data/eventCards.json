@@ -1,0 +1,164 @@
+[
+  {
+    "id": "FAN-01",
+    "type": "decision",
+    "category": "ops",
+    "priority": false,
+    "phases": ["regular"],
+    "target": "club",
+    "trigger": "club.streak <= -5 || club.fan <= 30",
+    "weight": 6,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "marketing",
+    "delegateDefault": "statement",
+    "texts": [
+      "구장 앞에 팬 트럭시위가 열렸습니다. \"이대로는 안 된다\"는 문구가 전광판처럼 돌고 있습니다.",
+      "성난 팬들이 트럭 전광판으로 구단에 항의 메시지를 보내고 있습니다. 언론도 주목하기 시작했습니다.",
+      "팬 커뮤니티가 모금해 트럭시위를 열었습니다. 성적과 운영 방향에 대한 설명을 요구합니다."
+    ],
+    "choices": [
+      { "id": "statement", "label": "공식 입장문을 낸다", "effects": [{ "type": "FAN_NOW", "value": 2 }, { "type": "TRUST", "value": -3 }], "text": "공식 입장문을 냈다. 팬 여론이 조금 누그러졌지만, 감독에게 부담이 실렸다." },
+      { "id": "ignore", "label": "대응하지 않는다", "effects": [{ "type": "FAN_NOW", "value": -3 }], "text": "대응하지 않았다. 팬들의 실망이 커졌다." }
+    ]
+  },
+  {
+    "id": "INJ-01",
+    "type": "decision",
+    "category": "injury",
+    "priority": true,
+    "phases": ["regular"],
+    "target": "ourPlayer",
+    "trigger": "player.starter == 1 && player.injuryDays >= 28",
+    "weight": 10,
+    "cooldownWeeks": 8,
+    "seasonCap": 2,
+    "delegateTeam": "medical",
+    "delegateDefault": "internal",
+    "texts": [
+      "{player}의 부상이 길어질 전망입니다. 복귀까지 4주 이상 걸립니다.",
+      "메디컬팀 보고: {player}, 장기 이탈이 불가피합니다.",
+      "{player}가 쓰러졌습니다. 공백을 어떻게 메울지 정해야 합니다."
+    ],
+    "choices": [
+      { "id": "external", "label": "외부 긴급 영입 협상을 시작한다", "effects": [{ "type": "CASH", "grade": "large" }, { "type": "CONTRACT" }], "text": "긴급 영입 협상을 시작했다." },
+      { "id": "internal", "label": "내부 대체로 버틴다", "effects": [{ "type": "GROWTH", "value": 1.1 }, { "type": "FAN_NOW", "value": -2 }], "text": "내부 대체 선수에게 기회를 주기로 했다." }
+    ]
+  },
+  {
+    "id": "INJ-03",
+    "type": "decision",
+    "category": "injury",
+    "priority": false,
+    "phases": ["regular"],
+    "target": "ourPlayer",
+    "trigger": "player.pitcher == 1 && player.active == 1 && player.fatigue >= 70",
+    "weight": 6,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "medical",
+    "delegateDefault": "rest",
+    "texts": [
+      "컨디셔닝·메디컬팀 경고: {player}의 누적 투구 부하가 위험 수준입니다.",
+      "{player}의 팔 상태가 심상치 않습니다. 메디컬팀이 휴식을 권합니다.",
+      "{player}, 최근 등판 간격이 짧았습니다. 부상 위험이 올라갔습니다."
+    ],
+    "choices": [
+      { "id": "rest", "label": "3일 휴식을 지시한다", "effects": [{ "type": "REST", "days": 3 }], "text": "3일 휴식을 지시했다." },
+      { "id": "keep", "label": "로테이션을 유지한다", "effects": [{ "type": "INJ_RISK", "value": 2, "weeks": 3 }], "text": "로테이션을 유지했다. 부상 위험이 커졌다." }
+    ]
+  },
+  {
+    "id": "MGR-04",
+    "type": "decision",
+    "category": "coach",
+    "priority": true,
+    "phases": ["regular"],
+    "target": "club",
+    "trigger": "club.streak <= -10 || (season.half == 2 && club.rank >= 8 && club.fan <= 30)",
+    "weight": 10,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": null,
+    "delegateDefault": "wait",
+    "texts": [
+      "감독 거취를 두고 여론이 들끓습니다. 구단주가 입장을 정해야 합니다.",
+      "언론이 감독 경질설을 보도했습니다. 선수단도 술렁입니다.",
+      "모기업이 감독 문제에 대한 구단주의 판단을 묻습니다."
+    ],
+    "choices": [
+      { "id": "back", "label": "재신임한다", "effects": [{ "type": "TRUST", "value": 8 }, { "type": "FAN_NOW", "value": -5 }], "text": "감독을 재신임했다." },
+      { "id": "fire", "label": "경질한다", "effects": [{ "type": "CONTRACT" }, { "type": "FAN_NOW", "value": 4 }, { "type": "CLUBHOUSE", "value": -10 }], "text": "감독을 경질했다." },
+      { "id": "wait", "label": "시즌 끝까지 판단을 미룬다", "effects": [{ "type": "FAN_NOW", "value": -2 }], "text": "판단을 시즌 뒤로 미뤘다." }
+    ]
+  },
+  {
+    "id": "PRV-04",
+    "type": "decision",
+    "category": "personal",
+    "priority": false,
+    "phases": ["regular"],
+    "target": "ourPlayer",
+    "trigger": "player.active == 1 && player.age >= 26",
+    "weight": 2,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "pr",
+    "delegateDefault": "leave",
+    "texts": [
+      "{player}에게 경사가 생겼습니다. 아이가 곧 태어난다고 합니다.",
+      "{player}가 결혼 소식을 알렸습니다. 선수단이 축하하고 있습니다.",
+      "{player}의 가족에게 기쁜 일이 생겼습니다. 며칠 곁에 있고 싶어 합니다."
+    ],
+    "choices": [
+      { "id": "leave", "label": "경조 휴가 3일과 축하를 건넨다", "effects": [{ "type": "REST", "days": 3 }, { "type": "MOOD", "value": 15 }], "text": "경조 휴가를 주고 축하했다." },
+      { "id": "play", "label": "축하만 하고 출전은 유지한다", "effects": [{ "type": "MOOD", "value": 5 }], "text": "축하를 전하고 출전을 이어 갔다." }
+    ]
+  },
+  {
+    "id": "PRV-11",
+    "type": "decision",
+    "category": "personal",
+    "priority": false,
+    "phases": ["regular"],
+    "target": "ourPlayer",
+    "trigger": "player.active == 1",
+    "weight": 1,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "pr",
+    "delegateDefault": "full",
+    "texts": [
+      "{player}의 가족에게 슬픈 일이 생겼습니다. 정중한 배려가 필요합니다.",
+      "{player}가 가족의 병환으로 고향에 다녀오고 싶어 합니다.",
+      "{player}에게 갑작스러운 부고가 전해졌습니다."
+    ],
+    "choices": [
+      { "id": "full", "label": "충분한 휴가를 준다", "effects": [{ "type": "REST", "days": 7 }, { "type": "CLUBHOUSE", "value": 3 }, { "type": "MOOD", "value": 8 }], "text": "충분한 휴가를 주었다." },
+      { "id": "rule", "label": "규정 휴가만 준다", "effects": [{ "type": "MOOD", "value": -8 }, { "type": "CLUBHOUSE", "value": -2 }], "text": "규정 휴가만 주었다." }
+    ]
+  },
+  {
+    "id": "GOOD-05",
+    "type": "decision",
+    "category": "positive",
+    "priority": false,
+    "phases": ["regular"],
+    "target": "ourPlayer",
+    "trigger": "player.active == 1",
+    "weight": 1,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "pr",
+    "delegateDefault": "award",
+    "texts": [
+      "{player}가 사고 현장에서 시민을 구했다는 보도가 나왔습니다.",
+      "'야구장 밖의 영웅' — {player}의 선행이 뉴스에 올랐습니다.",
+      "{player}가 위기에 처한 시민을 도운 사실이 알려졌습니다."
+    ],
+    "choices": [
+      { "id": "award", "label": "구단 표창과 상금을 준다", "effects": [{ "type": "CASH", "grade": "small" }, { "type": "FAN_NOW", "value": 4 }, { "type": "MOOD", "value": 10 }], "text": "구단 표창과 상금을 수여했다." },
+      { "id": "quiet", "label": "조용히 축하한다", "effects": [{ "type": "MOOD", "value": 5 }], "text": "조용히 축하를 전했다." }
+    ]
+  }
+]
