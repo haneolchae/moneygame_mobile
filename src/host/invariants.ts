@@ -32,6 +32,10 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
     if (active.length !== LEAGUE.activeRoster) errors.push(`${c.name} 1군 ${active.length}명 ≠ ${LEAGUE.activeRoster}`);
   }
 
+  // 4c-3(D-174 (5)): 관전 기록은 그날 것만 남는다(하루 진행이 지운다)
+  const live = repo.getMeta().liveGame;
+  if (live && live.date !== repo.getMeta().currentDate) errors.push(`지난 관전 기록 남음: ${live.date}`);
+
   errors.push(...checkRegularSeasons(repo));
   errors.push(...checkRosterComposition(repo));
   errors.push(...checkUserRoster(repo, season));

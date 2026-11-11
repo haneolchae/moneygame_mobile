@@ -144,6 +144,14 @@ export class Dispatcher {
       }
       case 'trade.offers':
         return this.game().tradeOffersView() as R;
+      case 'live.view':
+        return this.game().liveView() as R;
+      case 'live.start':
+        return this.game().liveStart() as R;
+      case 'live.decide':
+        return this.game().liveDecide((payload as RequestMap['live.decide']['payload']).choice) as R;
+      case 'live.settings':
+        return this.game().liveSettings((payload as RequestMap['live.settings']['payload']).participate) as R;
       case 'trade.respondOffer': {
         const p = payload as RequestMap['trade.respondOffer']['payload'];
         return this.game().tradeRespondOffer(p.offerId, p.accept, p.commandId) as R;
@@ -276,6 +284,8 @@ export class Dispatcher {
         return this.saves.list().map((s) => this.toSlotInfo(s)) as R;
       case 'save.save': {
         const p = payload as RequestMap['save.save']['payload'];
+        // 4c-3(D-174 (5)): 경기 중에는 저장하지 않는다
+        if (this.service?.meta().liveGame) throw new GameError('LIVE_GAME', '경기 중에는 저장할 수 없습니다. 경기를 확정하거나 감독에게 맡긴 뒤 저장하세요.');
         const meta = this.saves.save(p.slot, 'manual');
         const listing = this.saves.list().find((s) => s.slot === meta.slot)!;
         return this.toSlotInfo(listing) as R;

@@ -307,23 +307,26 @@ export interface CountPa {
   fouls: number;
   /** 스트라이크 사건(루킹·헛스윙) 수. 투구 수 = 볼 + 스트라이크 사건 + 파울 + (마지막 사구·인플레이 1) */
   strikeEvents: number;
+  /** 투구 순서(화면용, 저장하지 않음 — D-165·D-174 (6)): B 볼, S 스트라이크, F 파울, H 사구, X 인플레이 */
+  log: string;
 }
 
 /**
  * 투구 단위 진행. uniform(n)은 n번째 투구의 균등 난수(10a 10.5: 키에서 파생, 순서대로 꺼내 쓰지 않음).
  * maxPitches를 넘으면 다음 투구를 인플레이로 끝낸다(연속 파울 수십 개, 확률상 무시할 만큼 작다).
  */
-export function runCountPa(P0: CountTable, uniform: (n: number) => number, maxPitches: number, onPoint?: (balls: number, strikes: number) => CountTable | null): CountPa {
+export function runCountPa(P0: CountTable, uniform: (n: number) => number, maxPitches: number, onPoint?: (balls: number, strikes: number, log: string) => CountTable | null): CountPa {
   let P = P0;
   let balls = 0;
   let strikes = 0;
   let fouls = 0;
   let strikeEvents = 0;
+  let log = '';
   // 결정 지점(10 문서 D-160): 타석 시작, 2스트라이크가 된 때, 3볼이 된 때. 지시가 있으면 그 뒤 투구 확률이 바뀐다
   let saw2 = false;
   let saw3 = false;
   const point = () => {
-    const next = onPoint?.(balls, strikes);
+    const next = onPoint?.(balls, strikes, log);
     if (next) P = next;
   };
   point();
@@ -349,18 +352,19 @@ export function runCountPa(P0: CountTable, uniform: (n: number) => number, maxPi
         }
       }
     }
+    log += 'BSFHX'[e]!;
     if (e === BALL) {
       balls++;
-      if (balls === 4) return { result: 'BB', pitches: n, balls, strikes, fouls, strikeEvents };
+      if (balls === 4) return { result: 'BB', pitches: n, balls, strikes, fouls, strikeEvents, log };
     } else if (e === STRIKE) {
       strikes++;
       strikeEvents++;
-      if (strikes === 3) return { result: 'K', pitches: n, balls, strikes, fouls, strikeEvents };
+      if (strikes === 3) return { result: 'K', pitches: n, balls, strikes, fouls, strikeEvents, log };
     } else if (e === FOUL) {
       fouls++;
       if (strikes < 2) strikes++;
-    } else if (e === HBP) return { result: 'HBP', pitches: n, balls, strikes, fouls, strikeEvents };
-    else return { result: 'IP', pitches: n, balls, strikes, fouls, strikeEvents };
+    } else if (e === HBP) return { result: 'HBP', pitches: n, balls, strikes, fouls, strikeEvents, log };
+    else return { result: 'IP', pitches: n, balls, strikes, fouls, strikeEvents, log };
   }
 }
 

@@ -150,6 +150,8 @@ export interface DashboardView {
   tasks: TaskView[];
   /** 해임·파산(게임 종료) */
   gameOver: { kind: string; date: string; reason: string } | null;
+  /** 4c-3 경기 보기 가능·관전 중 */
+  live: { available: boolean; active: boolean };
   /** 시즌 성적 기본 목표와 연속 미달 */
   goal: { expectedRank: number | null; misses: number; rebuild: string | null };
   /** 포스트시즌 대진과 진행 상황(정규시즌 종료 후) */
@@ -750,6 +752,87 @@ export interface TradeResultView {
   apCharged: number;
   view: TradeView;
 }
+// ───────── 4c-3 경기 관전·승부처 참여 (D-160·D-174) ─────────
+
+export interface LiveFeedItem {
+  seq: number;
+  inning: number;
+  half: 'T' | 'B';
+  kind: 'pa' | 'play' | 'sub' | 'pitcher';
+  text: string;
+  /** 원정:홈 점수(그 사건 뒤) */
+  score: string;
+  scoring: boolean;
+  /** 승부처 타석의 투구 순서(화면용) */
+  pitches?: string;
+}
+
+export interface LiveOption {
+  key: string;
+  label: string;
+  /** 고를 수 없는 이유 */
+  disabled: string | null;
+}
+
+export type LiveChoice =
+  | { kind: 'prePa'; key: number; pitcherId?: number | null; ibb?: boolean; align?: { infield: 'normal' | 'in' | 'dp'; outfield: 'normal' | 'in' | 'back'; lines: boolean }; pinchHitter?: number | null; pinchRunners?: Array<{ base: number; playerId: number }>; play?: string }
+  | { kind: 'count'; paSeq: number; balls: number; strikes: number; tactic: string };
+
+export interface LiveDecisionView {
+  kind: 'prePa' | 'count';
+  key: number;
+  role: 'off' | 'def';
+  title: string;
+  /** 타자·투수(우리 선수는 실제 능력치, 상대는 추정 범위) */
+  batter: PlayerListItem;
+  pitcher: PlayerListItem;
+  /** 우리 쪽 승리 확률(%, 공개 상황 표), 레버리지 */
+  winProb: number;
+  leverage: number;
+  /** 감독 추천(문구와 그대로 보낼 지시) */
+  recommended: string;
+  /** 우리 선수에 더해지는 감독 보정 문구 */
+  managerNote: string;
+  recommendation: LiveChoice;
+  paSeq?: number;
+  balls?: number;
+  strikes?: number;
+  pitchLog?: string;
+  tactics?: LiveOption[];
+  pitchers?: LiveOption[];
+  currentPitches?: number;
+  pinchHitters?: LiveOption[];
+  pinchRunners?: Array<{ base: number; runner: string; options: LiveOption[] }>;
+  plays?: LiveOption[];
+  opponentIbb?: boolean;
+}
+
+export interface LiveGameGameView {
+  date: string;
+  fixtureId: number;
+  home: ClubRef;
+  away: ClubRef;
+  userSide: 'home' | 'away';
+  score: { home: number; away: number };
+  lineScore: { home: number[]; away: number[] };
+  inning: number;
+  half: 'T' | 'B';
+  outs: number;
+  bases: boolean[];
+  over: boolean;
+  result: string | null;
+  feed: LiveFeedItem[];
+  decision: LiveDecisionView | null;
+  participation: { enabled: boolean; used: number; max: number };
+}
+
+export interface LiveGameView {
+  active: boolean;
+  available: boolean;
+  participate: boolean;
+  game: LiveGameGameView | null;
+}
+
 /** 7b(D-157) 받은 트레이드 제안. 상대 선수는 스카우트 추정 범위로만 */
 export interface TradeOfferView {
   id: number;
@@ -1015,6 +1098,10 @@ export interface RequestMap {
   'trade.propose': { payload: { clubId: number; commandId: string } & TradePackageView; result: TradeResultView };
   'trade.acceptCounter': { payload: { clubId: number; commandId: string }; result: TradeResultView };
   'trade.offers': { payload: void; result: TradeOffersView };
+  'live.view': { payload: void; result: LiveGameView };
+  'live.start': { payload: void; result: LiveGameView };
+  'live.decide': { payload: { choice: LiveChoice }; result: LiveGameView };
+  'live.settings': { payload: { participate: boolean }; result: LiveGameView };
   'trade.respondOffer': { payload: { offerId: number; accept: boolean; commandId: string }; result: TradeOfferResultView };
   'owner.career': { payload: void; result: CareerView };
   'owner.acceptJob': { payload: { clubId: number }; result: DashboardView };
@@ -1094,6 +1181,10 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'trade.propose',
   'trade.acceptCounter',
   'trade.offers',
+  'live.view',
+  'live.start',
+  'live.decide',
+  'live.settings',
   'trade.respondOffer',
   'owner.career',
   'owner.acceptJob',

@@ -285,3 +285,17 @@ button.danger:hover:not(:disabled) { background: rgba(230, 106, 114, 0.15); }
 .player-hero .cards { margin-bottom: 0; }
 .player-hero .card { background: rgba(10, 26, 45, 0.55); }
 @media (max-width: 1100px) { .player-hero .portrait { width: 72px; height: 72px; } }
+
+/* 4c-3 경기 보기 */
+.live-score { display: flex; align-items: center; gap: 16px; margin-bottom: 10px; }
+.live-score .team { display: flex; align-items: center; gap: 10px; flex: 1; font-size: 16px; font-weight: 700; }
+.live-score .team.right { justify-content: flex-end; }
+.live-score .center { display: flex; flex-direction: column; align-items: center; min-width: 160px; }
+.live-score .runs { font-size: 30px; color: var(--do-mint); font-variant-numeric: tabular-nums; }
+.live-feed { max-height: calc(100vh - 430px); min-height: 240px; overflow: auto; }
+.live-feed ol.plays { margin: 0; padding-left: 4px; list-style: none; columns: 1; }
+.live-feed ol.plays li { padding: 4px 0; border-bottom: 1px solid #22364b; font-size: 13px; }
+.live-feed ol.plays li.scoring { color: var(--do-mint); font-weight: 700; }
+.live-form { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.live-form select { margin-left: 6px; max-width: 100%; }
+.live-decision .warn { color: var(--do-warn); }

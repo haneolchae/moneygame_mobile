@@ -2,6 +2,8 @@ import type { ScoutingSnapshot } from '../engine/scouting';
 // 게임 진행 계층이 저장 계층에 요구하는 기능. SQLite 구현은 persistence에 있다.
 // 이 인터페이스 덕분에 게임 진행 로직은 저장 방식(SQLite 드라이버 등)을 모른다.
 import type { ClubStance } from '../engine/aiClub';
+import type { OwnerPrePa } from '../engine/gamesim';
+import type { CountTactic } from '../engine/tactics';
 import type { GameDate } from '../engine/calendar';
 import type { Campaign, ClubFacilities, FanState, TicketPolicy } from '../engine/business';
 import type { SponsorContract, SponsorOffer } from '../engine/sponsors';
@@ -53,6 +55,12 @@ export interface GameMeta {
   supportCutBp?: Record<string, number>;
   supportDeduction?: Record<string, number>;
   rebuild?: { declaredSeason: number; from: number; until: number } | null;
+  /** 4c-3(D-174): 진행 중인 우리 경기 관전 기록(구단주 지시). 경기가 끝나거나 하루 진행으로 넘기면 지운다 */
+  liveGame?: LiveGameRecord | null;
+  /** 4c-3: 승부처 참여 설정(기본 켬) */
+  liveSettings?: { participate: boolean };
+  /** 4c-3: 시즌 → 우리 경기 수·참여 지점 수 */
+  liveStats?: Record<string, { games: number; points: number }>;
   /** 4c-2b(D-166·D-172): AI 구단 성적 목표 연속 미달 시즌 수(감독 교체 판정) */
   aiGoalMisses?: Record<string, number>;
   /** 4c-1(D-167): 경기 계산에 쓴 승리 확률 표·볼카운트 기준표 버전(새 게임·시즌 시작 때 기록) */
@@ -141,6 +149,14 @@ export interface TradeTalk {
   log: TradeLogEntry[];
   /** 상대 역제안(그 주 안에서만 유효) */
   counter: { pkg: TradePackage; weekId: string } | null;
+}
+
+/** 4c-3 경기 진행 기록: 결정 키별 타석 시작 지시, '타석 순번:볼:스트라이크'별 카운트 지시 */
+export interface LiveGameRecord {
+  date: GameDate;
+  fixtureId: number;
+  prePa: Record<string, OwnerPrePa>;
+  count: Record<string, CountTactic>;
 }
 
 export interface StanceState {

@@ -37,7 +37,8 @@ function sample(): string {
     const a = clubs[(g * 7 + 3) % clubs.length]!;
     if (h === a) continue;
     const r = simulateGame(1000 + g, prepareTeam(h, active(h), [], null), prepareTeam(a, active(a), [], null), Rng.derive('parity', 'game', g), [9, 12, 15][g % 3]!, envs[g % 2], g % 2 === 0 ? { forms, postseason: g % 4 === 0 } : {});
-    hashes.push(createHash('sha1').update(JSON.stringify(r)).digest('hex'));
+    // 화면용·구단주 참여 집계 항목(4c-3 pitchLog·ownerPoints)은 경기 결과가 아니므로 빼고 비교한다
+    hashes.push(createHash('sha1').update(JSON.stringify(r, (k, v) => (k === 'pitchLog' || k === 'ownerPoints' ? undefined : v))).digest('hex'));
   }
   return createHash('sha1').update(hashes.join('\n')).digest('hex');
 }

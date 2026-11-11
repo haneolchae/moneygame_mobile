@@ -3,11 +3,14 @@ import { createSnapshot, currentRatings, snapshotRanges, SCOUTING, type Scouting
 import { addDays, ageOn, diffDays, mondayOf, weekday, type GameDate } from '../engine/calendar';
 import { CLUB_PROFILES, SEASON_2026_STANDINGS } from '../engine/clubs';
 import { STANCE_LABEL } from '../engine/aiClub';
-import { AI_CLUB, FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
+import { AI_CLUB, LIVE, FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
 import { compensationFor, foreignRenewalDemandUsd, offerTotal, wonToUsd, type ContractOffer } from '../engine/contracts';
 import { CATEGORY_LABEL, FINANCE_BASE, NOT_YET_IMPLEMENTED, scheduledEntries, stadiumFee, type LedgerEntry } from '../engine/finance';
-import { countModelVersion, simulateGame, type GameResult } from '../engine/gamesim';
-import { winTableVersion } from '../engine/winProb';
+import { battingSideOf, countModelVersion, createGame, directiveError, mergeOwner, OwnerPause, runGame, simulateGame, type Directive, type GameResult, type GameState, type OffensePlay, type OwnerControl, type OwnerPoint, type OwnerPrePa } from '../engine/gamesim';
+import { canPlay, type CountTactic } from '../engine/tactics';
+import { leverage, winProbability, winTableVersion } from '../engine/winProb';
+import { ratingBonus } from '../engine/manager';
+import { NORMAL_ALIGNMENT } from '../engine/zone';
 import { prepareTeam, type GamePlan } from '../engine/lineup';
 import { rosterCounts } from '../engine/roster';
 import { EOK } from '../engine/money';
@@ -22,7 +25,7 @@ import { battingRates, fipConstant, formatInnings, pitchingRates, type BattingTo
 import { computeStandings } from '../engine/standings';
 import { ABILITY_LABEL, TASK_WP, teamCapacity, teamDef, TEAMS, type StaffMember, type TeamKey } from '../engine/staff';
 import { seasonModeStart, stoveEvents } from '../engine/stove';
-import type { ClubId, ClubProfile, PlayerTruth, TrainingIntensity } from '../engine/types';
+import type { ClubId, ClubProfile, Fixture, PlayerTruth, TrainingIntensity } from '../engine/types';
 import { clubHistory } from '../engine/data/history';
 import { generateHistory } from '../engine/history';
 import { asTruth, generateAmateurs } from '../engine/amateur';
@@ -97,6 +100,11 @@ import {
   type CareerView,
   type TradeView,
   type BusinessView,
+  type LiveChoice,
+  type LiveDecisionView,
+  type LiveFeedItem,
+  type LiveGameGameView,
+  type LiveGameView,
 } from '../shared/protocol';
 import type { CalendarEvent, DayCommit, GameMeta, GameRepository, InboxMessage, StoredGame } from './ports';
 
@@ -400,6 +408,29 @@ export class GameService {
   }
 
   private processDay(meta: GameMeta, date: GameDate): { gamesPlayed: number } {
+    const { inbox, market, ai, extraMeta } = this.dayPrelude(meta, date);
+    // 2) 경기 (정규시즌)
+    const results: GameResult[] = [];
+    const inputs = this.gameInputs(meta, date);
+    let livePoints: { games: number; points: number } | null = null;
+    for (const f of inputs.fixtures) {
+      // 4c-3(D-174): 우리 경기는 구단주 참여 기록을 쓰고(없는 결정은 감독 추천대로), 참여 지점 수를 센다
+      const owner = this.ownerControl(meta, f.id, f.home, f.away, false);
+      const r = simulateGame(...inputs.args(f, owner));
+      if (owner) livePoints = { games: 1, points: r.ownerPoints };
+      results.push(r);
+    }
+    if (livePoints || meta.liveGame) {
+      const key = String(meta.season);
+      const cur = meta.liveStats?.[key] ?? { games: 0, points: 0 };
+      if (livePoints) extraMeta.liveStats = { ...(meta.liveStats ?? {}), [key]: { games: cur.games + 1, points: cur.points + livePoints.points } };
+      extraMeta.liveGame = null;
+    }
+    return this.finishDay(meta, date, inbox, market, ai, extraMeta, results, inputs.fixtures);
+  }
+
+  /** 하루 처리의 경기 전 단계(일정 사건·시장·조직·운영 상태·성장·건강·개막·시범경기). 관전 미리보기도 같은 단계를 거친다 */
+  private dayPrelude(meta: GameMeta, date: GameDate) {
     // 1) 일정 사건 → 리그 소식, 선수 시장(FA·연봉 협상·외국인·명단 정리)
     const inbox: InboxMessage[] = this.repo.getCalendarEvents(date, date).map((e) => ({ date, kind: 'news', sender: 'KBO 소식', title: e.title, body: this.eventBody(e, meta) }));
     const market = this.market.onDay(date, meta);
@@ -424,11 +455,15 @@ export class GameService {
       Object.assign(extraMeta, exhibition.update);
       inbox.push(...exhibition.inbox);
     }
+    return { inbox, market, ai, extraMeta };
+  }
 
-    // 2) 경기 (정규시즌)
-    const results: GameResult[] = [];
+  /** 그날 경기 입력(하루 처리와 관전 미리보기 공용): 경기마다 simulateGame 인자를 만든다 */
+  private gameInputs(meta: GameMeta, date: GameDate) {
     const fixtures = meta.mode === 'season' ? this.repo.getFixturesOn(date) : [];
-    if (fixtures.length > 0) {
+    const none = { fixtures, args: (_f: Fixture, _o?: OwnerControl): Parameters<typeof simulateGame> => { throw new Error('경기 없음'); } };
+    if (fixtures.length === 0) return none;
+    {
       const clubIds = fixtures.flatMap((f) => [f.home, f.away]);
       const active = this.repo.getActivePlayers(clubIds);
       const usage = this.repo.getRecentPitcherUsage(addDays(date, -6), date).map((u) => ({ ...u, daysAgo: diffDays(date, u.date) }));
@@ -441,16 +476,33 @@ export class GameService {
       // 4b-1: 부상·휴식 선수 제외, 감독 자동 운영은 피로 높은 야수 휴식
       const out = this.health.unavailableOn(this.meta(), date, active);
       const tired = this.health.tiredOn(date, active);
-      for (const f of fixtures) {
-        // 4c-2b(D-172): 감독 능력치·성향·신뢰도를 경기에 넘긴다
-        const teamOf = (clubId: ClubId) => ({ ...prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null, clubId === meta.userClubId ? userPlan : null, ROSTER_MOVE.rotationSize, { out, tired }), manager: this.managers.profileOf(clubId) });
+      // 4c-2b(D-172): 감독 능력치·성향·신뢰도를 경기에 넘긴다
+      const teamOf = (clubId: ClubId) => ({ ...prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null, clubId === meta.userClubId ? userPlan : null, ROSTER_MOVE.rotationSize, { out, tired }), manager: this.managers.profileOf(clubId) });
+      const args = (f: Fixture, owner?: OwnerControl): Parameters<typeof simulateGame> => {
         // 경기 난수는 (시드, 경기 ID)에서 파생한다. 처리 순서와 무관하게 같은 경기는 같은 결과를 낸다.
         const maxInnings = f.stage && f.stage !== 'regular' ? POSTSEASON_MAX_INNINGS : LEAGUE.regularSeasonMaxInnings;
         const postseason = !!f.stage && f.stage !== 'regular';
-        results.push(simulateGame(f.id, teamOf(f.home), teamOf(f.away), Rng.derive(meta.seed, 'game', f.id), maxInnings, env, { forms, postseason }));
-      }
+        return [f.id, teamOf(f.home), teamOf(f.away), Rng.derive(meta.seed, 'game', f.id), maxInnings, env, { forms, postseason, ...(owner ? { owner } : {}) }];
+      };
+      return { fixtures, args };
     }
+  }
 
+  /** 4c-3(D-174): 우리 경기의 구단주 참여 제어. 관전 기록이 그날 그 경기 것이면 기록된 지시를 돌려준다 */
+  private ownerControl(meta: GameMeta, fixtureId: number, home: ClubId, away: ClubId, pause: boolean): OwnerControl | undefined {
+    if (home !== meta.userClubId && away !== meta.userClubId) return undefined;
+    const live = meta.liveGame && meta.liveGame.date === meta.currentDate && meta.liveGame.fixtureId === fixtureId ? meta.liveGame : null;
+    return {
+      clubId: meta.userClubId,
+      enabled: meta.liveSettings?.participate ?? true,
+      maxPerGame: LIVE.maxPerGame,
+      prePa: (k) => live?.prePa[String(k)],
+      count: (s, b, st) => live?.count[`${s}:${b}:${st}`],
+      pauseWhenMissing: pause,
+    };
+  }
+
+  private finishDay(meta: GameMeta, date: GameDate, inbox: InboxMessage[], market: ReturnType<Market['onDay']>, ai: { ledger: LedgerEntry[]; inbox: InboxMessage[] }, extraMeta: Partial<GameMeta>, results: GameResult[], fixtures: Fixture[]): { gamesPlayed: number } {
     // 4c-2b(D-163): 경기의 감독 결정으로 신뢰도·팀 기준선 갱신
     this.managers.afterGames(date, results);
 
@@ -885,6 +937,8 @@ export class GameService {
       upcomingEvents: this.calendar(meta.currentDate, addDays(meta.currentDate, 45)),
       keyPlayers,
       canAdvanceDay: meta.mode === 'season' && phase !== 'seasonComplete' && !meta.gameOver,
+      // 4c-3(D-174): 오늘 우리 경기가 있으면 경기 보기, 관전 중이면 돌아가기
+      live: { available: !!this.todayUserFixture(meta) && !this.repo.isDayProcessed(meta.currentDate), active: !!meta.liveGame && meta.liveGame.date === meta.currentDate },
       gameOver: meta.gameOver ?? null,
       goal: { expectedRank: meta.seasonGoal?.season === meta.season ? meta.seasonGoal.expectedRank : null, misses: meta.goalMisses ?? 0, rebuild: meta.rebuild ? `${meta.rebuild.from}~${meta.rebuild.until} 리빌딩` : null },
       postseason: this.postseasonView(meta),
@@ -1245,6 +1299,224 @@ export class GameService {
   /** 결재는 행동력을 쓰지 않는다(D-077). */
   decideMany(approvalIds: number[], approve: boolean): OfferResultView {
     return this.org.decideMany(this.meta(), approvalIds, approve);
+  }
+
+  // ───────── 4c-3 경기 관전·승부처 참여 (D-160·D-174) ─────────
+
+  /** 오늘 우리 경기(정규시즌·포스트시즌). 없으면 null */
+  private todayUserFixture(meta: GameMeta): Fixture | null {
+    if (meta.mode !== 'season' || meta.gameOver) return null;
+    return this.repo.getFixturesOn(meta.currentDate).find((f) => f.home === meta.userClubId || f.away === meta.userClubId) ?? null;
+  }
+
+  /**
+   * 관전 미리보기: 그날 시작 상태에서 경기 전 단계를 거쳐 우리 경기를 기록된 지시로 다시 계산한다. 트랜잭션을 되돌려 저장하지 않는다.
+   * 지시가 없는 참여 지점에서 멈춘다(OwnerPause).
+   */
+  private livePreview(): { g: GameState; pause: OwnerPoint | null; fixture: Fixture } {
+    const meta = this.meta();
+    const fixture = this.todayUserFixture(meta);
+    if (!fixture || !meta.liveGame || meta.liveGame.date !== meta.currentDate || meta.liveGame.fixtureId !== fixture.id) throw new GameError('NOT_AVAILABLE', '관전 중인 경기가 없습니다.');
+    let out: { g: GameState; pause: OwnerPoint | null; fixture: Fixture } | null = null;
+    const ROLLBACK = new Error('live-preview-rollback');
+    try {
+      this.repo.transaction(() => {
+        this.dayPrelude(meta, meta.currentDate);
+        const inputs = this.gameInputs(meta, meta.currentDate);
+        const g = createGame(...inputs.args(fixture, this.ownerControl(meta, fixture.id, fixture.home, fixture.away, true)));
+        let pause: OwnerPoint | null = null;
+        try {
+          runGame(g);
+        } catch (e) {
+          if (e instanceof OwnerPause) pause = e.point;
+          else throw e;
+        }
+        out = { g, pause, fixture };
+        throw ROLLBACK;
+      });
+    } catch (e) {
+      if (e !== ROLLBACK) throw e;
+    } finally {
+      // 되돌린 상태를 기억하는 캐시를 버린다
+      this.scouting = new Map(this.repo.getScouting(meta.userClubId).map((s) => [s.playerId, s]));
+      this.managers.reset();
+      this.aiClubs.reset();
+      this.business.reset();
+    }
+    return out!;
+  }
+
+  /** 경기 보기 시작: 오늘 우리 경기의 관전 기록을 만든다(이미 있으면 그대로) */
+  liveStart(): LiveGameView {
+    const meta = this.meta();
+    const f = this.todayUserFixture(meta);
+    if (!f) throw new GameError('NOT_AVAILABLE', '오늘은 우리 경기가 없습니다.');
+    if (this.repo.isDayProcessed(meta.currentDate)) throw new GameError('NOT_AVAILABLE', '이미 처리된 날짜입니다.');
+    if (!meta.liveGame || meta.liveGame.date !== meta.currentDate || meta.liveGame.fixtureId !== f.id) this.repo.updateMeta({ liveGame: { date: meta.currentDate, fixtureId: f.id, prePa: {}, count: {} } });
+    return this.liveView();
+  }
+
+  liveView(): LiveGameView {
+    const meta = this.meta();
+    const f = this.todayUserFixture(meta);
+    const active = !!f && !!meta.liveGame && meta.liveGame.date === meta.currentDate && meta.liveGame.fixtureId === f.id;
+    if (!active) return { active: false, available: !!f, participate: meta.liveSettings?.participate ?? true, game: null };
+    const { g, pause, fixture } = this.livePreview();
+    return { active: true, available: true, participate: meta.liveSettings?.participate ?? true, game: this.liveGameView(meta, g, pause, fixture) };
+  }
+
+  /** 구단주 결정(행동력 0): 지금 멈춘 지점과 같은지, 규칙에 맞는지 확인하고 기록에 더한다(되돌릴 수 없음) */
+  liveDecide(choice: LiveChoice): LiveGameView {
+    const meta = this.meta();
+    const { g, pause } = this.livePreview();
+    if (!pause) throw new GameError('NOT_AVAILABLE', '지금은 결정할 지점이 아닙니다.');
+    const live = meta.liveGame!;
+    if (choice.kind === 'prePa') {
+      if (pause.kind !== 'prePa' || choice.key !== pause.key) throw new GameError('NOT_AVAILABLE', '이미 지난 결정 지점입니다.');
+      const o: OwnerPrePa =
+        pause.role === 'def'
+          ? // 대수비는 구단주 선택지가 아니므로 감독 추천을 그대로 쓴다(defensiveSubs 생략)
+            { pitcherId: choice.pitcherId ?? null, ibb: choice.ibb === true, align: choice.align ?? NORMAL_ALIGNMENT }
+          : { pinchHitter: choice.pinchHitter ?? null, pinchRunners: (choice.pinchRunners ?? []).map((r) => ({ base: r.base as 0 | 1 | 2, playerId: r.playerId })), play: (choice.play ?? 'none') as OffensePlay };
+      const batSide = battingSideOf(g.half);
+      const d = { kind: 'prePa' as const, side: batSide === 'home' ? ('away' as const) : ('home' as const), batSide, inning: g.inning, atInningStart: g.atHalfStart, key: pause.key };
+      const err = directiveError(g, d, mergeOwner(pause.recommended, o, pause.role));
+      if (err) throw new GameError('INVALID_DIRECTIVE', err);
+      this.repo.updateMeta({ liveGame: { ...live, prePa: { ...live.prePa, [String(pause.key)]: o } } });
+    } else {
+      if (pause.kind !== 'count' || choice.paSeq !== pause.paSeq || choice.balls !== pause.balls || choice.strikes !== pause.strikes) throw new GameError('NOT_AVAILABLE', '이미 지난 결정 지점입니다.');
+      const allowed: CountTactic[] = pause.role === 'off' ? ['none', 'take'] : ['none', 'pitchAround', 'attack'];
+      if (!allowed.includes(choice.tactic as CountTactic)) throw new GameError('INVALID_DIRECTIVE', '이 지점에서 고를 수 없는 지시입니다.');
+      this.repo.updateMeta({ liveGame: { ...live, count: { ...live.count, [`${pause.paSeq}:${pause.balls}:${pause.strikes}`]: choice.tactic as CountTactic } } });
+    }
+    return this.liveView();
+  }
+
+  /** 승부처 참여 설정(행동력 0). 끄면 관전만 한다 */
+  liveSettings(participate: boolean): LiveGameView {
+    this.repo.updateMeta({ liveSettings: { participate: participate === true } });
+    return this.liveView();
+  }
+
+  private liveGameView(meta: GameMeta, g: GameState, pause: OwnerPoint | null, fixture: Fixture): LiveGameGameView {
+    const players = new Map(this.repo.getPlayers().map((p) => [p.id, p]));
+    const name = (id: number | null) => (id === null ? '' : (players.get(id)?.name ?? `#${id}`));
+    const userSide: 'home' | 'away' = fixture.home === meta.userClubId ? 'home' : 'away';
+    const outcomeText: Record<string, string> = { '1B': '안타', '2B': '2루타', '3B': '3루타', HR: '홈런', BB: '볼넷', HBP: '몸에 맞는 공', K: '삼진', GO: '땅볼 아웃', FO: '뜬공 아웃', DP: '병살타', SF: '희생플라이', SH: '희생번트', ROE: '실책 출루', FC: '야수 선택' };
+    const playText: Record<string, string> = { SB: '도루 성공', CS: '도루 실패', PO: '견제사', WP: '폭투', PB: '포일', BK: '보크' };
+    const subText: Record<string, string> = { PH: '대타', PR: '대주자', DEF: '대수비' };
+    const items: Array<LiveFeedItem & { order: number }> = [];
+    const score = (h: number, a: number) => `${a}:${h}`;
+    for (const s of g.subs) items.push({ order: s.seq * 4, seq: s.seq, inning: 0, half: 'T', kind: 'sub', text: `${subText[s.kind]} ${name(s.inId)} (← ${name(s.outId)})`, score: '', scoring: false });
+    for (const p of g.plays) items.push({ order: p.seq * 4 + 1, seq: p.seq, inning: p.inning, half: p.half, kind: 'play', text: `${playText[p.kind]}${p.runnerId ? ` · ${name(p.runnerId)}` : ''}${p.outsOnPlay ? ' (아웃)' : ''}`, score: score(p.homeScore, p.awayScore), scoring: false });
+    const lastPitcher = new Map<number, number>();
+    let prevTotal = 0;
+    for (const e of g.events) {
+      const defClub = e.battingClub === fixture.home ? fixture.away : fixture.home;
+      if (lastPitcher.has(defClub) && lastPitcher.get(defClub) !== e.pitcherId) items.push({ order: e.seq * 4 - 2, seq: e.seq, inning: e.inning, half: e.half, kind: 'pitcher', text: `투수 교체: ${name(e.pitcherId)}`, score: '', scoring: false });
+      lastPitcher.set(defClub, e.pitcherId);
+      const total = e.homeScore + e.awayScore;
+      const pitches = e.pitchLog ? e.pitchLog.split('').map((c) => ({ B: '볼', S: '스트라이크', F: '파울', H: '몸에 맞음', X: '타격' })[c] ?? c).join(' · ') : undefined;
+      items.push({ order: e.seq * 4 + 2, seq: e.seq, inning: e.inning, half: e.half, kind: 'pa', text: `${name(e.batterId)}: ${e.ibb ? '고의사구' : (outcomeText[e.outcome] ?? e.outcome)}${e.bb ? ` · ${name(e.bb.fielderId)}` : ''}${e.rbi ? ` (${e.rbi}타점)` : ''}`, score: score(e.homeScore, e.awayScore), scoring: total > prevTotal, ...(pitches ? { pitches } : {}) });
+      prevTotal = total;
+    }
+    // 교체 항목의 이닝은 바로 뒤 항목에서 가져온다
+    items.sort((a, b) => a.order - b.order);
+    for (let i = items.length - 1; i >= 0; i--) if (items[i]!.inning === 0) Object.assign(items[i]!, { inning: items[i + 1]?.inning ?? g.inning, half: items[i + 1]?.half ?? g.half });
+    const over = g.phase === 'over' && !pause;
+    const us = g.score[userSide];
+    const them = g.score[userSide === 'home' ? 'away' : 'home'];
+    return {
+      date: meta.currentDate,
+      fixtureId: fixture.id,
+      home: this.ref(fixture.home),
+      away: this.ref(fixture.away),
+      userSide,
+      score: { ...g.score },
+      lineScore: { home: [...g.lineScore.home], away: [...g.lineScore.away] },
+      inning: g.inning,
+      half: g.half,
+      outs: g.outs,
+      bases: [!!g.bases[0], !!g.bases[1], !!g.bases[2]],
+      over,
+      result: over ? (us > them ? '승리' : us < them ? '패배' : '무승부') : null,
+      feed: items.map(({ order: _o, ...rest }) => rest),
+      decision: pause ? this.liveDecisionView(meta, g, pause, userSide) : null,
+      participation: { enabled: meta.liveSettings?.participate ?? true, used: g.ownerPoints, max: LIVE.maxPerGame },
+    };
+  }
+
+  private liveDecisionView(meta: GameMeta, g: GameState, pause: OwnerPoint, userSide: 'home' | 'away'): LiveDecisionView {
+    const batSide = battingSideOf(g.half);
+    const defSide: 'home' | 'away' = batSide === 'home' ? 'away' : 'home';
+    const bat = g.teams[batSide];
+    const def = g.teams[defSide];
+    const batterId = pause.kind === 'count' ? pause.batterId : bat.lineup[bat.orderIndex % 9]!.player.id;
+    const pitcherId = pause.kind === 'count' ? pause.pitcherId : def.stint.pitcher.id;
+    // 정보 경계(D-174 (4)): 선수 목록 응답은 우리 선수만 실제 능력치, 상대는 추정 범위
+    const item = (id: number) => {
+      const p = this.repo.getPlayer(id)!;
+      return this.players({ scope: p.clubId ?? meta.userClubId, group: 'all', level: 'all', sortKey: 'name', sortDesc: false }).find((x) => x.id === id)!;
+    };
+    const diff = g.score.home - g.score.away;
+    const wpHome = winProbability(g.inning, g.half, g.outs, (g.bases[0] ? 1 : 0) | (g.bases[1] ? 2 : 0) | (g.bases[2] ? 4 : 0), diff, false);
+    const li = leverage(g.inning, g.half, g.outs, (g.bases[0] ? 1 : 0) | (g.bases[1] ? 2 : 0) | (g.bases[2] ? 4 : 0), diff, false);
+    // 우리 선수 능력치에 더해지는 감독 보정(경기용, D-172). 선택지 문구의 능력치는 이미 보정이 들어간 경기용 값이다
+    const prof = this.managers.profileOf(meta.userClubId);
+    const sgn = (x: number) => `${x >= 0 ? '+' : ''}${x.toFixed(1)}`;
+    const managerNote = `감독 보정(경기 중): 타격 ${sgn(ratingBonus(prof, 'hitting'))} · 투수 ${sgn(ratingBonus(prof, 'pitching'))} · 수비·주루 ${sgn(ratingBonus(prof, 'fieldRun'))}`;
+    const base = { key: pause.key, role: pause.role, managerNote, batter: item(batterId), pitcher: item(pitcherId), winProb: Math.round((userSide === 'home' ? wpHome : 1 - wpHome) * 1000) / 10, leverage: Math.round(li * 100) / 100 };
+    const playLabel: Record<string, string> = { none: '강공(작전 없음)', steal2: '2루 도루', steal3: '3루 도루', hitAndRun: '히트앤드런', sacBunt: '희생번트', squeeze: '스퀴즈' };
+    const tacticLabel: Record<string, string> = { none: '그대로', take: '기다려', pitchAround: '유인구', attack: '정면 승부' };
+    if (pause.kind === 'count') {
+      const tactics = pause.role === 'off' ? ['none', 'take'] : ['none', 'pitchAround', 'attack'];
+      return {
+        ...base,
+        kind: 'count',
+        paSeq: pause.paSeq,
+        balls: pause.balls,
+        strikes: pause.strikes,
+        pitchLog: pause.log,
+        title: `${pause.balls}볼 ${pause.strikes}스트라이크`,
+        recommended: tacticLabel[pause.recommended] ?? pause.recommended,
+        recommendation: { kind: 'count', paSeq: pause.paSeq, balls: pause.balls, strikes: pause.strikes, tactic: pause.recommended },
+        tactics: tactics.map((t) => ({ key: t, label: tacticLabel[t]!, disabled: null })),
+      };
+    }
+    const rec = pause.recommended;
+    const own = g.teams[userSide];
+    if (pause.role === 'def') {
+      const pool = [...own.setup.bullpen, ...(own.setup.closer ? [own.setup.closer] : [])].filter((p) => !own.usedRelievers.has(p.id) && p.id !== own.stint.pitcher.id);
+      const alignText = (a: Directive['align']) => [a.infield === 'in' ? '내야 전진' : a.infield === 'dp' ? '병살 대비' : '내야 기본', a.outfield === 'in' ? '외야 전진' : a.outfield === 'back' ? '외야 후진' : '외야 기본', ...(a.lines ? ['선상 수비'] : [])].join(' · ');
+      return {
+        ...base,
+        kind: 'prePa',
+        title: '수비 결정',
+        recommended: [rec.pitcherId ? `투수 교체: ${this.repo.getPlayer(rec.pitcherId)?.name ?? ''}` : '투수 유지', ...(rec.ibb ? ['고의사구'] : []), alignText(rec.align)].join(' · '),
+        recommendation: { kind: 'prePa', key: pause.key, pitcherId: rec.pitcherId, ibb: rec.ibb, align: rec.align },
+        pitchers: [{ key: 'keep', label: `유지: ${own.stint.pitcher.name} (투구 ${own.stint.pitches})`, disabled: null }, ...pool.map((p) => ({ key: String(p.id), label: `${p.name} · 구위 ${Math.round(p.pitching?.stuff ?? 0)} · 제구 ${Math.round(p.pitching?.control ?? 0)}`, disabled: null }))],
+        currentPitches: own.stint.pitches,
+      };
+    }
+    const spot = own.lineup[own.orderIndex % 9]!;
+    const benchPh = own.bench.filter((p) => !own.removed.has(p.id) && canPlay(p, spot.position));
+    const runners = ([0, 1, 2] as const).filter((b) => g.bases[b] && own.lineup.some((s) => s.player.id === g.bases[b]!.id));
+    const opp = pause.recommended;
+    return {
+      ...base,
+      kind: 'prePa',
+      title: '공격 결정',
+      recommended: [rec.pinchHitter ? `대타: ${this.repo.getPlayer(rec.pinchHitter)?.name ?? ''}` : '타자 그대로', ...rec.pinchRunners.map((r) => `대주자: ${this.repo.getPlayer(r.playerId)?.name ?? ''}`), playLabel[rec.play] ?? rec.play].join(' · '),
+      recommendation: { kind: 'prePa', key: pause.key, pinchHitter: rec.pinchHitter, pinchRunners: rec.pinchRunners.map((r) => ({ base: r.base, playerId: r.playerId })), play: rec.play },
+      opponentIbb: opp.ibb,
+      pinchHitters: [{ key: 'keep', label: `그대로: ${spot.player.name}`, disabled: null }, ...benchPh.map((p) => ({ key: String(p.id), label: `${p.name} · 컨택 ${Math.round(p.batting.contact)} · 장타 ${Math.round(p.batting.power)} · 선구 ${Math.round(p.batting.eye)}`, disabled: null }))],
+      pinchRunners: runners.map((b) => ({ base: b, runner: this.repo.getPlayer(g.bases[b]!.id)?.name ?? '', options: own.bench.filter((p) => !own.removed.has(p.id)).map((p) => ({ key: String(p.id), label: `${p.name} · 주력 ${Math.round(p.batting.speed)}`, disabled: null })) })),
+      plays: (['none', 'steal2', 'steal3', 'hitAndRun', 'sacBunt', 'squeeze'] as const).map((k) => {
+        const d = { kind: 'prePa' as const, side: defSide, batSide, inning: g.inning, atInningStart: g.atHalfStart, key: pause.key };
+        const err = opp.ibb && k !== 'none' ? '상대가 고의사구를 냅니다.' : directiveError(g, d, mergeOwner(rec, { play: k }, 'off'));
+        return { key: k, label: playLabel[k]!, disabled: err };
+      }),
+    };
   }
 
   /** 운영 상태 기준 순위(D-155 (1)): 정규시즌 팀당 30경기 이상이면 현재 순위, 아니면 직전 시즌 최종 순위 */

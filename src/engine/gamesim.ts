@@ -73,6 +73,8 @@ export interface PaEvent {
   count?: { balls: number; strikes: number; fouls: number };
   /** 승부처 기준을 넘었지만 대결 맞춤을 풀지 못해 타석 단위로 계산한 타석(D-167 (4), 목표 0건) */
   countFallback?: true;
+  /** 4c-3 승부처 타석의 투구 순서(화면용, 메모리에만 — D-174 (6)) */
+  pitchLog?: string;
   /** 4c-2a: 고의사구, 번트(희생·스퀴즈), 히트앤드런 */
   ibb?: true;
   bunt?: 'sac' | 'squeeze';
@@ -140,6 +142,8 @@ export interface GameResult {
   plays: PlayEvent[];
   /** 4c-2a 선수 교체 */
   subs: SubEvent[];
+  /** 4c-3 우리 경기의 구단주 참여 지점 수(참여 설정과 무관, D-174 (7)) */
+  ownerPoints: number;
   /** 4c-2b 감독 결정과 그 타석의 승리 확률 변화(그 구단 쪽), 구단별 타석당 승리 확률 변화 합(팀 기준선용) */
   managerDecisions: ManagerDecision[];
   wpTrack: Array<{ clubId: ClubId; offSum: number; offN: number; defSum: number; defN: number }>;
@@ -201,6 +205,56 @@ export interface GameOptions {
   estimator?: Estimator;
   /** 4c-2a: 작전 사건을 끈다(보정 도구 비교·4c-1 기준 시험용) */
   tactics?: 'on' | 'off';
+  /** 4c-3: 구단주 승부처 참여(D-174) */
+  owner?: OwnerControl;
+}
+
+/** 4c-3 구단주 지시(자기 쪽만): 수비면 투수·고의사구·수비 위치·대수비, 공격이면 대타·대주자·작전 */
+export interface OwnerPrePa {
+  pitcherId?: PlayerId | null;
+  ibb?: boolean;
+  align?: Alignment;
+  defensiveSubs?: Directive['defensiveSubs'];
+  pinchHitter?: PlayerId | null;
+  pinchRunners?: Directive['pinchRunners'];
+  play?: OffensePlay;
+}
+
+/** 4c-3 구단주 참여 제어(D-174 (2)): 기록된 지시를 돌려주고, 없으면 멈추거나(관전) 감독 추천대로 간다(하루 진행) */
+export interface OwnerControl {
+  clubId: ClubId;
+  /** 참여 설정. 꺼져 있어도 참여 지점 수는 센다 */
+  enabled: boolean;
+  maxPerGame: number;
+  prePa: (key: number) => OwnerPrePa | undefined;
+  count: (paSeq: number, balls: number, strikes: number) => CountTactic | undefined;
+  pauseWhenMissing: boolean;
+}
+
+export type OwnerPoint =
+  | { kind: 'prePa'; key: number; role: 'off' | 'def'; recommended: Directive }
+  | { kind: 'count'; key: number; paSeq: number; balls: number; strikes: number; log: string; role: 'off' | 'def'; recommended: CountTactic; batterId: PlayerId; pitcherId: PlayerId };
+
+/** 구단주 지시가 없어 멈춘 지점(관전 미리보기가 잡는다) */
+export class OwnerPause extends Error {
+  constructor(public readonly point: OwnerPoint) {
+    super('구단주 결정 대기');
+  }
+}
+
+/** 구단주 지시를 추천에 합친다: 구단주 쪽 항목만 바꾸고 상대 쪽은 상대 감독 추천. 고의사구와 공격 작전은 함께 할 수 없다 */
+export function mergeOwner(rec: Directive, o: OwnerPrePa, role: 'off' | 'def'): Directive {
+  const d: Directive = role === 'def'
+    ? { ...rec, pitcherId: o.pitcherId !== undefined ? o.pitcherId : rec.pitcherId, ibb: o.ibb ?? rec.ibb, align: o.align ?? rec.align, defensiveSubs: o.defensiveSubs ?? rec.defensiveSubs }
+    : { ...rec, pinchHitter: o.pinchHitter !== undefined ? o.pinchHitter : rec.pinchHitter, pinchRunners: o.pinchRunners ?? rec.pinchRunners, play: o.play ?? rec.play };
+  if (d.ibb) d.play = 'none';
+  return d;
+}
+
+/** 구단주 쪽 결정이 추천과 같은가(같으면 감독 결정으로 신뢰도에 넣는다, D-174 (3)) */
+export function sameSide(a: Directive, b: Directive, role: 'off' | 'def'): boolean {
+  const pick = (d: Directive) => (role === 'def' ? [d.pitcherId, d.ibb, d.align, d.defensiveSubs] : [d.pinchHitter, d.pinchRunners, d.play]);
+  return JSON.stringify(pick(a)) === JSON.stringify(pick(b));
 }
 
 /** 타석 판정 난수의 사건 종류(D-167 (5)). 투구는 PITCH_BASE + 투구 순번 */
@@ -265,6 +319,10 @@ export interface GameState {
   wpAtDecision: number | null;
   openDecisions: Array<{ side: Side; role: 'off' | 'def'; kinds: string[] }>;
   managerDecisions: ManagerDecision[];
+  /** 4c-3: 지금 결정 지점 키, 구단주 참여 지점 수, 참여 중인 타석의 결정 키 */
+  decisionKey: number;
+  ownerPoints: number;
+  ownerPaKey: number | null;
 }
 
 /** 타석 전 결정 지점(D-170 (1)): 수비(투수·대수비·수비 위치·고의사구)와 공격(대타·대주자·작전) */
@@ -374,6 +432,9 @@ export function createGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSetu
     wpAtDecision: null,
     openDecisions: [],
     managerDecisions: [],
+    decisionKey: 0,
+    ownerPoints: 0,
+    ownerPaKey: null,
   };
 }
 
@@ -400,6 +461,7 @@ export function nextDecision(g: GameState): DecisionPoint | null {
   const batSide = battingSideOf(g.half);
   g.wpAtDecision = wpNow(g);
   g.openDecisions = [];
+  g.decisionKey = g.seq + 1;
   return { kind: 'prePa', side: other(batSide), batSide, inning: g.inning, atInningStart: g.atHalfStart, key: g.seq + 1 };
 }
 
@@ -619,7 +681,7 @@ function substitute(t: TeamState, outId: PlayerId, inP: PlayerTruth): LineupSpot
 }
 
 /** 지시 적용. 호출자는 directiveError로 먼저 검사한다 */
-export function applyDirective(g: GameState, d: DecisionPoint, dir: Directive): void {
+export function applyDirective(g: GameState, d: DecisionPoint, dir: Directive, ownerOverride: Side | null = null): void {
   const def = g.teams[d.side];
   const off = g.teams[d.batSide];
   if (dir.pitcherId !== null && dir.pitcherId !== def.stint.pitcher.id) {
@@ -653,8 +715,9 @@ export function applyDirective(g: GameState, d: DecisionPoint, dir: Directive): 
   // 4c-2b: 감독 결정(신뢰도 재료). 기본 수비 위치·병살 대비(1루 주자 때 늘 하는 수비)·작전 없음은 결정으로 세지 않는다
   const defKinds = [...(dir.pitcherId !== null ? ['투수 교체'] : []), ...(dir.defensiveSubs.length ? ['대수비'] : []), ...(dir.ibb ? ['고의사구'] : []), ...(dir.align.infield === 'in' || dir.align.outfield !== 'normal' || dir.align.lines ? ['수비 위치'] : [])];
   const offKinds = [...(dir.pinchHitter !== null ? ['대타'] : []), ...(dir.pinchRunners.length ? ['대주자'] : []), ...(dir.play !== 'none' ? [dir.play] : [])];
-  if (defKinds.length) g.openDecisions.push({ side: d.side, role: 'def', kinds: defKinds });
-  if (offKinds.length) g.openDecisions.push({ side: d.batSide, role: 'off', kinds: offKinds });
+  // 4c-3(D-174 (3)): 구단주가 추천과 다르게 정한 쪽은 감독 결정(신뢰도)에 넣지 않는다
+  if (defKinds.length && ownerOverride !== d.side) g.openDecisions.push({ side: d.side, role: 'def', kinds: defKinds });
+  if (offKinds.length && ownerOverride !== d.batSide) g.openDecisions.push({ side: d.batSide, role: 'off', kinds: offKinds });
 }
 
 function sideOf(g: GameState, p: PlayerTruth, role: 'batter' | 'pitcher'): SideLogits {
@@ -854,8 +917,19 @@ export function resolvePa(g: GameState, prep: PreparedPa): PaEvent {
     if (fit.ok) {
       // 카운트 결정 지점(타석 시작·2스트라이크·3볼): 지시가 있으면 그 지점부터 투구 확률에 배율을 곱한다
       const decider = g.countDecider ?? managerCountDecide;
-      counted = runCountPa(fit.table, (n) => draw(DRAW.pitchBase + n).next(), CLUTCH.maxPitches, (balls, strikes) => {
-        const t = decider(g, prep, balls, strikes);
+      const ctl = g.opts.owner;
+      const ownerRole = ctl ? (g.teams[batSide].setup.clubId === ctl.clubId ? 'off' : g.teams[defSide].setup.clubId === ctl.clubId ? 'def' : null) : null;
+      const ownerPa = !!ctl && ctl.enabled && ownerRole !== null && g.ownerPaKey !== null && g.ownerPaKey === g.decisionKey;
+      counted = runCountPa(fit.table, (n) => draw(DRAW.pitchBase + n).next(), CLUTCH.maxPitches, (balls, strikes, log) => {
+        let t = decider(g, prep, balls, strikes);
+        // 4c-3(D-174 (2)): 구단주 참여 타석의 2스트라이크·3볼 지점은 구단주 쪽을 기록된 지시로(없으면 멈추거나 추천대로)
+        if (ownerPa && !(balls === 0 && strikes === 0)) {
+          const rec = ownerRole === 'off' ? t.offense : t.defense;
+          const o = ctl!.count(paSeq, balls, strikes);
+          if (o === undefined && ctl!.pauseWhenMissing) throw new OwnerPause({ kind: 'count', key: g.decisionKey, paSeq, balls, strikes, log, role: ownerRole!, recommended: rec, batterId: batter.id, pitcherId: pitcher.id });
+          const v = o ?? rec;
+          t = ownerRole === 'off' ? { ...t, offense: v } : { ...t, defense: v };
+        }
         return t.offense === 'none' && t.defense === 'none' ? null : scaleTable(fit.table, countMultipliers(t.offense, t.defense));
       });
       if (counted.result === 'IP') outcome0 = draw(DRAW.hrSplit).next() * (top.HR + top.inPlay) < top.HR ? 'HR' : 'INPLAY';
@@ -990,6 +1064,7 @@ export function resolvePa(g: GameState, prep: PreparedPa): PaEvent {
   if (counted) {
     ev.clutch = true;
     ev.count = { balls: counted.balls, strikes: counted.strikes, fouls: counted.fouls };
+    ev.pitchLog = counted.log;
   }
   if (fallback) ev.countFallback = true;
   if (pending.ibb) ev.ibb = true;
@@ -1065,6 +1140,7 @@ export function finishGame(g: GameState): GameResult {
     plays: g.plays,
     subs: g.subs,
     managerDecisions: g.managerDecisions,
+    ownerPoints: g.ownerPoints,
     wpTrack: (['home', 'away'] as const).map((s) => ({ clubId: g.teams[s].setup.clubId, ...g.teams[s].wp })),
     runs: g.runs,
     starters: { home: home.starter.id, away: away.starter.id },
@@ -1077,9 +1153,49 @@ export function finishGame(g: GameState): GameResult {
 /** 자동 경기: 감독 AI가 모든 결정을 내린다. env: 시즌 리그 환경(D-100), opts: 성적 혼합 표본·경기 중요도(3b) */
 export function simulateGame(fixtureId: FixtureId, home: TeamSetup, away: TeamSetup, rng: Rng, maxInnings: number, env: LeagueEnvironment = NEUTRAL_ENVIRONMENT, opts: GameOptions = {}): GameResult {
   const g = createGame(fixtureId, home, away, rng, maxInnings, env, opts);
+  runGame(g);
+  return finishGame(g);
+}
+
+/** 이 결정 지점이 구단주 참여 지점인가(D-174 (2)): 우리 경기, 7회 이후, 승부처 레버리지, 경기당 상한 */
+function ownerRoleAt(g: GameState, d: DecisionPoint, ctl: OwnerControl): 'off' | 'def' | null {
+  const role = g.teams[d.batSide].setup.clubId === ctl.clubId ? 'off' : g.teams[d.side].setup.clubId === ctl.clubId ? 'def' : null;
+  if (!role || d.inning < CLUTCH.minInning || g.ownerPoints >= ctl.maxPerGame) return null;
+  const li = leverage(g.inning, g.half, g.outs, basesMask(g.bases), g.score.home - g.score.away, g.opts.postseason === true);
+  return li >= CLUTCH.leverageThreshold ? role : null;
+}
+
+/**
+ * 경기 진행 루프: 결정 지점마다 감독 AI 추천을 만들고, 구단주 참여 지점이면 기록된 구단주 지시를 합친다.
+ * 지시가 없고 pauseWhenMissing이면 OwnerPause를 던진다(관전 미리보기). 상태 g는 호출하는 쪽이 들고 있다.
+ */
+export function runGame(g: GameState): void {
+  const ctl = g.opts.owner;
   for (let d = nextDecision(g); d; d = nextDecision(g)) {
-    applyDirective(g, d, managerDecide(g, d));
+    const rec = managerDecide(g, d);
+    let dir = rec;
+    let override: Side | null = null;
+    const role = ctl ? ownerRoleAt(g, d, ctl) : null;
+    if (ctl && role) {
+      g.ownerPoints++;
+      g.ownerPaKey = d.key;
+      if (ctl.enabled) {
+        const o = ctl.prePa(d.key);
+        if (o === undefined && ctl.pauseWhenMissing) {
+          g.ownerPoints--;
+          throw new OwnerPause({ kind: 'prePa', key: d.key, role, recommended: rec });
+        }
+        if (o) {
+          const merged = mergeOwner(rec, o, role);
+          // 규칙에 어긋난 기록은 쓰지 않는다(기록 때 이미 검사하므로 안전장치)
+          if (directiveError(g, d, merged) === null) {
+            dir = merged;
+            if (!sameSide(merged, rec, role)) override = role === 'off' ? d.batSide : d.side;
+          }
+        }
+      }
+    }
+    applyDirective(g, d, dir, override);
     stepPlateAppearance(g);
   }
-  return finishGame(g);
 }

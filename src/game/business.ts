@@ -42,6 +42,11 @@ export class BusinessOps {
     this.facilityCache = null;
   }
 
+  /** 되돌린 트랜잭션 뒤 캐시를 버린다(4c-3 관전 미리보기) */
+  reset(): void {
+    this.facilityCache = null;
+  }
+
   // 시설 효과(완공 단계만)
   // 시설 효과는 선수마다 조회되므로 시설 항목만 읽어 기억해 둔다(메타 전체 해석 방지). 시설을 저장하거나 하루가 시작되면 버린다.
   private facilityCache: Record<string, ClubFacilities> | null = null;

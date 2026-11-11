@@ -564,6 +564,12 @@ export const TACTICS = {
   },
 } as const;
 
+/** 4c-3 경기 관전·승부처 참여(D-160·D-174) */
+export const LIVE = {
+  /** 경기당 구단주 참여 타석 상한 */
+  maxPerGame: 2,
+} as const;
+
 /** 4c-2b 감독 능력치·성향·신뢰도(D-162·D-163·D-172 초기안). z = (능력 − 50) / 50 */
 export const MANAGER = {
   /** 기본 보정 최대 점수(조정값, D-173 ①) */

@@ -336,6 +336,11 @@ async function main() {
     const offerRatioMedian = ratios.length ? +((ratios[Math.floor((ratios.length - 1) / 2)]! + ratios[Math.ceil((ratios.length - 1) / 2)]!) / 2).toFixed(2) : null;
     if (s === seasons && ratios.length >= 3 && (offerRatioMedian! < 0.4 || offerRatioMedian! > 1.6)) inv.push(`사전 등록 7b ③ 위반: 받은 제안 실제 가치 비율 중앙값 ${offerRatioMedian}`);
     offerAccepted = false;
+    // 4c-3 사전 등록 ③(D-175): 우리 구단 경기당 구단주 참여 지점(참여했다면의 수) 평균 1.0~2.0. 전체 시즌 평균으로 마지막 시즌에 판정한다
+    const liveAll = Object.values(meta7.liveStats ?? {}).reduce((a, x) => ({ games: a.games + x.games, points: a.points + x.points }), { games: 0, points: 0 });
+    const liveNow = meta7.liveStats?.[String(dash.season)] ?? { games: 0, points: 0 };
+    const livePerGame = liveAll.games ? +(liveAll.points / liveAll.games).toFixed(2) : null;
+    if (s === seasons && (livePerGame === null || livePerGame < 1 || livePerGame > 2)) inv.push(`사전 등록 4c-3 ③ 위반: 경기당 참여 지점 ${livePerGame}`);
     if (stanceCount('contend') < 1 || stanceCount('rebuild') < 1) inv.push(`사전 등록 7a ③ 위반: 우승 경쟁 ${stanceCount('contend')}·리빌딩 ${stanceCount('rebuild')}`);
     if (s === seasons && seasons >= 2 && stanceChanged < 2) inv.push(`사전 등록 7a ③ 위반: 운영 상태가 바뀐 AI 구단 ${stanceChanged}개`);
     if (milestone && s === seasons) {
@@ -374,6 +379,7 @@ async function main() {
       trades: tradeStats.find((t) => t.season === s) ?? null,
       aiTrades,
       offers: { received: offersNow, ratioMedian: offerRatioMedian, ratioSample: ratios.length, ...offerStats },
+      live: { games: liveNow.games, points: liveNow.points, perGameAll: livePerGame },
       stances: `우승 경쟁 ${stanceCount('contend')}·중위권 ${stanceCount('middle')}·리빌딩 ${stanceCount('rebuild')}·긴축 ${stanceCount('austerity')} (변경 구단 ${stanceChanged})`,
       coreMean,
       coreP95,

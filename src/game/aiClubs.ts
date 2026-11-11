@@ -31,6 +31,11 @@ export class AiClubOps {
     return (this.cache ??= this.repo.getMetaValue<Record<string, StanceState>>('clubStance') ?? {});
   }
 
+  /** 되돌린 트랜잭션 뒤 캐시를 버린다(4c-3 관전 미리보기) */
+  reset(): void {
+    this.cache = null;
+  }
+
   /** AI 구단의 운영 상태. 우리 구단과 아직 평가하지 않은 구단은 null */
   stance(clubId: ClubId): ClubStance | null {
     return this.all()[String(clubId)]?.stance ?? null;

@@ -17,6 +17,7 @@ import { Business } from './screens/Business';
 import { Finance } from './screens/Finance';
 import { HallOfFame } from './screens/HallOfFame';
 import { Inbox } from './screens/Inbox';
+import { Live } from './screens/Live';
 import { Market } from './screens/Market';
 import { NewGame } from './screens/NewGame';
 import { Organization } from './screens/Organization';
@@ -55,7 +56,9 @@ export type Route =
   | { name: 'trade'; clubId: number; want?: number }
   | { name: 'compare' }
   | { name: 'draft' }
-  | { name: 'saves' };
+  | { name: 'saves' }
+  /** 4c-3 경기 보기 */
+  | { name: 'live' };
 
 export interface Nav {
   go: (route: Route) => void;
@@ -137,8 +140,8 @@ export function App() {
     notify,
   };
 
-  const advance = async (mode: 'day' | 'week' | 'untilSeasonEnd') => {
-    if (!(await canLeave())) return;
+  const advance = async (mode: 'day' | 'week' | 'untilSeasonEnd'): Promise<boolean> => {
+    if (!(await canLeave())) return false;
     setBusy(mode === 'day' ? '하루 진행 중' : mode === 'week' ? '한 주 진행 중' : '시즌 진행 중');
     setProgress(null);
     try {
@@ -153,11 +156,24 @@ export function App() {
       if (r.autosaved) parts.push('자동 저장됨');
       if (r.stoppedReason) parts.push(r.stoppedReason);
       notify(parts.join(' · '));
+      return true;
     } catch (e) {
       notify(e instanceof ApiError ? e.message : String(e), 'error');
+      return false;
     } finally {
       setBusy(null);
       setProgress(null);
+    }
+  };
+
+  // 4c-3: 경기 보기 시작(이미 관전 중이면 돌아가기)
+  const openLive = async () => {
+    try {
+      if (!dashboard?.live.active) await api('live.start');
+      setDashboard(await api('game.dashboard'));
+      go({ name: 'live' });
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : String(e), 'error');
     }
   };
 
@@ -210,7 +226,12 @@ export function App() {
           {dateKo(d.date)}
         </div>
         <div className="actions">
-          <button disabled={!!busy} className={d.unsavedDays > 0 ? 'warn' : ''} onClick={() => go({ name: 'saves' })}>
+          {(d.live.active || d.live.available) && d.phase !== 'seasonComplete' && (
+            <button disabled={!!busy} className={d.live.active ? 'primary' : ''} onClick={() => void openLive()}>
+              {d.live.active ? '경기로 돌아가기' : '경기 보기'}
+            </button>
+          )}
+          <button disabled={!!busy || d.live.active} title={d.live.active ? '경기 중에는 저장할 수 없습니다' : ''} className={d.unsavedDays > 0 ? 'warn' : ''} onClick={() => go({ name: 'saves' })}>
             저장{d.unsavedDays > 0 ? ` (수동 저장 후 ${d.unsavedDays}일)` : ''}
           </button>
           {d.phase === 'seasonComplete' ? (
@@ -265,6 +286,14 @@ export function App() {
         {route.name === 'compare' && <Compare nav={nav} />}
         {route.name === 'draft' && <Draft nav={nav} />}
         {route.name === 'saves' && <Saves nav={nav} />}
+        {route.name === 'live' && (
+          <Live
+            nav={nav}
+            onAdvanceDay={async (fixtureId) => {
+              if (await advance('day')) setRoute({ name: 'boxScore', fixtureId });
+            }}
+          />
+        )}
       </main>
       {busy && (
         <div className="busy">
