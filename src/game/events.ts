@@ -3,7 +3,7 @@
 import { allStarDates } from '../engine/allStar';
 import { startSatisfaction } from '../engine/business';
 import { addDays, ageOn, diffDays, type GameDate } from '../engine/calendar';
-import { EVENTS as E, MARKETING, TRADE } from '../engine/config';
+import { EVENTS as E, MARKETING, TRADE, WORLDGEN } from '../engine/config';
 import { CARDS, CATEGORY_LABEL, CATEGORY_TEAM, CONNECTED, passesLimits, pickCandidate, TEAM_LABEL, type CardEffect, type Candidate, type CardPhase, type LoadedCard } from '../engine/events/cards';
 import { ops as opsOf } from '../engine/awards';
 import { SPONSOR } from '../engine/config';
@@ -73,6 +73,8 @@ export interface EventDeps {
   release: (meta: GameMeta, date: GameDate, playerId: PlayerId, reason: string) => string;
   fireManager: (meta: GameMeta, clubId: ClubId, date: GameDate) => string | null;
   stance: (clubId: ClubId) => string;
+  /** D-212 AWD-02: 통산 이정표 임박 선수 */
+  nearMilestone: (season: number, ids: PlayerId[]) => Set<PlayerId>;
 }
 
 /** 카드 담당 팀 → 조직 팀 키 */
@@ -267,6 +269,18 @@ export class EventOps {
     if (kind === 'fireManager') return this.deps.fireManager(c.meta, c.clubId, c.date) ?? '감독 공석';
     if (c.playerId === null) return '';
     const p = this.repo.getPlayer(c.playerId);
+    // D-212 DEV-01: 국내 무소속 선수 육성 계약(2군·최저 연봉·1년), 40인 초과면 하지 않는다
+    if ((kind === 'signTrial' || kind === 'signElsewhere') && p && p.clubId === null) {
+      const room = (id: ClubId) => this.repo.getPlayers().filter((x) => x.clubId === id && !x.retired).length < 40;
+      const clubId = kind === 'signTrial' ? c.clubId : [...this.clubs.keys()].filter((id) => id !== c.meta.userClubId && room(id)).sort((a, b) => a - b)[c.rng.int(0, Math.max(0, this.clubs.size - 2))];
+      if (clubId === undefined || !room(clubId)) return '40인 명단이 차 계약하지 못함';
+      p.clubId = clubId;
+      p.level = '2군';
+      p.salary = WORLDGEN.minSalary;
+      p.contractYears = 1;
+      this.repo.savePlayers([p]);
+      return kind === 'signTrial' ? `${p.name} 육성 계약(2군)` : `${p.name} ${this.clubName(clubId)} 입단`;
+    }
     if (!p || p.clubId === null) return '';
     if (kind === 'release') return this.deps.release(c.meta, c.date, p.id, '계약 해지');
     if (kind === 'withdrawPick') {
@@ -558,7 +572,7 @@ export class EventOps {
   /** 조건식용 히든 생활 요인 변수(화면 응답에는 나오지 않는다) */
   private lifeVars(meta: GameMeta, p: PlayerTruth): Record<string, ExprValue> {
     const l = lifeOf(meta.seed, p);
-    return { 'player.selfControl': l.selfControl, 'player.publicAwareness': l.publicAwareness, 'player.warmth': l.warmth, 'player.humility': l.humility };
+    return { 'player.selfControl': l.selfControl, 'player.publicAwareness': l.publicAwareness, 'player.warmth': l.warmth, 'player.humility': l.humility, 'player.pressureSensitivity': p.hidden.pressureSensitivity };
   }
 
   private cardText(meta: GameMeta, card: LoadedCard, playerId: PlayerId | null, rng: Rng): string {
@@ -652,9 +666,12 @@ export class EventOps {
       // EV-3(D-207 (4))
       'club.subSlotsFree': Math.max(0, SPONSOR.subSlots - (meta.sponsors?.[String(club)] ?? []).filter((c) => c.season === season && c.slot === 'sub').length),
       'club.feat': this.repo.getAchievements().some((a) => (a.key.startsWith('A_nono') || a.key.startsWith('A_cycle')) && a.date >= addDays(date, -7) && a.date < date) ? 1 : 0,
+      'club.stadiumLevel': meta.facilities?.[String(club)]?.levels.stadium ?? 1,
+      'club.rosterRoom': Math.max(0, 40 - players.length),
       'club.tradeRecent': (meta.tradeHistory ?? []).some((t) => !t.ai && (t.clubA === club || t.clubB === club) && t.date >= addDays(date, -14) && t.date < date) ? 1 : 0,
     };
     let recent: Map<PlayerId, import('../engine/stats').BattingTotals> | null = null;
+    let near: Set<PlayerId> | null = null;
     const awarded = new Set(this.repo.getAwards({ clubId: club, season }).filter((a) => a.playerId !== null && a.date >= addDays(date, -7) && a.date < date).map((a) => a.playerId!));
     const flagVar = (n: string) => (n.startsWith('flag.') ? (state.flags[n.slice(5)]?.value ?? 0) : undefined);
     const playerVars = (p: PlayerTruth): Record<string, ExprValue> => {
@@ -675,6 +692,7 @@ export class EventOps {
           return b && b.PA >= E.slumpMinPa && (opsOf(b) || 0) < E.slumpOps ? 1 : 0;
         })(),
         'player.awardRecent': awarded.has(p.id) ? 1 : 0,
+        'player.milestoneNear': p.clubId === club && (near ??= this.deps.nearMilestone(season, players.filter((x) => x.level === '1군').map((x) => x.id))).has(p.id) ? 1 : 0,
         ...this.lifeVars(meta, p),
       };
     };
@@ -692,7 +710,9 @@ export class EventOps {
         const cand = { card: c, playerId: null };
         if (isTrue(c.cond, vars) && passesLimits(cand, history, week, season)) cands.push({ ...cand, loaded: c });
       } else {
-        for (const p of players) {
+        // freeAgent: 국내 무소속 26세 이하(D-212 DEV-01)
+        const pool = c.target === 'freeAgent' ? this.repo.getPlayers().filter((p) => p.clubId === null && !p.retired && p.origin === 'domestic' && ageOn(p.birthDate, date) <= 26) : players;
+        for (const p of pool) {
           const pv = playerVars(p);
           const vars = (n: string) => pv[n] ?? clubVars[n] ?? flagVar(n);
           const cand = { card: c, playerId: p.id };

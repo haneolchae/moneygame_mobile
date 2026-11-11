@@ -126,7 +126,7 @@
     "trigger": "player.pitcher == 1 && player.active == 1 && player.fatigue >= 70",
     "weight": 6,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "medical",
     "delegateDefault": "rest",
     "texts": [
@@ -174,7 +174,7 @@
     "trigger": "player.injuryDays >= 21",
     "weight": 4,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "medical",
     "delegateDefault": "domestic",
     "texts": [
@@ -228,7 +228,7 @@
     "trigger": "player.slump == 1 && player.starter == 1 && player.active == 1",
     "weight": 4,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "medical",
     "delegateDefault": "leave",
     "texts": [
@@ -361,7 +361,7 @@
     "trigger": "club.feat == 1",
     "weight": 4,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": null,
     "delegateDefault": "goods",
     "texts": [
@@ -395,6 +395,231 @@
     ]
   },
   {
+    "id": "AWD-02",
+    "type": "decision",
+    "category": "award",
+    "priority": false,
+    "phases": [
+      "regular"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.milestoneNear == 1 && player.active == 1",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 2,
+    "delegateTeam": null,
+    "delegateDefault": "quiet",
+    "texts": [
+      "{player}가 대기록 달성을 눈앞에 두고 있습니다.",
+      "{player}의 통산 기록 달성이 임박했습니다. 언론이 주목합니다.",
+      "\"곧 나옵니다.\" {player}의 대기록 카운트다운이 시작됐습니다."
+    ],
+    "choices": [
+      {
+        "id": "event",
+        "label": "기념행사를 준비한다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "small"
+          },
+          {
+            "type": "DEMAND",
+            "value": 1.08,
+            "weeks": 2
+          }
+        ],
+        "text": "대기록 기념행사를 준비했다.",
+        "outcomes": [
+          {
+            "p": 0.6,
+            "cond": "player.pressureSensitivity >= 65",
+            "hint": "부담감 가능성",
+            "effects": [
+              {
+                "type": "COND",
+                "value": -2,
+                "weeks": 2
+              }
+            ],
+            "text": "기념행사 분위기에 {player}가 부담을 느끼는 듯하다."
+          }
+        ]
+      },
+      {
+        "id": "quiet",
+        "label": "조용히 둔다",
+        "effects": [],
+        "text": "선수가 편하게 달성하도록 조용히 두었다."
+      }
+    ]
+  },
+  {
+    "id": "OPS-01",
+    "type": "decision",
+    "category": "ops",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "club",
+    "trigger": "club.stadiumLevel <= 3 && club.week >= 1",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 2,
+    "delegateTeam": "marketing",
+    "delegateDefault": "fix",
+    "texts": [
+      "구장 시설 일부가 고장 났습니다. 관중석 불편 민원이 이어집니다.",
+      "라커룸 냉난방 장치가 멈췄습니다. 선수들의 불만이 큽니다.",
+      "전광판 일부가 꺼졌습니다. 구장시설팀이 수리를 요청합니다."
+    ],
+    "choices": [
+      {
+        "id": "fix",
+        "label": "즉시 수리한다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "medium"
+          }
+        ],
+        "text": "즉시 수리했다."
+      },
+      {
+        "id": "delay",
+        "label": "수리를 미룬다",
+        "effects": [
+          {
+            "type": "DEMAND",
+            "value": 0.95,
+            "weeks": 4
+          },
+          {
+            "type": "CLUBHOUSE",
+            "value": -4
+          }
+        ],
+        "text": "수리를 미뤘다. 불편이 이어진다."
+      }
+    ]
+  },
+  {
+    "id": "CS-04",
+    "type": "decision",
+    "category": "ops",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "club",
+    "trigger": "club.cashEok < 30",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "marketing",
+    "delegateDefault": "adjust",
+    "texts": [
+      "모기업이 구단 지출이 예산을 넘을 것 같다며 의견을 보내왔습니다.",
+      "모기업 재무팀이 구단 현금 사정을 묻고 있습니다.",
+      "모기업이 지출 조정 계획을 요구합니다."
+    ],
+    "choices": [
+      {
+        "id": "persuade",
+        "label": "추가 지원을 설득한다",
+        "effects": [],
+        "text": "모기업에 추가 지원을 요청했다.",
+        "outcomes": [
+          {
+            "p": 0.5,
+            "hint": "지원 가능성",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium",
+                "income": true
+              }
+            ],
+            "text": "모기업이 추가 지원금을 보냈다."
+          }
+        ],
+        "elseText": "모기업은 추가 지원을 거절했다."
+      },
+      {
+        "id": "adjust",
+        "label": "지출을 조정한다",
+        "effects": [
+          {
+            "type": "FAN_TARGET",
+            "value": -2,
+            "weeks": 8
+          }
+        ],
+        "text": "팬 행사와 마케팅 지출을 줄였다."
+      }
+    ]
+  },
+  {
+    "id": "DEV-01",
+    "type": "decision",
+    "category": "transfer",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "freeAgent",
+    "trigger": "player.age <= 26 && club.rosterRoom >= 1",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 2,
+    "delegateTeam": "operations",
+    "delegateDefault": "decline",
+    "texts": [
+      "무소속 선수 {player}가 육성선수 입단 테스트를 받고 싶어 합니다.",
+      "{player}가 입단 테스트를 요청했습니다. 2군 코치진의 평가는 엇갈립니다.",
+      "운영팀: 무소속 {player}의 육성선수 계약 문의가 들어왔습니다."
+    ],
+    "choices": [
+      {
+        "id": "sign",
+        "label": "육성선수로 계약한다",
+        "effects": [
+          {
+            "type": "CONTRACT",
+            "kind": "signTrial"
+          }
+        ],
+        "text": "육성선수로 계약했다(2군, 최저 연봉 1년)."
+      },
+      {
+        "id": "decline",
+        "label": "돌려보낸다",
+        "effects": [],
+        "text": "이번에는 계약하지 않았다.",
+        "outcomes": [
+          {
+            "p": 0.25,
+            "hint": "다른 구단 입단 가능성",
+            "effects": [
+              {
+                "type": "CONTRACT",
+                "kind": "signElsewhere"
+              }
+            ],
+            "text": "{player}가 다른 구단에 입단해 기회를 얻었다는 소식이 들린다."
+          }
+        ]
+      }
+    ]
+  },
+  {
     "id": "SPN-01",
     "type": "decision",
     "category": "sponsor",
@@ -406,7 +631,7 @@
     "trigger": "club.subSlotsFree >= 1",
     "weight": 4,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "partnership",
     "delegateDefault": "sign",
     "texts": [
@@ -560,7 +785,7 @@
     "trigger": "player.starter == 1 && player.active == 1",
     "weight": 4,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "partnership",
     "delegateDefault": "persuade",
     "texts": [
@@ -611,7 +836,7 @@
     "trigger": "club.week >= 3",
     "weight": 2,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": null,
     "delegateDefault": "decline",
     "texts": [
@@ -658,7 +883,7 @@
     "trigger": "club.week >= 8",
     "weight": 2,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": null,
     "delegateDefault": "release",
     "texts": [
@@ -787,7 +1012,7 @@
     "trigger": "club.rank >= 4 && club.week >= 6",
     "weight": 2,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": null,
     "delegateDefault": "hold",
     "texts": [
@@ -837,7 +1062,7 @@
     "trigger": "club.week >= 4 && club.week <= 18",
     "weight": 8,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "operations",
     "delegateDefault": "ignore",
     "texts": [
@@ -878,7 +1103,7 @@
     "trigger": "club.streak <= -5 || club.fan <= 30",
     "weight": 4,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "marketing",
     "delegateDefault": "statement",
     "texts": [
@@ -927,7 +1152,7 @@
     "trigger": "club.tradeRecent == 1",
     "weight": 4,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "marketing",
     "delegateDefault": "explain",
     "texts": [
@@ -978,7 +1203,7 @@
     "trigger": "player.active == 1 && player.age >= 22 && player.age <= 34",
     "weight": 5,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "pr",
     "delegateDefault": "nocomment",
     "texts": [
@@ -1048,7 +1273,7 @@
     "trigger": "player.active == 1 && player.age >= 26",
     "weight": 5,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "pr",
     "delegateDefault": "leave",
     "texts": [
@@ -1099,7 +1324,7 @@
     "trigger": "player.active == 1 && (player.publicAwareness <= 20 || (flag.snsEdu == 0 && player.publicAwareness <= 35))",
     "weight": 4,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "pr",
     "delegateDefault": "apology",
     "texts": [
@@ -1170,7 +1395,7 @@
     "trigger": "player.active == 1",
     "weight": 5,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "pr",
     "delegateDefault": "full",
     "texts": [
@@ -1229,7 +1454,7 @@
     "trigger": "player.active == 1 && player.warmth >= 55",
     "weight": 2,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "pr",
     "delegateDefault": "respect",
     "texts": [
@@ -1303,7 +1528,7 @@
     "trigger": "player.active == 1 && player.warmth >= 55",
     "weight": 2,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "pr",
     "delegateDefault": "personal",
     "texts": [
@@ -1359,7 +1584,7 @@
     "trigger": "player.active == 1 && player.publicAwareness >= 55",
     "weight": 2,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "pr",
     "delegateDefault": "invite",
     "texts": [
@@ -1416,7 +1641,7 @@
     "trigger": "player.active == 1 && player.age >= 24 && player.warmth >= 55",
     "weight": 2,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "pr",
     "delegateDefault": "congrats",
     "texts": [
@@ -1463,7 +1688,7 @@
     "trigger": "player.active == 1 && player.warmth >= 55",
     "weight": 2,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "pr",
     "delegateDefault": "award",
     "texts": [
@@ -1518,7 +1743,7 @@
     "trigger": "club.week >= 2",
     "weight": 2,
     "cooldownWeeks": 8,
-    "seasonCap": 1,
+    "seasonCap": 2,
     "delegateTeam": "pr",
     "delegateDefault": "join",
     "texts": [

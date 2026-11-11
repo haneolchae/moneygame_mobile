@@ -390,7 +390,7 @@ export class GameService {
     this.awards = new AwardOps(repo, this.clubMap, (m, c, s) => this.seasonClose.expectedRank(m, c, s));
     // 8e(D-189·D-190): 올스타전
     // EV-1(D-203): 턴 브리핑·결정 카드
-    this.events = new EventOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), fatigue: (d, ps) => this.health.fatigueMap(d, ps), adjustTrust: (c, v, d, s) => this.managers.adjustTrust(c, v, d, s), prQuality: (c) => this.org.teamQuality(c, 'pr'), spendWp: (w, t, wp) => { try { this.repo.spendWp(w, t, wp); return true; } catch { return false; } }, release: (m, d, id, why) => this.market.releaseForCase(m, d, id, why), fireManager: (m, c, d) => { const r = this.org.dismissManager(m, c, d); this.managers.reset(); return r; }, stance: (c) => this.aiClubs.stance(c) ?? 'middle' });
+    this.events = new EventOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), fatigue: (d, ps) => this.health.fatigueMap(d, ps), adjustTrust: (c, v, d, s) => this.managers.adjustTrust(c, v, d, s), prQuality: (c) => this.org.teamQuality(c, 'pr'), spendWp: (w, t, wp) => { try { this.repo.spendWp(w, t, wp); return true; } catch { return false; } }, release: (m, d, id, why) => this.market.releaseForCase(m, d, id, why), fireManager: (m, c, d) => { const r = this.org.dismissManager(m, c, d); this.managers.reset(); return r; }, stance: (c) => this.aiClubs.stance(c) ?? 'middle', nearMilestone: (s, ids) => this.awards.nearMilestone(s, ids) });
     this.allStar = new AllStarOps(repo, this.clubMap, (id) => this.managers.profileOf(id), (s, d, ps, env) => this.forms.formsFor(s, d, ps, env), this.budget);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {

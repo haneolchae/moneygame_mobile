@@ -71,6 +71,28 @@ export class AwardOps {
     return p ? `${p.W}승 ${p.L}패 ${p.SV}세이브 ${p.HLD}홀드 · 평균자책 ${era(p).toFixed(2)} · ${ip(p.OUTS)}이닝 · ${p.K}탈삼진` : '';
   }
 
+  /** D-212 AWD-02: 다음 통산 이정표(기록 달성상 기준)까지 남은 수가 임박 기준 이하인 선수 */
+  nearMilestone(season: number, ids: number[]): Set<number> {
+    const out = new Set<number>();
+    if (!ids.length) return out;
+    const NEAR: Record<string, number> = { H: 15, HR: 3, RBI: 15, SB: 5, W: 3, SV: 5, K: 25 };
+    const before = this.careerBefore(season);
+    const { batting, pitching } = this.repo.awardLines(season);
+    for (const id of ids) {
+      const b = batting.get(id);
+      const pb = before.bat.get(id);
+      const p = pitching.get(id);
+      const pp = before.pit.get(id);
+      for (const [k, steps] of Object.entries(A.milestones)) {
+        const pitch = k === 'W' || k === 'SV' || k === 'K';
+        const total = pitch ? ((pp?.[k as 'W'] ?? 0) + (p?.[k as 'W'] ?? 0)) : (((pb as Record<string, number> | undefined)?.[k] ?? 0) + ((b as Record<string, number> | undefined)?.[k] ?? 0));
+        const next = steps.find((s) => s > total);
+        if (next !== undefined && next - total <= NEAR[k]!) out.add(id);
+      }
+    }
+    return out;
+  }
+
   /** 시즌 시작까지의 통산(생성 기록 + 지난 원시 기록 시즌) */
   private careerCache: { season: number; v: { bat: Map<number, BattingTotals>; pit: Map<number, PitchingTotals> } } | null = null;
   private careerBefore(season: number): { bat: Map<number, BattingTotals>; pit: Map<number, PitchingTotals> } {
