@@ -1,0 +1,199 @@
+[
+  {
+    "id": "MAJ-01",
+    "motif": "학교폭력 폭로",
+    "phase": "season",
+    "target": "player",
+    "truth": "pastRecord",
+    "hazard": { "model": "pastRecord", "base": 0.00008 },
+    "resolveWeeks": [2, 4],
+    "league": { "games": 0, "atOpen": false },
+    "texts": [
+      "온라인 커뮤니티에 {player}의 학창 시절 학교폭력 폭로 글이 올라왔습니다.",
+      "{player}에게 학교폭력 가해 의혹이 제기됐습니다. 언론 문의가 빗발칩니다.",
+      "익명의 폭로자가 {player}의 과거를 문제 삼았습니다. 사실 여부는 아직 모릅니다."
+    ],
+    "choices": [
+      { "id": "hold", "label": "출전을 보류하고 사실을 확인한다", "effects": [{ "type": "REST", "days": 21 }], "text": "출전을 보류하고 사실 확인에 들어갔다." },
+      { "id": "trust", "label": "선수 해명을 믿고 출전시키며 법적 대응을 돕는다", "effects": [{ "type": "CASH", "grade": "small" }], "text": "선수의 해명을 믿고 법적 대응을 지원했다." },
+      { "id": "cut", "label": "즉시 계약을 해지한다", "effects": [{ "type": "CONTRACT", "kind": "release" }], "text": "즉시 계약을 해지했다." }
+    ],
+    "results": {
+      "hold": {
+        "fact": { "effects": [{ "type": "FAN_NOW", "value": -3 }], "text": "조사 결과 의혹이 사실로 확인됐다.", "clubSanction": [10, 30] },
+        "exaggerated": { "effects": [{ "type": "MOOD", "value": -8 }, { "type": "FAN_NOW", "value": -1 }], "text": "조사 결과 폭로 내용이 상당 부분 과장된 것으로 드러났다." },
+        "false": { "effects": [{ "type": "MOOD", "value": -10 }, { "type": "FAN_NOW", "value": 2 }], "text": "조사 결과 폭로가 허위로 밝혀졌다. 선수는 마음고생이 컸다." }
+      },
+      "trust": {
+        "fact": { "effects": [{ "type": "FAN_NOW", "value": -10 }, { "type": "CLUBHOUSE", "value": -4 }, { "type": "SPONSOR_CUT" }], "text": "의혹이 사실로 드러났다. 감싸던 구단도 거센 비판을 받았다." },
+        "exaggerated": { "effects": [{ "type": "FAN_NOW", "value": -4 }], "text": "폭로가 과장된 것으로 드러났지만 여론은 개운치 않다." },
+        "false": { "effects": [{ "type": "MOOD", "value": 8 }, { "type": "CLUBHOUSE", "value": 4 }, { "type": "FAN_NOW", "value": 3 }], "text": "폭로가 허위로 밝혀졌다. 선수를 믿은 구단에 박수가 쏟아졌다." }
+      },
+      "cut": {
+        "fact": { "effects": [{ "type": "FAN_NOW", "value": 2 }], "text": "의혹은 사실이었다. 빠른 결단이라는 평이다." },
+        "exaggerated": { "effects": [{ "type": "FAN_NOW", "value": -2 }, { "type": "CLUBHOUSE", "value": -6 }], "text": "폭로는 과장이었다. 성급한 결정이었다는 비판이 나온다." },
+        "false": { "effects": [{ "type": "CLUBHOUSE", "value": -8 }, { "type": "CASH", "grade": "medium" }], "text": "폭로는 허위였다. 선수 측이 소송을 냈고 구단은 합의금을 냈다." }
+      }
+    },
+    "ai": { "keep": "hold", "release": "cut" },
+    "auto": "hold"
+  },
+  {
+    "id": "MAJ-02",
+    "motif": "신인 지명자 학폭 논란",
+    "phase": "season",
+    "target": "rookie",
+    "truth": "pastRecord",
+    "hazard": { "model": "pastRecord", "base": 0.004 },
+    "resolveWeeks": [2, 4],
+    "league": { "games": 0, "atOpen": false },
+    "texts": [
+      "우리가 지명한 {player}에게 학교폭력 논란이 불거졌습니다.",
+      "드래프트 직후, 신인 {player}의 학창 시절 문제가 제기됐습니다.",
+      "{player}의 고교 동문이 과거 학교폭력을 폭로했습니다."
+    ],
+    "choices": [
+      { "id": "withdraw", "label": "지명을 철회한다", "effects": [{ "type": "CONTRACT", "kind": "withdrawPick" }], "text": "지명을 철회했다. 지명권은 사라졌다." },
+      { "id": "hold", "label": "입단을 보류하고 조사한다", "effects": [], "text": "입단 절차를 멈추고 조사에 들어갔다." },
+      { "id": "sign", "label": "그대로 계약한다", "effects": [], "text": "예정대로 계약을 진행했다." }
+    ],
+    "results": {
+      "withdraw": {
+        "fact": { "effects": [{ "type": "FAN_NOW", "value": 2 }], "text": "논란은 사실이었다. 지명 철회가 옳았다는 평이다." },
+        "exaggerated": { "effects": [{ "type": "FAN_NOW", "value": -2 }], "text": "논란은 과장이었다. 성급했다는 지적이 나온다." },
+        "false": { "effects": [{ "type": "CLUBHOUSE", "value": -4 }], "text": "논란은 허위였다. 그 선수는 다른 구단에서 기회를 노리고 있다." }
+      },
+      "hold": {
+        "fact": { "effects": [{ "type": "FAN_NOW", "value": -2 }], "text": "조사 결과 사실로 확인됐다.", "clubSanction": [10, 30] },
+        "exaggerated": { "effects": [{ "type": "MOOD", "value": -8 }], "text": "논란은 과장된 것으로 드러났다." },
+        "false": { "effects": [{ "type": "FAN_NOW", "value": 2 }], "text": "논란은 허위로 밝혀졌다." }
+      },
+      "sign": {
+        "fact": { "effects": [{ "type": "FAN_NOW", "value": -8 }], "text": "논란이 사실로 드러났는데도 계약을 강행한 구단에 비판이 쏟아졌다." },
+        "exaggerated": { "effects": [{ "type": "FAN_NOW", "value": -2 }], "text": "논란은 과장이었지만 뒷맛이 남았다." },
+        "false": { "effects": [{ "type": "MOOD", "value": 8 }], "text": "논란은 허위였다. 선수는 구단의 믿음에 고마워했다." }
+      }
+    },
+    "ai": { "keep": "hold", "release": "withdraw" },
+    "auto": "hold"
+  },
+  {
+    "id": "MAJ-03",
+    "motif": "해외 원정도박 의혹",
+    "phase": "stove",
+    "target": "player",
+    "truth": "gambling",
+    "hazard": { "model": "selfControl", "base": 0.00009 },
+    "resolveWeeks": [0, 2],
+    "resolveAt": "opening",
+    "league": { "games": 15, "atOpen": false },
+    "texts": [
+      "{player}가 해외 원정도박 의혹을 받고 있다는 보도가 나왔습니다.",
+      "수사기관이 {player}의 해외 도박 의혹을 들여다보고 있습니다.",
+      "{player}의 비시즌 해외 행적을 두고 도박 의혹이 제기됐습니다."
+    ],
+    "choices": [
+      { "id": "self", "label": "자체 조사 뒤 선제 징계한다", "effects": [{ "type": "SUSPEND", "games": 10 }], "text": "자체 조사 뒤 구단 징계 10경기를 내렸다." },
+      { "id": "wait", "label": "수사 결과를 기다리며 정상 운용한다", "effects": [], "text": "수사 결과를 기다리기로 했다." },
+      { "id": "cut", "label": "계약을 해지한다", "effects": [{ "type": "CONTRACT", "kind": "release" }], "text": "계약을 해지했다." }
+    ],
+    "results": {
+      "self": {
+        "fact": { "effects": [{ "type": "FAN_NOW", "value": -2 }], "text": "수사 결과 도박이 사실로 드러났다. 리그 징계가 내려졌다." },
+        "false": { "effects": [{ "type": "MOOD", "value": -10 }, { "type": "FAN_NOW", "value": 1 }], "text": "의혹은 사실이 아니었다. 선제 징계를 받은 선수는 억울해한다." }
+      },
+      "wait": {
+        "fact": { "effects": [{ "type": "FAN_NOW", "value": -8 }], "text": "도박이 사실로 드러났다. 알고도 기다렸느냐는 은폐 의혹까지 제기됐다." },
+        "false": { "effects": [{ "type": "MOOD", "value": 5 }], "text": "의혹은 사실이 아니었다. 선수를 믿은 구단에 선수가 고마워했다." }
+      },
+      "cut": {
+        "fact": { "effects": [{ "type": "FAN_NOW", "value": 2 }], "text": "도박은 사실이었다. 빠른 결단이라는 평이다." },
+        "false": { "effects": [{ "type": "FAN_NOW", "value": -2 }, { "type": "CLUBHOUSE", "value": -6 }], "text": "의혹은 사실이 아니었다. 성급한 해지에 선수단이 술렁인다." }
+      }
+    },
+    "ai": { "keep": "wait", "release": "cut" },
+    "auto": "self"
+  },
+  {
+    "id": "MAJ-04",
+    "motif": "금지약물 양성",
+    "phase": "season",
+    "target": "player",
+    "truth": "fact",
+    "hazard": { "model": "drug", "base": 0.000028 },
+    "resolveWeeks": [2, 2],
+    "league": { "games": 30, "atOpen": true },
+    "texts": [
+      "{player}의 도핑 검사에서 금지약물 양성 반응이 나왔습니다. 리그 30경기 출장 정지가 자동으로 내려졌습니다.",
+      "KBO 도핑 검사 결과 {player}가 금지약물 양성 판정을 받았습니다.",
+      "{player}, 금지약물 양성. 선수는 고의가 아니었다고 주장합니다."
+    ],
+    "choices": [
+      { "id": "apologize", "label": "사과문을 내고 연봉을 감액한다", "effects": [{ "type": "CONTRACT", "kind": "payCut" }, { "type": "FAN_NOW", "value": -2 }], "text": "공식 사과문을 내고 연봉을 감액했다." },
+      { "id": "appeal", "label": "선수 해명을 지지하고 재심을 돕는다", "effects": [{ "type": "CASH", "grade": "small" }], "text": "선수의 재심 청구를 지원했다." },
+      { "id": "cut", "label": "방출한다", "effects": [{ "type": "CONTRACT", "kind": "release" }], "text": "선수를 방출했다." }
+    ],
+    "results": {
+      "apologize": { "fact": { "effects": [], "text": "약물 징계가 이어지고 있다." } },
+      "appeal": { "fact": { "effects": [{ "type": "FAN_NOW", "value": -7 }], "text": "재심이 받아들여지지 않았다. 감싸기라는 비판이 쏟아졌다.", "outcomes": [{ "p": 0.3, "effects": [{ "type": "SUSPEND", "games": -10 }], "text": "재심에서 징계가 20경기로 줄었다." }] } },
+      "cut": { "fact": { "effects": [{ "type": "FAN_NOW", "value": 1 }], "text": "방출 결정이 마무리됐다." } }
+    },
+    "ai": { "keep": "apologize", "release": "cut" },
+    "auto": "apologize"
+  },
+  {
+    "id": "MAJ-05",
+    "motif": "음주운전 적발",
+    "phase": "season",
+    "target": "player",
+    "truth": "fact",
+    "hazard": { "model": "selfControl", "base": 0.000045 },
+    "resolveWeeks": [1, 1],
+    "league": { "games": 20, "atOpen": true },
+    "texts": [
+      "{player}가 음주운전으로 적발됐습니다. 리그 20경기 출장 정지가 자동으로 내려졌습니다.",
+      "새벽 음주 단속에서 {player}가 적발됐다는 보도입니다.",
+      "{player}, 음주운전 적발. 팬들의 실망이 큽니다."
+    ],
+    "choices": [
+      { "id": "extra", "label": "구단 추가 징계 10경기를 내린다", "effects": [{ "type": "SUSPEND", "games": 10 }], "text": "구단 추가 징계 10경기를 내렸다(합계 30경기)." },
+      { "id": "league", "label": "리그 징계만 따른다", "effects": [{ "type": "FAN_NOW", "value": -6 }], "text": "리그 징계만 따르기로 했다." },
+      { "id": "cut", "label": "계약을 해지한다", "effects": [{ "type": "CONTRACT", "kind": "release" }], "text": "계약을 해지했다." }
+    ],
+    "results": {
+      "extra": { "fact": { "effects": [], "text": "음주운전 징계가 이어지고 있다." } },
+      "league": { "fact": { "effects": [], "text": "리그 징계가 이어지고 있다.", "outcomes": [{ "p": 0.4, "effects": [{ "type": "SPONSOR_CUT" }], "text": "스폰서가 구단 대응에 항의하며 인센티브를 줄였다." }] } },
+      "cut": { "fact": { "effects": [{ "type": "FAN_NOW", "value": 1 }], "text": "계약 해지가 마무리됐다." } }
+    },
+    "ai": { "keep": "league", "release": "cut" },
+    "auto": "extra"
+  },
+  {
+    "id": "MAJ-06",
+    "motif": "승부조작 제의 자진 신고",
+    "phase": "season",
+    "target": "player",
+    "truth": "coverup",
+    "hazard": { "model": "awareness", "base": 0.000024 },
+    "resolveWeeks": [2, 6],
+    "league": { "games": 0, "atOpen": false },
+    "texts": [
+      "{player}가 브로커에게 승부조작 제의를 받았다며 구단에 먼저 알려 왔습니다.",
+      "{player}가 수상한 제의를 받았다고 털어놓았습니다. 구단의 대응이 중요합니다.",
+      "{player}에게 접근한 브로커가 있습니다. 선수는 거절하고 바로 보고했습니다."
+    ],
+    "choices": [
+      { "id": "report", "label": "즉시 리그와 수사기관에 신고한다", "effects": [{ "type": "FAN_NOW", "value": 3 }, { "type": "PRESS", "value": 3 }, { "type": "MOOD", "value": 10 }], "text": "즉시 리그와 수사기관에 신고했다." },
+      { "id": "quiet", "label": "내부적으로 조용히 처리한다", "effects": [], "text": "내부적으로 조용히 처리했다.", "coverupP": 0.2 }
+    ],
+    "results": {
+      "report": { "fact": { "effects": [], "text": "수사기관이 브로커를 적발했다. 선수의 신고가 결정적이었다." } },
+      "quiet": {
+        "found": { "effects": [{ "type": "FAN_NOW", "value": -12 }, { "type": "CASH", "grade": "large" }, { "type": "SUSPEND", "games": 10 }], "text": "구단이 승부조작 제의를 숨긴 사실이 드러났다. 제재금과 선수 징계가 내려졌다." },
+        "hidden": { "effects": [], "text": "제의 건은 조용히 묻혔다." }
+      }
+    },
+    "ai": { "keep": "report", "release": "report" },
+    "auto": "report"
+  }
+]

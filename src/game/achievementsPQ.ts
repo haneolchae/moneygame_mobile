@@ -535,6 +535,10 @@ export function judgePQOps(c: PQCtx, players: PlayerTruth[], fresh: GameMeta): v
   flag('Q_brink', !!fresh.cashCrisisSince && fresh.cashCrisisSince <= addDays(date, -28), `${date} 현금 마이너스 4주`);
   flag('Q_warn', (fresh.goalMisses ?? 0) >= CLOSE_RULES.warnAfterMisses, `${date} 성적 목표 연속 미달 경고`);
   flag('Q_backlash', !!fresh.fans?.[String(club)]?.lowSince, `${date} 팬 반발`);
+  // EV-4: 우리 선수 중대 사건(사실, 자진 신고 제외)·은폐 발각
+  const cases = (fresh.eventState?.cases ?? []).filter((x) => x.clubId === club && x.stage === 'closed');
+  judge('Q_scandal', cases.filter((x) => x.truth === 'fact' && x.type !== 'MAJ-06').length, (l) => `${date} 중대 사건 ${l}건`);
+  flag('Q_coverup', cases.some((x) => x.truth === 'found'), `${date} 사건 은폐 발각`);
   const staff = repo.getStaff(club);
   const vacant = !TEAMS.every((t) => staff.some((x) => x.title === '팀장' && x.team === t.key));
   memo.vacancySince = vacant ? (memo.vacancySince ?? date) : null;

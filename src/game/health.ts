@@ -59,6 +59,8 @@ export class HealthOps {
   unavailableOn(meta: GameMeta, date: GameDate, players: PlayerTruth[]): Set<PlayerId> {
     const out = new Set<PlayerId>();
     for (const p of players) if (injuredOn(p.health?.injury, date)) out.add(p.id);
+    // EV-4(D-210 (6)): 출장 정지 선수
+    for (const p of players) if ((p.sanction?.left ?? 0) > 0) out.add(p.id);
     for (const [id, until] of Object.entries(meta.restOrders ?? {})) if (diffDays(date, until) <= 0) out.add(Number(id));
     return out;
   }
@@ -77,10 +79,13 @@ export class HealthOps {
     const mine = players.filter((p) => p.clubId === clubId && !p.retired);
     const active = mine.filter((p) => p.level === '1군');
     const tomorrow = addDays(date, 1);
-    const sick = (p: PlayerTruth) => this.hurt(p, tomorrow);
-    const demote = new Set(active.filter((p) => sick(p) && estimatedDaysLeft(p.health!.injury!, date) >= HEALTH.demoteDays));
+    // EV-4(D-210 (6)): 징계 선수는 부상자처럼 1군에서 내린다(1군 등록 불가)
+    const banned = (p: PlayerTruth) => (p.sanction?.left ?? 0) > 0;
+    const sick = (p: PlayerTruth) => this.hurt(p, tomorrow) || banned(p);
+    const daysOut = (p: PlayerTruth) => (p.health?.injury && this.hurt(p, tomorrow) ? estimatedDaysLeft(p.health.injury, date) : 999);
+    const demote = new Set(active.filter((p) => banned(p) || (sick(p) && daysOut(p) >= HEALTH.demoteDays)));
     const healthy = () => active.filter((p) => !demote.has(p) && !sick(p));
-    const short = (pitcher: boolean) => active.filter((p) => p.isPitcher === pitcher && sick(p) && !demote.has(p)).sort((a, b) => estimatedDaysLeft(b.health!.injury!, date) - estimatedDaysLeft(a.health!.injury!, date));
+    const short = (pitcher: boolean) => active.filter((p) => p.isPitcher === pitcher && sick(p) && !demote.has(p)).sort((a, b) => daysOut(b) - daysOut(a));
     // 건강 인원이 모자라면 짧은 부상자도 내린다.
     for (const pitcher of [false, true]) {
       const min = pitcher ? HEALTH.healthyMinPitchers : HEALTH.healthyMinHitters;
@@ -100,16 +105,16 @@ export class HealthOps {
     };
     // 대체는 같은 쪽(투수↔투수, 야수↔야수)에서만. 없으면 그 부상자는 1군에 두고 출전만 제외한다(D-126).
     const down: PlayerTruth[] = [];
-    for (const d of [...demote].sort((a, b) => estimatedDaysLeft(b.health!.injury!, date) - estimatedDaysLeft(a.health!.injury!, date))) {
+    for (const d of [...demote].sort((a, b) => daysOut(b) - daysOut(a))) {
       const needC = !d.isPitcher && d.position === 'C' && healthy().concat(promote).filter((x) => !x.isPitcher && x.position === 'C').length < 1;
       const pick = (needC ? take((p) => !p.isPitcher && p.position === 'C') : undefined) ?? take((p) => p.isPitcher === d.isPitcher);
       if (pick) down.push(d);
     }
     if (down.length === 0) return [];
-    for (const p of down) p.health!.injury!.demoted = true;
+    for (const p of down) if (p.health?.injury) p.health.injury.demoted = true;
     const fixed = this.roster.forceMoves(meta, players, promote, down);
     if (!isUser || down.length === 0) return [];
-    return [`부상 말소: ${down.map((p) => p.name).join(', ')} → 대체 등록: ${promote.map((p) => p.name).join(', ')}${fixed ? ` · ${fixed}` : ''}`];
+    return [`부상·징계 말소: ${down.map((p) => p.name).join(', ')} → 대체 등록: ${promote.map((p) => p.name).join(', ')}${fixed ? ` · ${fixed}` : ''}`];
   }
 
   /** 하루 시작(경기 전): 복귀, AI·자동 운영 되돌리기, 1군 건강 인원 확보, 휴식 지시 정리, 월요일 주간 건강 보고 */

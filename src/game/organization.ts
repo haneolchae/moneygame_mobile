@@ -219,6 +219,16 @@ export class Organization {
   }
 
   /** 해고: 행동력 1 + 보상금(남은 계약 연봉의 50%) 즉시 지급 */
+  /** EV-4(D-210 (7)) 사건 카드 감독 경질: 보상금 장부, 감독 공석(선임은 조직 화면). 카드 선택이라 행동력 없음 */
+  dismissManager(meta: GameMeta, clubId: number, date: GameDate): string | null {
+    const s = this.staff(clubId).find((x) => x.title === '감독');
+    if (!s) return null;
+    const pay = severance(s);
+    this.repo.addLedger([{ clubId, date, category: 'staffSeverance', amount: -pay, memo: `${s.name} 감독 경질 보상금` }]);
+    this.repo.deleteStaff([s.id]);
+    return `${s.name} 감독 경질(보상금 ${won(pay)})`;
+  }
+
   fire(meta: GameMeta, weekId: string, staffId: number) {
     const s = this.staff(meta.userClubId).find((x) => x.id === staffId);
     if (!s) throw new GameError('NOT_AVAILABLE', '우리 구단 직원이 아닙니다.');

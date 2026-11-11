@@ -108,7 +108,8 @@ for (const f of srcFiles.filter((f) => /^src\/(engine|game)\//.test(rel(f)))) {
 // ── 4. 히든 값 노출: 통신 형식·화면에 실제 능력/히든 값이 들어가지 않는가 ───────────────
 {
   const typesPath = join(ROOT, 'src/engine/types.ts');
-  const hiddenKeys = new Set(['hidden']);
+  // EV-4(D-210 (1)): 히든 생활 요인 이름도 통신 형식·화면에 들어가면 안 된다
+  const hiddenKeys = new Set(['hidden', 'selfControl', 'publicAwareness', 'warmth', 'humility', 'pastRecord']);
   if (existsSync(typesPath)) {
     const m = read(typesPath).match(/interface\s+HiddenAttributes\s*\{([\s\S]*?)\n\}/);
     if (m) for (const k of m[1].matchAll(/^\s*(\w+)\s*\??:/gm)) hiddenKeys.add(k[1]);

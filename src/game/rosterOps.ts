@@ -98,6 +98,8 @@ export class RosterOps {
     for (const id of promote) {
       const p = byId.get(id);
       if (!p) throw new GameError('NOT_AVAILABLE', '우리 구단 선수가 아닙니다.');
+      // EV-4(D-210 (6)): 징계 중에는 1군 등록 불가
+      if ((p.sanction?.left ?? 0) > 0) throw new GameError('NOT_AVAILABLE', `${p.name}은(는) 출장 정지 중이라 1군에 등록할 수 없습니다(남은 ${p.sanction!.left}경기).`);
       if (p.level === '1군') throw new GameError('INVALID', `${p.name}은 이미 1군입니다.`);
       if (p.health?.injury && diffDays(meta.currentDate, p.health.injury.returnDate) < 0) throw new GameError('INJURED', `${p.name}은 부상 중이라 1군에 등록할 수 없습니다(복귀 추정 ${p.health.injury.estimate.from.slice(5).replace('-', '/')}~${p.health.injury.estimate.to.slice(5).replace('-', '/')}).`);
       const until = this.reRegisterDate(meta, id);

@@ -31,6 +31,7 @@ export function PlayerAbilities({ p }: { p: PlayerDetailView }) {
       return <td key={key}>{r ? `${fmt(r.low)}–${fmt(r.high)}` : v === undefined ? '—' : fmt(v)}{key === 'velocity' ? ' km/h' : ''}</td>;
     })}</tr>)}</tbody></table></div></section>}
     <section className="panel"><h2>성향 관찰</h2><p className="muted small">신뢰도 {Math.round(p.scouting.confidence)}% · 관측일 {p.scouting.date} · {p.scouting.observer} · 실제 히든 수치가 아닌 관찰 의견입니다.</p>{p.traits.map(t => <p key={t.label}><strong>{t.label}</strong> · {t.text}</p>)}</section>
+    <section className="panel"><h2>평판 메모</h2>{p.reputation.pending ? <p className="muted">판단 유보 — 조사 신뢰도가 40 이상이면 주변 평판을 정리합니다.</p> : p.reputation.notes.length === 0 ? <p className="muted">눈에 띄는 평판 소식이 없습니다.</p> : p.reputation.notes.map((n, i) => <p key={i}>“{n.text}” <span className="muted small">· {n.source} · {n.certainty}</span></p>)}<p className="muted small">소문은 틀릴 수 있습니다. 여러 출처가 겹칠 때 참고하세요.</p></section>
     <section className="panel"><h2>최근 기록 참고</h2><p>최근 60일 내 {p.isPitcher ? '상대 타석' : '타석'} {p.recentSample.count}/{p.recentSample.limit} · 표본 {p.recentSample.sufficient ? '충분' : '부족'}</p></section>
   </>;
 }

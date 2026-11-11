@@ -207,6 +207,24 @@ export interface NewsRow {
   text: string;
 }
 
+/** EV-4 중대 사건 한 건(진실은 히든 생활 요인에서, 화면 응답에 넣지 않는다) */
+export interface CaseRow {
+  id: string;
+  type: string;
+  playerId: PlayerId;
+  clubId: ClubId;
+  season: number;
+  date: GameDate;
+  stage: 'open' | 'investigating' | 'closed';
+  truth: string;
+  openedWeek: number;
+  resolveWeek: number;
+  choice: string | null;
+  /** 이 사건으로 내린 징계 합계(리그 + 구단, 5~30) */
+  games: number;
+  result: string | null;
+}
+
 /** EV-1 이벤트 진행 상태(저장본 meta): 플래그·지연 결과·연쇄 예약·브리핑 비교 기준 */
 export interface EventState {
   flags: Record<string, { value: number; expiresWeek: number | null }>;
@@ -214,6 +232,13 @@ export interface EventState {
   spawns: Array<{ week: number; cardId: string; playerId: PlayerId | null }>;
   /** EV-2(D-205 (7)) 기간 효과: 끝나는 주(그 주부터 없음), 반복 수입·지출은 남은 횟수 */
   effects?: Array<{ type: string; clubId: ClubId; playerId: PlayerId | null; value: number; untilWeek: number; left?: number; won?: number; grade?: string }>;
+  /** EV-4(D-210) 중대 사건 기록, 우리 구단 대기 중대 사건 카드(겹치면 다음 주로), 그 주 사건 소식 */
+  cases?: CaseRow[];
+  pendingMajor?: { caseId: string; kind: 'open' | 'sanction'; range?: [number, number] } | null;
+  majorQueue?: Array<{ caseId: string; kind: 'open' | 'sanction'; range?: [number, number] }>;
+  caseLines?: { results: string[]; league: string[] };
+  /** 중대 사건을 처리한 마지막 주(같은 주 두 번 처리 방지) */
+  caseWeek?: number;
   /** EV-3(D-207 (1)) 구단주가 고를 대기 카드(선택 전 진행 불가) */
   pendingCard?: { cardId: string; playerId: PlayerId | null; week: number; weekId: GameDate; date: GameDate; text: string } | null;
   /** 다음 브리핑의 결과 회수 줄 */

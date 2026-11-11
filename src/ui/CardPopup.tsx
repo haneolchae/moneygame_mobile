@@ -28,11 +28,12 @@ export function CardPopup({ card, nav }: { card: CardView; nav: Nav }) {
   return (
     <div className="modal-backdrop">
       <div className="panel modal">
-        <div className="panel-head">
-          <h2>
-            {card.priority ? '◆ ' : ''}결정 카드 · {card.categoryLabel}
+        <div className="panel-head" style={card.major ? { borderTop: '4px solid var(--do-danger)' } : undefined}>
+          <h2 style={card.major ? { color: 'var(--do-danger)' } : undefined}>
+            {card.major ? '사건 · ' : card.priority ? '◆ 결정 카드 · ' : '결정 카드 · '}
+            {card.categoryLabel}
           </h2>
-          <span className="meta">즉시 선택 · 행동력 0 · 고르기 전에는 진행할 수 없습니다</span>
+          <span className="meta">{card.major ? '필수 결정 · 맡길 수 없습니다 · 결과는 조사 뒤 나옵니다' : '즉시 선택 · 행동력 0 · 고르기 전에는 진행할 수 없습니다'}</span>
         </div>
         <div className="modal-body">
           <p>{card.text}</p>

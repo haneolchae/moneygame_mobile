@@ -835,6 +835,13 @@ export class Market {
     });
   }
 
+  /** EV-4(D-210 (7)) 사건 계약 해지: 기존 방출 규칙(잔여 연봉 의무), 행동력 없음 */
+  releaseForCase(meta: GameMeta, date: GameDate, playerId: number, reason: string): string {
+    const p = this.repo.getPlayer(playerId);
+    if (!p || p.clubId === null) return '';
+    return this.release(meta, date, p, reason);
+  }
+
   releasePlayer(meta: GameMeta, playerId: number) {
     const p = this.releaseTarget(meta, playerId);
     return this.repo.transaction(() => {

@@ -747,7 +747,8 @@
         "label": "경질한다",
         "effects": [
           {
-            "type": "CONTRACT"
+            "type": "CONTRACT",
+            "kind": "fireManager"
           },
           {
             "type": "FAN_NOW",
@@ -758,7 +759,7 @@
             "value": -10
           }
         ],
-        "text": "감독을 경질했다.",
+        "text": "감독을 경질했다. [조직]에서 새 감독을 뽑을 수 있다.",
         "link": "org"
       },
       {
@@ -1085,6 +1086,77 @@
     ]
   },
   {
+    "id": "PRV-09",
+    "type": "decision",
+    "category": "personal",
+    "priority": false,
+    "phases": [
+      "preseason",
+      "regular",
+      "postseason"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.active == 1 && (player.publicAwareness <= 20 || (flag.snsEdu == 0 && player.publicAwareness <= 35))",
+    "weight": 4,
+    "cooldownWeeks": 8,
+    "seasonCap": 1,
+    "delegateTeam": "pr",
+    "delegateDefault": "apology",
+    "texts": [
+      "{player}의 SNS 글이 팬 비하 논란에 휩싸였습니다.",
+      "{player}가 SNS에서 거친 말을 했다가 비판을 받고 있습니다.",
+      "{player}의 SNS 설화가 기사로 퍼졌습니다."
+    ],
+    "choices": [
+      {
+        "id": "apology",
+        "label": "사과문과 구단 징계 5경기",
+        "effects": [
+          {
+            "type": "SUSPEND",
+            "games": 5
+          },
+          {
+            "type": "FAN_NOW",
+            "value": -1
+          }
+        ],
+        "text": "사과문을 내고 구단 징계 5경기를 내렸다."
+      },
+      {
+        "id": "protect",
+        "label": "선수를 감싼다",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": -5
+          },
+          {
+            "type": "CLUBHOUSE",
+            "value": 2
+          }
+        ],
+        "text": "선수를 감쌌다. 여론은 싸늘하다."
+      },
+      {
+        "id": "educate",
+        "label": "선수단 SNS 교육을 도입한다",
+        "effects": [
+          {
+            "type": "CASH",
+            "grade": "small"
+          },
+          {
+            "type": "FLAG",
+            "name": "snsEdu",
+            "weeks": 40
+          }
+        ],
+        "text": "선수단 SNS 교육을 도입했다."
+      }
+    ]
+  },
+  {
     "id": "PRV-11",
     "type": "decision",
     "category": "personal",
@@ -1154,7 +1226,7 @@
       "postseason"
     ],
     "target": "ourPlayer",
-    "trigger": "player.active == 1",
+    "trigger": "player.active == 1 && player.warmth >= 55",
     "weight": 2,
     "cooldownWeeks": 8,
     "seasonCap": 1,
@@ -1187,7 +1259,8 @@
         "text": "구단이 공식 홍보하고 매칭 기부를 했다.",
         "outcomes": [
           {
-            "p": 0.3,
+            "p": 0.85,
+            "cond": "player.humility >= 65",
             "hint": "선수가 불편해할 수 있음",
             "effects": [
               {
@@ -1227,7 +1300,7 @@
       "postseason"
     ],
     "target": "ourPlayer",
-    "trigger": "player.active == 1",
+    "trigger": "player.active == 1 && player.warmth >= 55",
     "weight": 2,
     "cooldownWeeks": 8,
     "seasonCap": 1,
@@ -1283,7 +1356,7 @@
       "postseason"
     ],
     "target": "ourPlayer",
-    "trigger": "player.active == 1",
+    "trigger": "player.active == 1 && player.publicAwareness >= 55",
     "weight": 2,
     "cooldownWeeks": 8,
     "seasonCap": 1,
@@ -1340,7 +1413,7 @@
       "postseason"
     ],
     "target": "ourPlayer",
-    "trigger": "player.active == 1 && player.age >= 24",
+    "trigger": "player.active == 1 && player.age >= 24 && player.warmth >= 55",
     "weight": 2,
     "cooldownWeeks": 8,
     "seasonCap": 1,
@@ -1387,7 +1460,7 @@
       "postseason"
     ],
     "target": "ourPlayer",
-    "trigger": "player.active == 1",
+    "trigger": "player.active == 1 && player.warmth >= 55",
     "weight": 2,
     "cooldownWeeks": 8,
     "seasonCap": 1,

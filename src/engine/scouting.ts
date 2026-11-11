@@ -5,6 +5,8 @@ import { observePlayer } from './observation';
 import { SCOUTING } from './scoutingConfig';
 export { SCOUTING } from './scoutingConfig';
 import type { PlayerTruth } from './types';
+import { EVENTS } from './config';
+import { reputationNotes, scoutSkill, type ReputationNote } from './events/life';
 
 export interface ScoutingSnapshot {
   playerId: number;
@@ -15,6 +17,8 @@ export interface ScoutingSnapshot {
   evidence: string[];
   centers: Record<string, number>;
   traits: Array<{ label: string; text: string }>;
+  /** EV-4(D-210 (2)) 평판 메모(신뢰도 40 이상, 다시 조사해도 같음) */
+  reputation?: ReputationNote[];
 }
 export function currentRatings(p: PlayerTruth): Record<string, number> {
   const out = observePlayer('', p.clubId ?? -1, { ...p, clubId: p.clubId ?? -1 });
@@ -37,7 +41,8 @@ export function createSnapshot(seed: string, clubId: number, p: PlayerTruth, dat
     centers[key] = Math.max(usageRating(key) ? 0 : velocityRating(key) ? SCOUTING.velocityMin : key.startsWith('pos_') ? 0 : 1, Math.min(upper, Math.round((value + error) / unit) * unit));
   }
   const traits = confidence >= SCOUTING.traitThreshold ? traitOpinions(p, seed, clubId, scale) : [];
-  return { playerId: p.id, clubId, date, observer, confidence, evidence: [...(previous?.evidence ?? []), `report:${p.id}:${date}`], centers, traits };
+  const reputation = confidence >= EVENTS.repThreshold ? reputationNotes(seed, clubId, p, scoutSkill(scale)) : undefined;
+  return { playerId: p.id, clubId, date, observer, confidence, evidence: [...(previous?.evidence ?? []), `report:${p.id}:${date}`], centers, traits, ...(reputation ? { reputation } : {}) };
 }
 function traitOpinions(p: PlayerTruth, seed: string, clubId: number, scale: number): ScoutingSnapshot['traits'] {
   const specs = [

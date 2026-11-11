@@ -898,4 +898,20 @@ export const EVENTS = {
   /** 슬럼프: 최근 28일 OPS 미만·최소 타석 */
   slumpOps: 0.55,
   slumpMinPa: 40,
+  /** EV-4(D-210): 히든 생활 요인(과거 이력 비율, 자기관리–성실성 상관), 평판 메모 적중·오탐 */
+  pastMajor: 0.02,
+  pastMinor: 0.06,
+  selfControlCorr: 0.3,
+  repThreshold: 40,
+  repHitBase: 0.5,
+  repHitSpan: 0.2,
+  repFalseBase: 0.15,
+  repFalseSpan: 0.1,
+  /** 한 사건 징계 합계 범위, 연봉 감액 비율, 품위 조항 인센티브 감액 비율 */
+  sanctionMin: 5,
+  sanctionMax: 30,
+  payCut: 0.1,
+  sponsorCut: 0.5,
+  /** AI 구단 방출 기준(사실·리그 징계 이상) */
+  aiReleaseGames: 20,
 } as const;

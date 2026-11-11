@@ -9,14 +9,17 @@ import { ops as opsOf } from '../engine/awards';
 import { SPONSOR } from '../engine/config';
 import type { TeamKey } from '../engine/staff';
 import { GameError } from '../shared/protocol';
-import { isTrue, type ExprValue } from '../engine/events/expr';
+import { isTrue, parseExpr, type ExprValue } from '../engine/events/expr';
+import { lifeOf } from '../engine/events/life';
+import { caseTruth, hazardFactor, MAJOR_CASES, type CaseTruth, type MajorCaseDef } from '../engine/events/major';
+import { draftDate } from './draft';
 import { FINANCE_BASE, inflate, stadiumFee, type LedgerEntry } from '../engine/finance';
 import { EOK } from '../engine/money';
 import { Rng, type RngState } from '../engine/rng';
 import { seasonKeyDates } from '../engine/schedule';
 import type { ClubId, ClubProfile, PlayerId, PlayerTruth } from '../engine/types';
 import { overall } from '../engine/worldgen';
-import type { EventLogRow, EventState, GameMeta, GameRepository, NewsRow } from './ports';
+import type { CaseRow, EventLogRow, EventState, GameMeta, GameRepository, InboxMessage, NewsRow } from './ports';
 import { weekIdFor } from './week';
 
 const md = (d: GameDate) => d.slice(5).replace('-', '/');
@@ -66,6 +69,10 @@ export interface EventDeps {
   prQuality: (clubId: ClubId) => number;
   /** EV-3: 담당 팀 처리량을 쓴다(모자라면 false, 비용 없음) */
   spendWp: (weekId: GameDate, team: TeamKey, wp: number) => boolean;
+  /** EV-4 계약 조치: 방출(기존 방출 규칙), 감독 경질(보상금), AI 운영 상태 */
+  release: (meta: GameMeta, date: GameDate, playerId: PlayerId, reason: string) => string;
+  fireManager: (meta: GameMeta, clubId: ClubId, date: GameDate) => string | null;
+  stance: (clubId: ClubId) => string;
 }
 
 /** 카드 담당 팀 → 조직 팀 키 */
@@ -177,6 +184,24 @@ export class EventOps {
         this.repo.addLedger([{ clubId: c.clubId, date: c.date, category: 'event', amount, memo: `이벤트 ${c.cardId}(반복)` }]);
         if ((e.weeks ?? 1) > 1) (c.state.effects ??= []).push({ type: 'RECUR', clubId: c.clubId, playerId: null, value: 0, untilWeek: c.week + (e.weeks ?? 1), left: (e.weeks ?? 1) - 1, won: amount });
         out.push(`매주 ${amount < 0 ? '지출' : '수입'} ${eok(Math.abs(amount))}(${e.weeks}주)`);
+      } else if (e.type === 'SUSPEND') {
+        // 출장 정지(D-210 (6)): 한 사건 합계 5~30경기
+        if (c.playerId === null) continue;
+        const g = this.addSanction(c.playerId, e.games ?? 0, c.cardId, c.state);
+        if (g !== 0) out.push(g > 0 ? `출장 정지 ${g}경기` : `징계 ${-g}경기 감경`);
+      } else if (e.type === 'CONTRACT') {
+        out.push(this.contract(c, e.kind!));
+      } else if (e.type === 'SPONSOR_CUT') {
+        // 품위 조항(D-210 (8)): 그 시즌 스폰서 계약 1건의 인센티브 절반
+        const meta = this.repo.getMeta();
+        const key = String(c.clubId);
+        const list = [...(meta.sponsors?.[key] ?? [])];
+        const i = list.findIndex((x) => x.season === meta.season && x.incentive.bonusWon > 0);
+        if (i >= 0) {
+          list[i] = { ...list[i]!, incentive: { ...list[i]!.incentive, bonusWon: Math.round((list[i]!.incentive.bonusWon * (1 - E.sponsorCut)) / 1_000_000) * 1_000_000 } };
+          this.repo.updateMeta({ sponsors: { ...(meta.sponsors ?? {}), [key]: list } });
+          out.push(`스폰서 ${list[i]!.brand} 인센티브 감액`);
+        }
       } else if (e.type === 'HEAL') {
         // 부상 복귀일·추정 범위 ±일(내일보다 앞당기지 않는다)
         if (c.playerId === null) continue;
@@ -206,6 +231,202 @@ export class EventOps {
   private recurIncome(c: ApplyCtx, e: CardEffect): number {
     const v = this.recurAmount(c, e.won, e.grade);
     return e.income && e.won === undefined ? -v : v;
+  }
+
+  /** 징계 추가(사건별 합계 0~30, 감경은 음수). 실제로 바뀐 경기 수를 돌려준다 */
+  private addSanction(playerId: PlayerId, games: number, source: string, state: EventState): number {
+    const p = this.repo.getPlayer(playerId);
+    if (!p) return 0;
+    const cs = (state.cases ?? []).find((x) => x.id === source);
+    const before = cs ? cs.games : (p.sanction?.caseId === source ? p.sanction.total : 0);
+    const after = Math.max(0, Math.min(E.sanctionMax, before + games));
+    const d = after - before;
+    if (d === 0) return 0;
+    if (cs) cs.games = after;
+    const cur = p.sanction ?? { total: 0, left: 0, reason: source, caseId: cs ? cs.id : source };
+    const left = Math.max(0, cur.left + d);
+    if (left === 0) delete p.sanction;
+    else p.sanction = { total: Math.max(0, cur.total + d), left, reason: cs ? (MAJOR_CASES.find((m) => m.id === cs.type)?.motif ?? source) : '구단 징계', caseId: cs ? cs.id : source };
+    this.repo.savePlayers([p]);
+    return d;
+  }
+
+  /** 1군 정규시즌 경기가 열린 날: 그 구단 징계 선수 남은 경기 1 차감(D-210 (6)) */
+  deductSanctions(clubIds: ReadonlySet<ClubId>): void {
+    if (!clubIds.size) return;
+    const changed = this.repo.getPlayers().filter((p) => p.sanction && p.clubId !== null && clubIds.has(p.clubId));
+    for (const p of changed) {
+      p.sanction!.left -= 1;
+      if (p.sanction!.left <= 0) delete p.sanction;
+    }
+    if (changed.length) this.repo.savePlayers(changed);
+  }
+
+  /** 계약 조치(D-210 (7)) */
+  private contract(c: ApplyCtx, kind: string): string {
+    if (kind === 'fireManager') return this.deps.fireManager(c.meta, c.clubId, c.date) ?? '감독 공석';
+    if (c.playerId === null) return '';
+    const p = this.repo.getPlayer(c.playerId);
+    if (!p || p.clubId === null) return '';
+    if (kind === 'release') return this.deps.release(c.meta, c.date, p.id, '계약 해지');
+    if (kind === 'withdrawPick') {
+      p.clubId = null;
+      p.level = '2군';
+      p.contractYears = 0;
+      p.career.franchise = false;
+      this.repo.savePlayers([p]);
+      return `${p.name} 지명 철회`;
+    }
+    if (kind === 'payCut') {
+      p.salary = Math.max(30_000_000, round1m(p.salary * (1 - E.payCut)));
+      this.repo.savePlayers([p]);
+      return `연봉 ${Math.round(E.payCut * 100)}% 감액`;
+    }
+    return '';
+  }
+
+  // ───────── EV-4 중대 사건(D-210 (3)~(5)) ─────────
+
+  private clubName(id: ClubId) {
+    return this.clubs.get(id)?.shortName ?? '';
+  }
+
+  /** 주 시작: 결론 → 새 사건 → 우리 대기 카드. 결과·리그 줄은 상태에 남겨 브리핑(시즌)·편지(스토브리그)로 알린다 */
+  private caseStep(meta: GameMeta, monday: GameDate, week: number, state: EventState, rng: Rng): void {
+    state.cases ??= [];
+    state.majorQueue ??= [];
+    const lines = { results: [] as string[], league: [] as string[] };
+    // A) 결론
+    for (const cs of state.cases) if (cs.stage === 'investigating' && cs.resolveWeek <= week) this.conclude(meta, monday, week, cs, state, rng, lines);
+    // B) 새 사건(리그 전 선수에게 같은 모델)
+    const phase = meta.mode === 'stove' ? 'stove' : 'season';
+    const open = new Set(state.cases.filter((x) => x.stage !== 'closed').map((x) => x.playerId));
+    const players = this.repo.getPlayers().filter((p) => p.clubId !== null && !p.retired && !open.has(p.id));
+    const dd = draftDate(meta.season);
+    for (const def of MAJOR_CASES) {
+      if (def.phase !== phase) continue;
+      for (const p of players) {
+        if (open.has(p.id)) continue;
+        if (def.target === 'rookie' && !(p.draft?.year === meta.season && p.draft.clubId === p.clubId && monday > dd && diffDays(monday, dd) <= 21)) continue;
+        if (def.target === 'player' && p.draft?.year === meta.season && p.career.proSeasons === 0) continue;
+        const inj = p.health?.injury;
+        const nearReturn = !!inj && diffDays(inj.returnDate, monday) >= 0 && diffDays(inj.returnDate, monday) <= 28 && diffDays(inj.returnDate, inj.date) >= 28;
+        const risk = def.hazard.base * hazardFactor(def, lifeOf(meta.seed, p), p.hidden.competitiveness, nearReturn);
+        if (Rng.derive(meta.seed, 'case', week, p.id, def.id).next() >= risk) continue;
+        open.add(p.id);
+        this.openCase(meta, monday, week, def, p, state, rng, lines);
+      }
+    }
+    // C) 우리 구단 대기 중대 사건 카드(주당 1장, 나머지는 다음 주로)
+    if (!state.pendingMajor && state.majorQueue.length) state.pendingMajor = state.majorQueue.shift()!;
+    state.caseLines = lines;
+  }
+
+  private openCase(meta: GameMeta, date: GameDate, week: number, def: MajorCaseDef, p: PlayerTruth, state: EventState, rng: Rng, lines: { results: string[]; league: string[] }): void {
+    const id = `${def.id}-${week}-${p.id}`;
+    const truth = caseTruth(def, lifeOf(meta.seed, p), Rng.derive(meta.seed, 'case-truth', id));
+    const [lo, hi] = def.resolveWeeks;
+    const span = lo + Rng.derive(meta.seed, 'case-weeks', id).int(0, hi - lo);
+    const resolveWeek = def.resolveAt === 'opening' ? weekNumber(seasonKeyDates(meta.mode === 'stove' ? meta.season + 1 : meta.season).opening) + span : week + Math.max(1, span);
+    const cs: CaseRow = { id, type: def.id, playerId: p.id, clubId: p.clubId!, season: meta.mode === 'stove' ? meta.season + 1 : meta.season, date, stage: 'open', truth, openedWeek: week, resolveWeek, choice: null, games: 0, result: null };
+    state.cases!.push(cs);
+    // 적발형(약물·음주운전)은 리그 징계를 발생 때 적용
+    if (def.league.atOpen && def.league.games > 0) this.addSanction(p.id, def.league.games, id, state);
+    if (cs.clubId === meta.userClubId) {
+      state.majorQueue!.push({ caseId: id, kind: 'open' });
+      lines.results.push(`[사건] ${p.name}: ${def.motif}${def.league.atOpen ? ` — 리그 ${def.league.games}경기 출장 정지` : ' 의혹'}`);
+    } else {
+      // AI 구단: 운영 상태와 관계없이 우선 유지 선택, 결론에서 방출 여부(D-210 (5))
+      cs.choice = def.ai.keep;
+      cs.stage = 'investigating';
+      const ch = def.choices.find((x) => x.id === cs.choice)!;
+      this.applyEffects(ch.effects.filter((e) => e.type !== 'CONTRACT'), { meta, date, clubId: cs.clubId, playerId: p.id, rng, week, cardId: id, state });
+      lines.league.push(`${this.clubName(cs.clubId)} ${p.name} ${def.motif}${def.league.atOpen ? `, 리그 ${def.league.games}경기 출장 정지` : ' 의혹'}`);
+    }
+  }
+
+  private conclude(meta: GameMeta, date: GameDate, week: number, cs: CaseRow, state: EventState, rng: Rng, lines: { results: string[]; league: string[] }): void {
+    const def = MAJOR_CASES.find((d) => d.id === cs.type)!;
+    const p = this.repo.getPlayer(cs.playerId);
+    const name = p?.name ?? '';
+    const res = def.results[cs.choice!]?.[cs.truth as CaseTruth];
+    const ctx = { meta, date, clubId: cs.clubId, playerId: cs.playerId, rng, week, cardId: cs.id, state };
+    const parts: string[] = [];
+    if (res) {
+      parts.push(...this.applyEffects(res.effects, ctx));
+      let r = rng.next();
+      const hit = (res.outcomes ?? []).find((o) => (r -= o.p) < 0);
+      if (hit) parts.push(...this.applyEffects(hit.effects, ctx));
+      cs.result = hit ? `${res.text} ${hit.text}` : res.text;
+    }
+    // 리그 징계(사실이면 결론 때)
+    if (!def.league.atOpen && def.league.games > 0 && cs.truth === 'fact') {
+      const g = this.addSanction(cs.playerId, def.league.games, cs.id, state);
+      if (g > 0) parts.push(`리그 출장 정지 ${g}경기`);
+    }
+    cs.stage = 'closed';
+    const mine = cs.clubId === meta.userClubId;
+    if (mine) {
+      lines.results.push(`[사건 결론] ${name} ${def.motif}: ${cs.result ?? ''}${parts.length ? ` (${parts.filter(Boolean).join(', ')})` : ''}`);
+      // 구단 징계 폭이 있으면 수위 카드를 한 번 더 받는다
+      if (res?.clubSanction && p?.clubId === cs.clubId) state.majorQueue!.push({ caseId: cs.id, kind: 'sanction', range: res.clubSanction });
+    } else {
+      if (res?.clubSanction) this.addSanction(cs.playerId, res.clubSanction[0], cs.id, state);
+      const stance = this.deps.stance(cs.clubId);
+      const leagueGames = def.league.games;
+      if (cs.truth === 'fact' && leagueGames >= E.aiReleaseGames && (stance === 'rebuild' || stance === 'austerity') && p?.clubId === cs.clubId) parts.push(this.deps.release(meta, date, cs.playerId, '계약 해지'));
+      lines.league.push(`${this.clubName(cs.clubId)} ${name} ${def.motif} 결론: ${cs.truth === 'fact' || cs.truth === 'found' ? '사실' : cs.truth === 'exaggerated' ? '과장' : cs.truth === 'hidden' ? '종결' : '허위'}${cs.games ? `, 징계 ${cs.games}경기` : ''}`);
+    }
+  }
+
+  /** 우리 중대 사건 카드 선택(위임 불가, 행동력 0) */
+  chooseMajor(meta: GameMeta, choiceId: string): { message: string; link: string | null } {
+    const state: EventState = structuredClone(meta.eventState ?? newEventState());
+    const pend = state.pendingMajor;
+    if (!pend) throw new GameError('NOT_AVAILABLE', '고를 중대 사건이 없습니다.');
+    const cs = (state.cases ?? []).find((x) => x.id === pend.caseId);
+    const def = cs ? MAJOR_CASES.find((d) => d.id === cs.type) : undefined;
+    if (!cs || !def) throw new GameError('INVALID', '없는 사건입니다.');
+    const rng = new Rng((meta.rngStreams.event as RngState | undefined) ?? Rng.derive(meta.seed, 'event').state());
+    const week = weekNumber(meta.currentDate);
+    return this.repo.transaction(() => {
+      let message: string;
+      if (pend.kind === 'sanction') {
+        const g = Number(choiceId.replace('sanction:', ''));
+        if (!this.sanctionChoices(pend.range!, cs.games).includes(g)) throw new GameError('INVALID', '없는 징계 수위입니다.');
+        this.addSanction(cs.playerId, g, cs.id, state);
+        message = `구단 징계 ${g}경기를 내렸다.`;
+      } else {
+        const ch = def.choices.find((x) => x.id === choiceId);
+        if (!ch) throw new GameError('INVALID', '없는 선택지입니다.');
+        cs.choice = ch.id;
+        cs.stage = 'investigating';
+        if (ch.coverupP !== undefined) cs.truth = Rng.derive(meta.seed, 'case-cover', cs.id).next() < ch.coverupP ? 'found' : 'hidden';
+        const parts = this.applyEffects(ch.effects, { meta, date: meta.currentDate, clubId: cs.clubId, playerId: cs.playerId, rng, week, cardId: cs.id, state });
+        state.pendingLines.push(`[사건] ${this.repo.getPlayer(cs.playerId)?.name ?? ''} ${def.motif} → 구단주: ${ch.text}${parts.length ? ` (${parts.filter(Boolean).join(', ')})` : ''}`);
+        message = ch.text;
+      }
+      state.pendingMajor = state.majorQueue?.length ? state.majorQueue.shift()! : null;
+      this.repo.updateMeta({ eventState: state, rngStreams: { ...this.repo.getMeta().rngStreams, event: rng.state() } });
+      return { message, link: null };
+    });
+  }
+
+  /** 구단 징계 수위 선택지: 폭의 최소·중간·최대(사건 합계 30 이하) */
+  sanctionChoices(range: [number, number], already: number): number[] {
+    const room = E.sanctionMax - already;
+    const mid = Math.round((range[0] + range[1]) / 2 / 5) * 5;
+    return [...new Set([range[0], mid, range[1]].map((g) => Math.min(g, room)).filter((g) => g > 0))];
+  }
+
+  /** 화면 없는 자동 실행의 중대 사건 선택: 데이터의 자동 실행 선택지, 징계 수위는 최소 */
+  autoMajorChoice(meta: GameMeta): string | null {
+    const pend = meta.eventState?.pendingMajor;
+    if (!pend) return null;
+    const cs = meta.eventState?.cases?.find((x) => x.id === pend.caseId);
+    if (!cs) return null;
+    if (pend.kind === 'sanction') return `sanction:${this.sanctionChoices(pend.range!, cs.games)[0] ?? pend.range![0]}`;
+    return MAJOR_CASES.find((d) => d.id === cs.type)!.auto;
   }
 
   /** 기분 ±(0~100). 50이면 값을 지운다 */
@@ -282,6 +503,19 @@ export class EventOps {
 
   /** 시즌 모드 월요일(일요일 처리 끝)에 한 번: 만료 → 지연 결과 → 브리핑 → 결정 카드 */
   weekStart(meta: GameMeta, monday: GameDate): void {
+    // EV-4: 스토브리그는 중대 사건만(브리핑·결정 카드 없음, 소식은 받은 편지함)
+    if (meta.mode === 'stove') {
+      const state: EventState = structuredClone(meta.eventState ?? newEventState());
+      if (state.caseWeek === weekNumber(monday)) return;
+      state.caseWeek = weekNumber(monday);
+      const rng = new Rng((meta.rngStreams.event as RngState | undefined) ?? Rng.derive(meta.seed, 'event').state());
+      this.caseStep(meta, monday, weekNumber(monday), state, rng);
+      const inbox: InboxMessage[] = [...(state.caseLines?.results ?? []).map((t) => ({ date: monday, kind: 'task' as const, sender: '홍보팀', title: t.slice(0, 60), body: t })), ...(state.caseLines?.league ?? []).map((t) => ({ date: monday, kind: 'news' as const, sender: 'KBO 소식', title: t.slice(0, 60), body: t }))];
+      if (inbox.length) this.repo.addInbox(inbox);
+      state.caseLines = { results: [], league: [] };
+      this.repo.updateMeta({ eventState: state, rngStreams: { ...this.repo.getMeta().rngStreams, event: rng.state() } });
+      return;
+    }
     if (meta.mode !== 'season') return;
     const weekId = weekIdFor(monday);
     if (this.repo.getNews({ weekId }).length) return;
@@ -303,6 +537,10 @@ export class EventOps {
       const parts = this.applyEffects(q.effects, { meta, date: monday, clubId: club, playerId: q.playerId, rng, week, cardId: q.cardId, state });
       results.push(`${q.text}${parts.length ? ` (${parts.join(', ')})` : ''}`);
     }
+    // 2-2) 중대 사건(EV-4): 결론 → 새 사건 → 우리 대기 카드
+    state.caseWeek = week;
+    this.caseStep(meta, monday, week, state, rng);
+    results.push(...(state.caseLines?.results ?? []));
     // 3) 결정 카드 추첨(그 주 1장) → 브리핑 → 맡긴 분류는 담당 팀 처리, 아니면 대기 카드(D-207)
     const fresh = this.repo.getMeta();
     const card = state.pendingCard ? null : this.drawCard(fresh, monday, week, state, rng);
@@ -315,6 +553,12 @@ export class EventOps {
     if (card && delegated) this.resolve(fresh, monday, week, weekId, card.card, card.playerId, text, card.card.delegateDefault, 'delegate', state, rng);
     else if (card) state.pendingCard = { cardId: card.card.id, playerId: card.playerId, week, weekId, date: monday, text };
     this.repo.updateMeta({ eventState: state, rngStreams: { ...this.repo.getMeta().rngStreams, event: rng.state() } });
+  }
+
+  /** 조건식용 히든 생활 요인 변수(화면 응답에는 나오지 않는다) */
+  private lifeVars(meta: GameMeta, p: PlayerTruth): Record<string, ExprValue> {
+    const l = lifeOf(meta.seed, p);
+    return { 'player.selfControl': l.selfControl, 'player.publicAwareness': l.publicAwareness, 'player.warmth': l.warmth, 'player.humility': l.humility };
   }
 
   private cardText(meta: GameMeta, card: LoadedCard, playerId: PlayerId | null, rng: Rng): string {
@@ -431,6 +675,7 @@ export class EventOps {
           return b && b.PA >= E.slumpMinPa && (opsOf(b) || 0) < E.slumpOps ? 1 : 0;
         })(),
         'player.awardRecent': awarded.has(p.id) ? 1 : 0,
+        ...this.lifeVars(meta, p),
       };
     };
     const cands: Array<Candidate & { loaded: LoadedCard }> = [];
@@ -470,7 +715,9 @@ export class EventOps {
     let outcome: string | null = null;
     if (choice.outcomes?.length) {
       let r = rng.next();
-      const hit = choice.outcomes.find((o) => (r -= Math.max(E.outcomeMin, Math.min(E.outcomeMax, o.p))) < 0);
+      // EV-4: 조건(히든 생활 요인)을 채우지 못한 결과는 나오지 않는다
+      const pv = p ? this.lifeVars(meta, p) : {};
+      const hit = choice.outcomes.filter((o) => !o.cond || isTrue(parseExpr(o.cond), (n) => pv[n])).find((o) => (r -= Math.max(E.outcomeMin, Math.min(E.outcomeMax, o.p))) < 0);
       if (hit) {
         outcome = fill(hit.text);
         state.queue.push({ week: week + 1, cardId: card.id, playerId, effects: hit.effects, text: outcome });
@@ -542,6 +789,7 @@ export class EventOps {
     if (newSellouts > 0 && sellouts > 0) good.push(`홈경기 매진 ${newSellouts}경기`);
     // 리그: AI 구단 트레이드, 다음 주 일정
     for (const tr of (meta.tradeHistory ?? []).filter((x) => x.ai && inRange(x.date))) league.push(`트레이드: ${this.clubs.get(tr.clubA)?.shortName} ↔ ${this.clubs.get(tr.clubB)?.shortName} (${tr.aToB.length}:${tr.bToA.length})`);
+    for (const t of state.caseLines?.league ?? []) league.push(t);
     const next = this.nextWeekGames(monday, club);
     if (next.length) league.push(`이번 주 일정: ${next.length}경기 (${next.join(', ')})`);
     const nextSunday = addDays(monday, 6);

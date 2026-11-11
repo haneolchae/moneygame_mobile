@@ -470,6 +470,9 @@ export const SERIES: readonly SeriesDef[] = [
   one('Q_champLast', 'Q', '우승 다음 해 꼴찌', 'season', 1, '우승 다음 시즌 최하위'),
   one('Q_topPaid', 'Q', '최고 연봉 부진', 'season', 1, '최고 연봉 선수 규정 미달'),
   s('Q_apWaste', 'Q', '행동력 소멸', 'once', [100, 500], '쓰지 않고 넘긴 행동력 누적'),
+  // EV-4(D-210 (9)): 중대 사건
+  s('Q_scandal', 'Q', '중대 사건', 'cumulative', [1, 3], '우리 선수 중대 사건이 사실로 확인(건)'),
+  one('Q_coverup', 'Q', '은폐 발각', 'once', 1, '구단이 숨긴 사건이 드러남'),
   one('Q_lowLevel', 'Q', '느린 성장', 'once', 1, '재임 10시즌 레벨 10 미만'),
 ];
 

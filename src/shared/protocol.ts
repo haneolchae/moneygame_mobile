@@ -236,6 +236,10 @@ export interface PlayerDetailView extends PlayerListItem {
   development: { since: string | null; settled: boolean; changes: Array<{ key: string; label: string; delta: number }> } | null;
   scouting: { confidence: number; date: string; observer: string; stale: boolean; reports: number; nextDate: string; apCost: number };
   traits: Array<{ label: string; text: string }>;
+  /** EV-4 평판 메모(우리 선수는 홍보팀 관찰, 다른 구단은 스카우트 조사 신뢰도 40 이상), 출장 정지, 진행 중 사건 */
+  reputation: { notes: Array<{ text: string; source: string; certainty: string }>; pending: boolean };
+  sanction: { left: number; total: number; reason: string } | null;
+  caseOpen: string | null;
   pitches: Array<{ type: string; values: Record<string, number>; ranges: Record<string, { low: number; high: number }> }>;
   recentSample: { count: number; sufficient: boolean; limit: number };
   note: PlayerNoteView;
@@ -819,6 +823,8 @@ export interface CardView {
   player: { id: number; name: string } | null;
   text: string;
   choices: Array<{ id: string; label: string; effects: string[]; risks: Array<{ grade: '낮음' | '보통' | '높음'; hint: string }>; isDefault: boolean; link: string | null }>;
+  /** EV-4 중대 사건 카드(위임 불가, 붉은 머리띠) */
+  major?: boolean;
 }
 
 export type CardDelegationView = Array<{ category: string; label: string; team: string | null; delegable: boolean; delegate: boolean }>;

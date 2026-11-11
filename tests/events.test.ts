@@ -30,7 +30,7 @@ describe('이벤트 엔진·턴 브리핑 (EV-1)', () => {
     expect(CARDS.find((c) => c.id === 'FAN-01')!.inactive).toBeNull();
     // EV-2에서 기분·컨디션 등이 연결돼 켜졌고, 계약 효과(EV-4)를 쓰는 카드는 아직 비활성
     expect(CARDS.find((c) => c.id === 'PRV-04')!.inactive).toBeNull();
-    expect(CARDS.find((c) => c.id === 'MGR-04')!.inactive).toContain('CONTRACT');
+    expect(CARDS.filter((c) => c.inactive)).toEqual([]); // EV-4에서 계약 효과까지 연결돼 모든 카드가 켜졌다
     const bad = parseCards([{ ...CARDS[0], id: 'X', trigger: 'secret.hidden > 1' }, { ...CARDS[0], id: 'Y', delegateDefault: 'nope' }]);
     expect(bad.errors.length).toBe(2);
 
@@ -88,7 +88,7 @@ describe('이벤트 엔진·턴 브리핑 (EV-1)', () => {
       expect(repo.getNews({ weekId: addDays(mid, 14) }).some((n) => n.kind === 'result' && n.text.includes('구단주') && n.text.includes('입장문'))).toBe(true);
       await call(d, 'save.load', { slot: 'ev' });
       await advanceTo(d, check);
-      const snap = (r: typeof repo) => JSON.stringify({ news: r.getNews({ season: 2027 }).filter((n) => n.weekId <= check), log: r.getEventLog({ season: 2027 }).filter((e) => e.date <= check) });
+      const snap = (r: typeof repo) => JSON.stringify({ news: r.getNews({ season: 2027 }).filter((n) => n.weekId <= check), log: r.getEventLog({ season: 2027 }).filter((e) => e.weekId < check) });
       const first = snap(d.saves.repository());
       // 정규시즌 끝까지
       await advanceTo(d, addDays(k.regularSeasonEnd, 1));

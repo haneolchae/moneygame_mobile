@@ -171,6 +171,8 @@ export interface PlayerCareer {
 export interface PlayerTruth {
   /** EV-2(D-205 (1)): 기분 0~100(없으면 50). 경기에는 압박 손실 입력으로만 쓴다 */
   mood?: number;
+  /** EV-4(D-210 (6)): 출장 정지(남은 1군 정규시즌 경기). 징계 중 출전·1군 등록 불가 */
+  sanction?: { total: number; left: number; reason: string; caseId: string | null };
   id: PlayerId;
   name: string;
   birthDate: GameDate;

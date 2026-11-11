@@ -3,7 +3,7 @@ import { createSnapshot, currentRatings, snapshotRanges, SCOUTING, type Scouting
 import { addDays, ageOn, diffDays, mondayOf, weekday, type GameDate } from '../engine/calendar';
 import { CLUB_PROFILES, SEASON_2026_STANDINGS } from '../engine/clubs';
 import { STANCE_LABEL } from '../engine/aiClub';
-import { AI_CLUB, ALLSTAR, AWARDS, LIVE, FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
+import { AI_CLUB, ALLSTAR, AWARDS, EVENTS, LIVE, FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
 import { compensationFor, foreignRenewalDemandUsd, offerTotal, wonToUsd, type ContractOffer } from '../engine/contracts';
 import { CATEGORY_LABEL, FINANCE_BASE, NOT_YET_IMPLEMENTED, scheduledEntries, stadiumFee, type LedgerEntry } from '../engine/finance';
 import { battingSideOf, countModelVersion, createGame, directiveError, mergeOwner, OwnerPause, runGame, simulateGame, type Directive, type GameResult, type GameState, type OffensePlay, type OwnerControl, type OwnerPoint, type OwnerPrePa } from '../engine/gamesim';
@@ -47,6 +47,8 @@ import { CareerOps } from './career';
 import { AwardOps, goldenGloveDate } from './awards';
 import { AllStarOps, lineText } from './allStar';
 import { conditionLogits, EventOps, growthMultiplier, weekNumber } from './events';
+import { MAJOR_CASES } from '../engine/events/major';
+import { reputationNotes } from '../engine/events/life';
 import { CARD_CATEGORIES, CARDS, CATEGORY_LABEL as CARD_CATEGORY_LABEL, CATEGORY_TEAM, TEAM_LABEL as CARD_TEAM_LABEL, type CardCategory } from '../engine/events/cards';
 import { allStarDates, SLOT_LABEL, SLOT_SIZE, TEAM_LABEL } from '../engine/allStar';
 import { awardTitle } from '../engine/awards';
@@ -388,7 +390,7 @@ export class GameService {
     this.awards = new AwardOps(repo, this.clubMap, (m, c, s) => this.seasonClose.expectedRank(m, c, s));
     // 8e(D-189·D-190): 올스타전
     // EV-1(D-203): 턴 브리핑·결정 카드
-    this.events = new EventOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), fatigue: (d, ps) => this.health.fatigueMap(d, ps), adjustTrust: (c, v, d, s) => this.managers.adjustTrust(c, v, d, s), prQuality: (c) => this.org.teamQuality(c, 'pr'), spendWp: (w, t, wp) => { try { this.repo.spendWp(w, t, wp); return true; } catch { return false; } } });
+    this.events = new EventOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), fatigue: (d, ps) => this.health.fatigueMap(d, ps), adjustTrust: (c, v, d, s) => this.managers.adjustTrust(c, v, d, s), prQuality: (c) => this.org.teamQuality(c, 'pr'), spendWp: (w, t, wp) => { try { this.repo.spendWp(w, t, wp); return true; } catch { return false; } }, release: (m, d, id, why) => this.market.releaseForCase(m, d, id, why), fireManager: (m, c, d) => { const r = this.org.dismissManager(m, c, d); this.managers.reset(); return r; }, stance: (c) => this.aiClubs.stance(c) ?? 'middle' });
     this.allStar = new AllStarOps(repo, this.clubMap, (id) => this.managers.profileOf(id), (s, d, ps, env) => this.forms.formsFor(s, d, ps, env), this.budget);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -643,6 +645,8 @@ export class GameService {
 
     const commit: DayCommit = { results, ledger, inbox, apGrant, metaUpdate };
     this.repo.commitDay(date, commit);
+    // EV-4(D-210 (6)): 1군 정규시즌 경기가 열린 구단의 징계 남은 경기 차감
+    this.events.deductSanctions(new Set(fixtures.filter((f) => !f.stage || f.stage === 'regular').flatMap((f) => [f.home, f.away])));
     // 4b-1 부상 판정(D-126): 그날 경기 기록이 저장된 뒤 출전 선수마다 한 번
     this.repo.addInbox(this.health.afterGames(this.meta(), date, results));
     // 포스트시즌: 정규시즌 마지막 날 대진 확정, 이후 경기 결과로 시리즈 진행(같은 트랜잭션)
@@ -721,6 +725,16 @@ export class GameService {
     const startPhase = this.phase();
     while (this.phase() !== 'seasonComplete') {
       // EV-3(D-207 (1)): 대기 결정 카드가 있으면 진행하지 않는다(화면 없는 자동 실행은 위임 기본 선택지)
+      // EV-4(D-210 (5)): 중대 사건 카드가 먼저(위임 불가)
+      const major = this.meta().eventState?.pendingMajor;
+      if (major) {
+        if (autoCards) this.events.chooseMajor(this.meta(), this.events.autoMajorChoice(this.meta())!);
+        else if (daysProcessed === 0) throw new GameError('DECISION_PENDING', '중대 사건 카드를 먼저 고르세요.');
+        else {
+          stoppedReason = '중대 사건이 일어났습니다';
+          break;
+        }
+      }
       const pend = this.meta().eventState?.pendingCard;
       if (pend) {
         if (autoCards) this.events.choose(this.meta(), CARDS.find((c) => c.id === pend.cardId)!.delegateDefault);
@@ -1493,6 +1507,8 @@ export class GameService {
   /** EV-3(D-207 (1)) 대기 결정 카드 화면: 확정 효과 숫자, 확률 효과 위험 등급, 히든 값 없음 */
   cardView(): CardView | null {
     const meta = this.meta();
+    const major = this.majorView(meta);
+    if (major) return major;
     const pend = meta.eventState?.pendingCard;
     if (!pend) return null;
     const card = CARDS.find((c) => c.id === pend.cardId);
@@ -1518,7 +1534,35 @@ export class GameService {
   }
 
   chooseCard(choiceId: string): { message: string; link: string | null } {
-    return this.events.choose(this.meta(), choiceId);
+    const meta = this.meta();
+    return meta.eventState?.pendingMajor ? this.events.chooseMajor(meta, choiceId) : this.events.choose(meta, choiceId);
+  }
+
+  /** EV-4(D-202 (3)·D-210 (9)): 금지약물 징계 시즌(수상은 유지하고 표기만) */
+  private drugSeason(playerId: number | null, season: number): boolean {
+    if (playerId === null) return false;
+    return !!this.meta().eventState?.cases?.some((c) => c.type === 'MAJ-04' && c.playerId === playerId && c.season === season && c.truth === 'fact');
+  }
+
+  /** EV-4 중대 사건 카드 화면: 진실·히든 값 없음, 선택지 즉시 효과만(결과는 조사 뒤 결론에서) */
+  private majorView(meta: GameMeta): CardView | null {
+    const pend = meta.eventState?.pendingMajor;
+    if (!pend) return null;
+    const cs = meta.eventState?.cases?.find((x) => x.id === pend.caseId);
+    const def = cs ? MAJOR_CASES.find((d) => d.id === cs.type) : undefined;
+    if (!cs || !def) return null;
+    const p = this.repo.getPlayer(cs.playerId);
+    const name = p?.name ?? '';
+    const base = { cardId: def.id, category: 'major', categoryLabel: `중대 사건 · ${def.motif}`, priority: true, date: cs.date, player: p ? { id: p.id, name } : null, major: true };
+    if (pend.kind === 'sanction') {
+      return { ...base, text: `${name} ${def.motif} 사건의 구단 징계 수위를 정해야 합니다(리그 + 구단 합계 30경기 이하, 지금까지 ${cs.games}경기).`, choices: this.events.sanctionChoices(pend.range!, cs.games).map((g, i) => ({ id: `sanction:${g}`, label: `구단 징계 ${g}경기`, effects: [`출장 정지 ${g}경기`], risks: [], isDefault: i === 0, link: null })) };
+    }
+    const text = def.texts[Rng.derive(meta.seed, 'case-text', cs.id).int(0, def.texts.length - 1)]!.replace(/\{player\}/g, name);
+    return {
+      ...base,
+      text: `${text} 조사 결과는 ${Math.max(1, cs.resolveWeek - weekNumber(meta.currentDate))}주쯤 뒤 나옵니다.`,
+      choices: def.choices.map((c) => ({ id: c.id, label: c.label, effects: c.effects.map((e) => this.events.describe(meta, e)).filter((x): x is string => !!x), risks: [{ grade: '보통' as const, hint: '결과는 사실 여부에 따라 달라집니다' }], isDefault: c.id === def.auto, link: null })),
+    };
   }
 
   cardDelegation(): CardDelegationView {
@@ -1637,7 +1681,7 @@ export class GameService {
       season: a.season,
       award: a.award,
       slot: a.slot,
-      title: awardTitle(a.award, a.slot),
+      title: `${awardTitle(a.award, a.slot)}${this.drugSeason(a.playerId, a.season) ? ' (금지약물 징계 시즌)' : ''}`,
       group: group(a.award),
       playerId: a.playerId,
       name: a.playerId !== null ? (players.get(a.playerId)?.name ?? `#${a.playerId}`) : a.staffId !== null ? `${staff.get(a.staffId)?.name ?? ''} 감독` : `${this.clubMap.get(a.clubId)?.shortName ?? ''} 프런트`,
@@ -2722,6 +2766,10 @@ export class GameService {
       ...base,
       scouting: { confidence: snapshot.confidence, date: snapshot.date, observer: snapshot.observer, stale: diffDays(meta.currentDate, snapshot.date) >= SCOUTING.staleDays, reports: snapshot.evidence.length - 1, nextDate: snapshot.confidence > 0 ? addDays(snapshot.date, SCOUTING.cooldownDays) : meta.currentDate, apCost: SCOUTING.ap },
       traits: snapshot.traits.length ? snapshot.traits : [{ label: '성향', text: '판단 유보 — 관찰 근거가 부족합니다.' }],
+      // EV-4(D-210 (2)): 우리 선수는 홍보팀 관찰, 다른 구단은 스카우트 조사(신뢰도 40 미만은 판단 유보)
+      reputation: p.clubId === meta.userClubId ? { notes: reputationNotes(meta.seed, meta.userClubId, p, this.org.teamQuality(meta.userClubId, 'pr')), pending: false } : { notes: snapshot.reputation ?? [], pending: snapshot.confidence < EVENTS.repThreshold },
+      sanction: p.sanction ? { left: p.sanction.left, total: p.sanction.total, reason: p.sanction.reason } : null,
+      caseOpen: (() => { const cs = meta.eventState?.cases?.find((x) => x.playerId === p.id && x.stage !== 'closed'); return cs ? `${MAJOR_CASES.find((d) => d.id === cs.type)?.motif ?? '사건'} 조사 중` : null; })(),
       pitches: (p.pitches ?? []).map((pitch, i) => ({ type: pitch.type, values: Object.fromEntries(Object.entries(allRatings).filter(([k]) => k.startsWith('pitch_' + i + '_')).map(([k,v]) => [k.split('_').slice(2).join('_'),v])), ranges: Object.fromEntries(Object.entries(allRanges).filter(([k]) => k.startsWith('pitch_' + i + '_')).map(([k,v]) => [k.split('_').slice(2).join('_'),v])) })),
       recentSample: { count: sample, limit, sufficient: sample >= limit },
       note: this.repo.getPlayerNote(p.id),
@@ -2740,7 +2788,7 @@ export class GameService {
       spray,
       fielding,
       honors: p.honors ?? [],
-      awards: this.repo.getAwards({ playerId: p.id }).map((a) => ({ season: a.season, title: awardTitle(a.award, a.slot) })),
+      awards: this.repo.getAwards({ playerId: p.id }).map((a) => ({ season: a.season, title: `${awardTitle(a.award, a.slot)}${this.drugSeason(a.playerId, a.season) ? ' (금지약물 징계 시즌)' : ''}` })),
       allStar: this.allStarCareer(p.id),
       draftInfo: p.draft ? `${p.draft.year} 신인 드래프트 ${p.draft.round}라운드 ${p.draft.pick}순위 (${p.draft.school})` : null,
       retired: p.retired ? `${p.retired.season} 시즌 뒤 은퇴 (${p.retired.reason})` : null,
