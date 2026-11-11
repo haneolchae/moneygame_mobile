@@ -10,12 +10,12 @@ import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CLUTCH, COUNT_BASE_SHAPE, SIM } from '../src/engine/config';
-import { chainSummary, fitCountTable, fitMatchup, meanPitches, type CountTable } from '../src/engine/count';
+import { chainSummary, fitCountTable, fitMatchup, foulShares, meanPitches, type CountTable } from '../src/engine/count';
 import COUNT_MODEL from '../src/engine/data/countModel.json';
-import { applyDirective, countModelVersion, createGame, finishGame, managerDecide, nextDecision, preparePa, resolvePa, type GameOptions, type GameState, type PaEvent, type PreparedPa } from '../src/engine/gamesim';
+import { applyDirective, countModelVersion, createGame, finishGame, managerDecide, nextDecision, preparePa, resolvePa, runPrePlays, type GameOptions, type GameState, type PaEvent, type PreparedPa } from '../src/engine/gamesim';
 import { emptyTotals, measureLeague, type LeagueTotals } from '../src/engine/leagueCalibration';
 import { prepareTeam } from '../src/engine/lineup';
-import type { LeagueEnvironment } from '../src/engine/probability';
+import { battingSide, type LeagueEnvironment } from '../src/engine/probability';
 import { PROBABILITY_CONFIG } from '../src/engine/probabilityConfig';
 import { Rng } from '../src/engine/rng';
 import type { ClubId, PlayerId, PlayerTruth } from '../src/engine/types';
@@ -56,6 +56,7 @@ function playLeague(active: Map<ClubId, PlayerTruth[]>, n: number, seed: string,
     const g = createGame(i + 1, th, ta, Rng.derive(seed, 'league-calib-detail', i), PROBABILITY_CONFIG.seasonCalibration.maxInnings, e, opts);
     for (let d = nextDecision(g); d; d = nextDecision(g)) {
       applyDirective(g, d, managerDecide(g, d));
+      if (!runPrePlays(g)) continue;
       const prep = preparePa(g);
       const before = { outs: g.outs, bases: mask(g.bases), runs: g.score.home + g.score.away, inning: g.inning, half: g.half, diff: g.score.home - g.score.away };
       const ev = resolvePa(g, prep);
@@ -108,7 +109,7 @@ if (makeTables) {
   const winJson = { version: `wp-${sha(JSON.stringify(winBody))}`, ...winBody };
   writeFileSync(join(process.cwd(), 'src/engine/data/winProbability.json'), JSON.stringify(winJson));
   // 볼카운트 기준표: 리그 기준 대결(볼카운트 층 없이 잰 평균 대결 확률)과 기존 결과별 투구 수에 맞춘다
-  const targets = { rates: { BB: q.BB / q.n, K: q.K / q.n, HBP: q.HBP / q.n }, pitches: { BB: SIM.pitches.bb, K: SIM.pitches.k, HBP: SIM.pitches.hbp, IP: SIM.pitches.other } };
+  const targets = { rates: { BB: q.BB / q.n, K: q.K / q.n, HBP: q.HBP / q.n }, pitches: { BB: SIM.pitches.bb, K: SIM.pitches.k, HBP: SIM.pitches.hbp, IP: SIM.pitches.other }, foul: { ...CLUTCH.foulTargets } };
   const fit = fitCountTable(COUNT_BASE_SHAPE.map((r) => [...r]), targets);
   const countBody = { targets, theta: fit.theta.map((v) => +v.toFixed(6)), maxScaledResidual: +fit.maxScaledResidual.toFixed(6), table: fit.table.map((r) => r.map((v) => +v.toFixed(8))) };
   const countJson = { version: `cm-${sha(JSON.stringify(countBody))}`, ...countBody };
@@ -150,8 +151,18 @@ if (P0.length > 0) {
   let paFail = 0;
   const mass = [0, 0, 0, 0];
   const absorb = [0, 0, 0, 0];
+  // D-171 ③ 좌우: 같은 손·다른 손 대결의 OPS
+  const split = { same: { pa: 0, ab: 0, h: 0, tb: 0, ob: 0, sf: 0 }, opp: { pa: 0, ab: 0, h: 0, tb: 0, ob: 0, sf: 0 } };
   for (let s = 0; s < seeds; s++) {
-    playLeague(activeOf(s), games, `calibrate-${s}`, env, {}, (_g, prep) => {
+    playLeague(activeOf(s), games, `calibrate-${s}`, env, {}, (_g, prep, _before, ev) => {
+      const grp = battingSide(prep.batter, prep.pitcher) === prep.pitcher.throws ? split.same : split.opp;
+      const o = ev.outcome;
+      grp.pa++;
+      if (o === 'BB' || o === 'HBP') grp.ob++;
+      else if (o === 'SF') grp.sf++;
+      else if (o !== 'SH') grp.ab++;
+      const tb = o === '1B' ? 1 : o === '2B' ? 2 : o === '3B' ? 3 : o === 'HR' ? 4 : 0;
+      if (tb) (grp.h++, (grp.tb += tb), grp.ob++);
       if (!prep.clutch) return;
       pa++;
       const f = fitMatchup(P0, { BB: prep.top.BB, K: prep.top.K, HBP: prep.top.HBP }, CLUTCH.fitTolerance, CLUTCH.fitMaxIter);
@@ -166,6 +177,17 @@ if (P0.length > 0) {
   }
   const old = [SIM.pitches.bb, SIM.pitches.k, SIM.pitches.hbp, SIM.pitches.other];
   const clutchMeans = mass.map((m, o) => +(m / absorb[o]!).toFixed(3));
+  // D-169: 기준표의 투구당 파울 비율
+  const fouls = foulShares(P0);
+  const obpOf = (x: typeof split.same) => x.ob / Math.max(1, x.ab + x.ob - x.h + x.sf);
+  const opsOf = (x: typeof split.same) => obpOf(x) + x.tb / Math.max(1, x.ab);
+  const platoonGap = +(opsOf(split.opp) - opsOf(split.same)).toFixed(3);
+  // D-171 ①: 팀 경기당 작전 사건
+  const tg = 2 * t.games;
+  const per = (n: number) => +(n / tg).toFixed(3);
+  const freq = { stealAttempts: per(t.sb + t.cs), stealPct: +(t.sb / Math.max(1, t.sb + t.cs)).toFixed(3), sacBunt: per(t.sh), ibb: per(t.ibb), wildPitch: per(t.wp), passedBall: per(t.pb), balk: per(t.bk), pickoff: per(t.pickoff), pinchHit: per(t.ph), pinchRun: per(t.pr), defSub: per(t.defSub), hitAndRun: per(t.hnr), squeeze: per(t.squeeze) };
+  const inR = (v: number, lo: number, hi: number) => v >= lo && v <= hi;
+  const d171_1 = inR(freq.stealAttempts, 0.4, 1.2) && inR(freq.stealPct, 0.65, 0.82) && inR(freq.sacBunt, 0.08, 0.4) && inR(freq.ibb, 0.03, 0.25) && inR(freq.wildPitch, 0.2, 0.55) && inR(freq.passedBall, 0.02, 0.12) && inR(freq.balk, 0.005, 0.06) && inR(freq.pickoff, 0.01, 0.08) && inR(freq.pinchHit, 0.3, 1.5) && inR(freq.pinchRun, 0.03, 0.4) && inR(freq.defSub, 0.03, 0.5) && inR(freq.hitAndRun, 0.02, 0.25) && freq.squeeze <= 0.06;
   const refMeans = ref.map((v) => +v.toFixed(3));
   const within = (v: number[]) => v.every((x, o) => Math.abs(x - old[o]!) <= 0.1);
   clutchReport = {
@@ -185,7 +207,13 @@ if (P0.length > 0) {
     pitchesOld: old,
     pitchesRef: refMeans,
     pitchesClutch: clutchMeans,
+    foulShares: { early: +fouls.early.toFixed(4), twoStrike: +fouls.twoStrike.toFixed(4), target: CLUTCH.foulTargets },
+    tactics: freq,
+    platoon: { sameOps: +opsOf(split.same).toFixed(3), oppOps: +opsOf(split.opp).toFixed(3), gap: platoonGap, samePa: split.same.pa, oppPa: split.opp.pa },
     verdict: {
+      d171_1,
+      d171_3: platoonGap >= 0.025 && platoonGap <= 0.09,
+      d169_foul: Math.abs(fouls.early - CLUTCH.foulTargets.early) <= 0.01 && Math.abs(fouls.twoStrike - CLUTCH.foulTargets.twoStrike) <= 0.01,
       d168_1: gridMax <= 0.002 && paMax <= 0.002 && gridFail + paFail === 0 && t.countFallback === 0,
       d168_2: within(refMeans) && within(clutchMeans),
       d168_6: t.clutchPa / t.games >= 2 && t.clutchPa / t.games <= 6 && t.clutchChances / t.games >= 1.0,

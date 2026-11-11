@@ -1,6 +1,7 @@
 // 타구·수비 존 모델 (10b 문서, D-102). 홈런이 아닌 인플레이 타구의 구역·담당 수비수·판정·주자 진루·수비 기록.
 // 안타 여부의 기대값은 x 고정 보정 θ(§6)로 10a의 x_match에 맞추고, 타구 질·방향은 안타의 모양을,
 // 개인 수비 능력·타자 주력은 그 위의 차이를 만든다. 수치는 zoneConfig(밸런스 초안)에만 있다.
+import { TACTICS } from './config';
 import { clampP, logit, sigmoid } from './mathx';
 import type { Rng } from './rng';
 import type { PlayerId, PlayerTruth } from './types';
@@ -20,6 +21,31 @@ export interface Runner {
   earned: boolean;
 }
 export type Bases = [Runner | null, Runner | null, Runner | null];
+
+/** 수비 위치(10b §9, 4c-2a D-170): 내야(기본·전진·병살 대비), 외야(기본·전진·후진), 선상 수비 */
+export interface Alignment {
+  infield: 'normal' | 'in' | 'dp';
+  outfield: 'normal' | 'in' | 'back';
+  lines: boolean;
+}
+export const NORMAL_ALIGNMENT: Alignment = { infield: 'normal', outfield: 'normal', lines: false };
+
+/** 수비 위치에 따른 도달 로짓 보정(앵커링 중립 조건에는 넣지 않는다) */
+function alignReachAdj(c: { type: BallType; dir: number; depth: Depth }, al: Alignment): number {
+  const T = TACTICS.align;
+  let adj = 0;
+  if (c.depth === 'IN') {
+    if (al.infield === 'in' && c.type === 'GB') adj += T.infieldInGround;
+    if (al.infield === 'dp') adj += c.dir === 4 ? T.dpCenter : c.dir === 2 || c.dir === 6 ? T.dpSides : 0;
+    if (al.lines && c.type === 'GB') adj += c.dir === 1 || c.dir === 7 ? T.linesGroundLine : c.dir === 2 || c.dir === 6 ? T.linesGroundNear : 0;
+  }
+  if (c.depth === 'SH' || c.depth === 'DP' || c.depth === 'WL') {
+    if (al.outfield === 'in') adj += T.outfieldIn[c.depth];
+    if (al.outfield === 'back') adj += T.outfieldBack[c.depth];
+    if (al.lines && (c.dir === 1 || c.dir === 7)) adj += T.linesOutfield;
+  }
+  return adj;
+}
 
 export interface Credit {
   playerId: PlayerId;
@@ -490,6 +516,9 @@ export interface InPlayInput {
   batterRunner: Runner;
   /** 유형별 타구 질 분포(같은 대결이면 같은 값, 호출하는 쪽에서 캐시 가능) */
   qualities?: Record<BallType, [number, number, number]>;
+  /** 4c-2a: 수비 위치, 히트앤드런으로 주자가 출발했는지 */
+  align?: Alignment;
+  going?: boolean;
 }
 
 export interface ScoredRun {
@@ -552,6 +581,8 @@ interface Play {
   scored: ScoredRun[];
   credits: Credit[];
   blockingZ: number;
+  align: Alignment;
+  going: boolean;
 }
 
 const A = Z.advance;
@@ -674,7 +705,7 @@ function playHit(P: Play, kind: 1 | 2 | 3, infield: boolean): InPlayResult {
   }
   if (r1 && P.outs < 3) {
     if (!third) {
-      const res = tryAdvance(P, r1, ADV_L.singleFirstThird[0]!, ADV_L.singleFirstThird[1]!, armZ, P.dir >= 6 ? A.singleFirstThird.rightSide : 0);
+      const res = tryAdvance(P, r1, ADV_L.singleFirstThird[0]!, ADV_L.singleFirstThird[1]!, armZ, (P.dir >= 6 ? A.singleFirstThird.rightSide : 0) + (P.going ? TACTICS.hitAndRun.firstToThird : 0));
       if (res === SAFE) third = r1;
       else if (res === OUT) recordOut(P, '3B', throwerPos);
       else second = r1;
@@ -750,7 +781,9 @@ function playGroundOut(P: Play, cover: boolean): InPlayResult {
     const G = Z.groundOut;
     const adj = P.dir >= 3 && P.dir <= 5 ? G.dpCenter : P.dir === 1 || P.dir === 7 ? G.dpLine : 0;
     const piv = P.fielders[pivot];
-    const pDp = sigmoid(ADV_L.dpBase[P.q]! + adj + G.dpPivotArm * z(effArm(piv, pivot)) + G.dpPivotFielding * z(effFielding(piv, pivot)) - G.dpBatterSpeed * z(P.batter.batting.speed) - G.dpRunnerSpeed * z(r1.speed));
+    // 4c-2a: 병살 대비 수비 +, 히트앤드런으로 주자가 출발했으면 병살이 크게 준다
+    const tac = (P.align.infield === 'dp' ? TACTICS.align.dpBase : 0) + (P.going ? TACTICS.hitAndRun.dp : 0);
+    const pDp = sigmoid(ADV_L.dpBase[P.q]! + adj + tac + G.dpPivotArm * z(effArm(piv, pivot)) + G.dpPivotFielding * z(effFielding(piv, pivot)) - G.dpBatterSpeed * z(P.batter.batting.speed) - G.dpRunnerSpeed * z(r1.speed));
     if (P.rng.chance(pDp)) {
       recordOut(P, pivot, P.fpos); // 2루 포스 아웃
       if (P.rng.chance(throwErrorProb(z(effAccuracy(piv, pivot))))) {
@@ -796,7 +829,9 @@ function playGroundOut(P: Play, cover: boolean): InPlayResult {
     const G = Z.groundOut.thirdHome;
     if (P.rng.chance(P.dir <= 3 ? G.left : G.centerRight)) {
       // 홈 쇄도: 홈 송구 승부, 타자는 1루에 산다(야수 선택).
-      const ps = sigmoid(ADV_L.homeDashSafe + A.safe.speed * z(r3.speed) - A.safe.arm * z(effArm(P.fielder, P.fpos)) - A.safe.blocking * P.blockingZ);
+      // 4c-2a: 내야 전진이면 홈 승부 기준이 낮다(10b §9)
+      const homeL = P.align.infield === 'in' ? logit(TACTICS.align.infieldInHomeSafe) : ADV_L.homeDashSafe;
+      const ps = sigmoid(homeL + A.safe.speed * z(r3.speed) - A.safe.arm * z(effArm(P.fielder, P.fpos)) - A.safe.blocking * P.blockingZ);
       if (P.rng.chance(ps)) scoreRunner(P, r3, true);
       else recordOut(P, 'C', P.fpos);
       b[2] = r2;
@@ -891,10 +926,12 @@ export function resolveInPlay(rng: Rng, input: InPlayInput): InPlayResult {
 
   // 담당 수비수: 후보 중 도달 확률이 높은 쪽이 처리한다.
   const cands = candidatesFor(type, q, dir, depth, assignDraw);
+  const align = input.align ?? NORMAL_ALIGNMENT;
+  const alignAdj = alignReachAdj(cell, align);
   let fpos = cands[0]!;
   let Pr = -1;
   for (const pos of cands) {
-    const pr = reachProb(cell, z(effRange(fielders[pos], pos)), theta);
+    const pr = reachProb(cell, z(effRange(fielders[pos], pos)), theta + alignAdj);
     if (pr > Pr) {
       Pr = pr;
       fpos = pos;
@@ -918,6 +955,8 @@ export function resolveInPlay(rng: Rng, input: InPlayInput): InPlayResult {
     scored: [],
     credits: [],
     blockingZ: z(fielders.C.catcher?.blocking ?? 50),
+    align,
+    going: input.going === true,
   };
 
   // 도달 → 처리 → 실책 기록

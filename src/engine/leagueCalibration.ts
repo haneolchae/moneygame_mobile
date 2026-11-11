@@ -38,6 +38,20 @@ export interface LeagueTotals {
   clutchGames: number;
   clutchChances: number;
   countFallback: number;
+  /** 4c-2a 작전 사건(D-171 ①): 도루·도루 실패·견제사·폭투·포일·보크, 희생번트·스퀴즈·고의사구·히트앤드런, 대타·대주자·대수비 */
+  sb: number;
+  cs: number;
+  pickoff: number;
+  wp: number;
+  pb: number;
+  bk: number;
+  sh: number;
+  squeeze: number;
+  ibb: number;
+  hnr: number;
+  ph: number;
+  pr: number;
+  defSub: number;
 }
 
 /** 구단별 1군 선수로 무작위 대진 경기를 돌려 리그 합계를 잰다(선발은 로테이션 순서). */
@@ -62,11 +76,15 @@ export function measureLeague(active: Map<ClubId, PlayerTruth[]>, games: number,
     for (const e of r.events) {
       if (e.clutch) clutch++;
       if (e.countFallback) t.countFallback++;
+      if (e.ibb) t.ibb++;
+      if (e.bunt === 'squeeze') t.squeeze++;
+      if (e.hitAndRun) t.hnr++;
       t.pa++;
       const o = e.outcome;
       if (o === 'BB') t.bb++;
       else if (o === 'HBP') t.hbp++;
       else if (o === 'SF') t.sf++;
+      else if (o === 'SH') t.sh++;
       else t.ab++;
       if (o === 'K') t.k++;
       if (o === 'ROE') t.roe++;
@@ -86,6 +104,19 @@ export function measureLeague(active: Map<ClubId, PlayerTruth[]>, games: number,
         else (t.bipFB++, isHit && t.hitFB++);
         if (e.bb.infieldHit) t.infieldHits++;
       }
+    }
+    for (const p of r.plays) {
+      if (p.kind === 'SB') t.sb++;
+      else if (p.kind === 'CS') t.cs++;
+      else if (p.kind === 'PO') t.pickoff++;
+      else if (p.kind === 'WP') t.wp++;
+      else if (p.kind === 'PB') t.pb++;
+      else if (p.kind === 'BK') t.bk++;
+    }
+    for (const s of r.subs) {
+      if (s.kind === 'PH') t.ph++;
+      else if (s.kind === 'PR') t.pr++;
+      else t.defSub++;
     }
     t.clutchPa += clutch;
     if (clutch > 0) t.clutchGames++;
@@ -113,5 +144,5 @@ export function seasonAdjustment(active: Map<ClubId, PlayerTruth[]>, seed: strin
 }
 
 export function emptyTotals(): LeagueTotals {
-  return { games: 0, runs: 0, pa: 0, ab: 0, h: 0, hr: 0, bb: 0, hbp: 0, k: 0, sf: 0, tb: 0, b2: 0, b3: 0, roe: 0, bipGB: 0, hitGB: 0, bipLD: 0, hitLD: 0, bipFB: 0, hitFB: 0, infieldHits: 0, errors: 0, dp: 0, clutchPa: 0, clutchGames: 0, clutchChances: 0, countFallback: 0 };
+  return { games: 0, runs: 0, pa: 0, ab: 0, h: 0, hr: 0, bb: 0, hbp: 0, k: 0, sf: 0, tb: 0, b2: 0, b3: 0, roe: 0, bipGB: 0, hitGB: 0, bipLD: 0, hitLD: 0, bipFB: 0, hitFB: 0, infieldHits: 0, errors: 0, dp: 0, clutchPa: 0, clutchGames: 0, clutchChances: 0, countFallback: 0, sb: 0, cs: 0, pickoff: 0, wp: 0, pb: 0, bk: 0, sh: 0, squeeze: 0, ibb: 0, hnr: 0, ph: 0, pr: 0, defSub: 0 };
 }

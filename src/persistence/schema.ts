@@ -11,7 +11,8 @@ import type { DatabaseSync } from 'node:sqlite';
  */
 // 11: 고정 관측·보고서 이력·세이브별 메모와 관심 등록(D-113).
 // 12: 4c-1 승부처 타석 표시(plate_appearances.clutch, D-167). 타석별 투구 수는 이미 있어 경기별 투수·타자 투구 수는 그 값에서 계산한다.
-export const SCHEMA_VERSION = 12;
+// 13: 4c-2a 주루 사건 표(plays), 타석의 고의사구·번트 표시, 시즌 합계 도루·도루 실패·폭투·보크·포일(D-170).
+export const SCHEMA_VERSION = 13;
 
 const SCHEMA_V3 = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -332,6 +333,21 @@ export function createSchema(db: DatabaseSync): void {
     db.exec(SCHEMA_V9_ADDITIONS);
     db.exec(SCHEMA_V10_ADDITIONS);
     db.exec('ALTER TABLE plate_appearances ADD COLUMN clutch INTEGER NOT NULL DEFAULT 0;');
+    db.exec(`ALTER TABLE plate_appearances ADD COLUMN ibb INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE plate_appearances ADD COLUMN bunt TEXT;
+      CREATE TABLE plays (
+        game_id INTEGER NOT NULL, seq INTEGER NOT NULL, season INTEGER NOT NULL, date TEXT NOT NULL, stage TEXT NOT NULL,
+        inning INTEGER NOT NULL, half TEXT NOT NULL, batting_club INTEGER NOT NULL, kind TEXT NOT NULL, runner_id INTEGER, from_base INTEGER NOT NULL,
+        pitcher_id INTEGER NOT NULL, catcher_id INTEGER NOT NULL, outs_on_play INTEGER NOT NULL,
+        PRIMARY KEY (game_id, seq)
+      ) WITHOUT ROWID;
+      CREATE INDEX plays_runner ON plays (season, runner_id);
+      CREATE INDEX plays_pitcher ON plays (season, pitcher_id);
+      ALTER TABLE batting_season ADD COLUMN SB INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE batting_season ADD COLUMN CS INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE pitching_season ADD COLUMN WP INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE pitching_season ADD COLUMN BK INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE fielding_season ADD COLUMN PB INTEGER NOT NULL DEFAULT 0;`);
     db.exec(`CREATE TABLE scouting_snapshots (club_id INTEGER NOT NULL, player_id INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (club_id, player_id));
       CREATE TABLE scouting_history (club_id INTEGER NOT NULL, player_id INTEGER NOT NULL, date TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (club_id, player_id, date));
       CREATE TABLE player_notes (player_id INTEGER PRIMARY KEY, text TEXT NOT NULL, watched INTEGER NOT NULL, updated_at TEXT NOT NULL);`);

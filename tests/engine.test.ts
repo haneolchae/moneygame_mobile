@@ -79,8 +79,8 @@ describe('경기 시뮬레이션', () => {
       const awayRuns = r.runs.filter((x) => x.battingClub === away).length;
       expect(homeRuns).toBe(r.homeRuns);
       expect(awayRuns).toBe(r.awayRuns);
-      // 원정 공격은 매 이닝 3아웃
-      const awayOuts = r.events.filter((e) => e.half === 'T').reduce((a, e) => a + e.outsOnPlay, 0);
+      // 원정 공격은 매 이닝 3아웃(4c-2a: 도루 실패·견제사 같은 주루 사건 아웃 포함)
+      const awayOuts = [...r.events, ...r.plays].filter((e) => e.half === 'T').reduce((a, e) => a + e.outsOnPlay, 0);
       expect(awayOuts).toBe(r.innings * 3);
       expect(r.innings).toBeLessThanOrEqual(LEAGUE.regularSeasonMaxInnings);
       if (r.outcome === 'tie') expect(r.innings).toBe(LEAGUE.regularSeasonMaxInnings);

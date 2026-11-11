@@ -94,6 +94,15 @@ export function matchupTable(P0: CountTable, logBall: number, logStrike: number,
   });
 }
 
+/** 카운트 지시 배율 [볼, 스트라이크, 파울, 사구, 인플레이]을 곱하고 행마다 다시 합 1로 맞춘다(4c-2a) */
+export function scaleTable(P: CountTable, m: readonly number[]): CountTable {
+  return P.map((row) => {
+    const w = row.map((v, j) => v * m[j]!);
+    const sum = w.reduce((a, b) => a + b, 0);
+    return w.map((v) => v / sum);
+  });
+}
+
 export interface MatchupFit {
   ok: boolean;
   table: CountTable;
@@ -304,12 +313,29 @@ export interface CountPa {
  * 투구 단위 진행. uniform(n)은 n번째 투구의 균등 난수(10a 10.5: 키에서 파생, 순서대로 꺼내 쓰지 않음).
  * maxPitches를 넘으면 다음 투구를 인플레이로 끝낸다(연속 파울 수십 개, 확률상 무시할 만큼 작다).
  */
-export function runCountPa(P: CountTable, uniform: (n: number) => number, maxPitches: number): CountPa {
+export function runCountPa(P0: CountTable, uniform: (n: number) => number, maxPitches: number, onPoint?: (balls: number, strikes: number) => CountTable | null): CountPa {
+  let P = P0;
   let balls = 0;
   let strikes = 0;
   let fouls = 0;
   let strikeEvents = 0;
+  // 결정 지점(10 문서 D-160): 타석 시작, 2스트라이크가 된 때, 3볼이 된 때. 지시가 있으면 그 뒤 투구 확률이 바뀐다
+  let saw2 = false;
+  let saw3 = false;
+  const point = () => {
+    const next = onPoint?.(balls, strikes);
+    if (next) P = next;
+  };
+  point();
   for (let n = 1; ; n++) {
+    if (!saw2 && strikes === 2) {
+      saw2 = true;
+      point();
+    }
+    if (!saw3 && balls === 3) {
+      saw3 = true;
+      point();
+    }
     const p = P[countIndex(balls, strikes)]!;
     let e = INPLAY;
     if (n <= maxPitches) {
@@ -338,29 +364,72 @@ export function runCountPa(P: CountTable, uniform: (n: number) => number, maxPit
   }
 }
 
-/** 리그 기준 대결 맞춤 목표(볼넷·삼진·사구 비율, 결과별 평균 투구 수) */
+/** 리그 기준 대결 맞춤 목표(볼넷·삼진·사구 비율, 결과별 평균 투구 수, 투구당 파울 비율 — D-169) */
 export interface CountTargets {
   rates: { BB: number; K: number; HBP: number };
   pitches: { BB: number; K: number; HBP: number; IP: number };
+  /** 투구당 파울 비율: 2스트라이크 전 카운트, 2스트라이크 카운트(방문 횟수 가중) */
+  foul: { early: number; twoStrike: number };
 }
 
-/** 기준표 조정값 7개(D-167 (3)): 볼·스트라이크·파울·사구 로그 배율, 2스트라이크 파울 배율, 카운트 진행에 따른 사구·인플레이 기울기 */
+/** 0-0에서 시작한 카운트별 기대 방문(투구) 횟수. 2스트라이크 파울 순환은 1/(1 − 파울)로 푼다 */
+export function countVisits(P: CountTable): number[] {
+  const V = new Array(12).fill(0);
+  for (let b = 0; b <= 3; b++) {
+    for (let s = 0; s <= 2; s++) {
+      const i = countIndex(b, s);
+      let inflow = b === 0 && s === 0 ? 1 : 0;
+      if (b > 0) inflow += V[countIndex(b - 1, s)]! * P[countIndex(b - 1, s)]![BALL]!;
+      if (s > 0) inflow += V[countIndex(b, s - 1)]! * (P[countIndex(b, s - 1)]![STRIKE]! + P[countIndex(b, s - 1)]![FOUL]!);
+      V[i] = s === 2 ? inflow / (1 - P[i]![FOUL]!) : inflow;
+    }
+  }
+  return V;
+}
+
+/** 투구당 파울 비율(2스트라이크 전, 2스트라이크) */
+export function foulShares(P: CountTable): { early: number; twoStrike: number } {
+  const V = countVisits(P);
+  let ef = 0;
+  let ev = 0;
+  let tf = 0;
+  let tv = 0;
+  V.forEach((v, i) => {
+    if (i % 3 === 2) {
+      tf += v * P[i]![FOUL]!;
+      tv += v;
+    } else {
+      ef += v * P[i]![FOUL]!;
+      ev += v;
+    }
+  });
+  return { early: ef / ev, twoStrike: tf / tv };
+}
+
+/**
+ * 기준표 조정값 9개(D-167 (3), D-169): 볼·스트라이크·파울·사구 로그 배율, 2스트라이크 파울 배율,
+ * 카운트 진행에 따른 사구·인플레이 기울기, 스트라이크 수에 따른 볼 기울기, 볼 수에 따른 스트라이크 기울기
+ */
 export function shapedTable(base: CountTable, th: number[]): CountTable {
-  const [lb, ls, lf, lh, lf2, sh, si] = th as [number, number, number, number, number, number, number];
+  const p = [...th];
+  while (p.length < 9) p.push(0);
+  const [lb, ls, lf, lh, lf2, sh, si, bs, sb] = p as [number, number, number, number, number, number, number, number, number];
   return base.map((row, idx) => {
     const b = Math.floor(idx / 3);
     const s = idx % 3;
     const depth = b + s;
-    const w = [row[BALL]! * Math.exp(lb), row[STRIKE]! * Math.exp(ls), row[FOUL]! * Math.exp(lf + (s === 2 ? lf2 : 0)), row[HBP]! * Math.exp(lh + sh * depth), row[INPLAY]! * Math.exp(si * depth)];
+    const w = [row[BALL]! * Math.exp(lb + bs * s), row[STRIKE]! * Math.exp(ls + sb * b), row[FOUL]! * Math.exp(lf + (s === 2 ? lf2 : 0)), row[HBP]! * Math.exp(lh + sh * depth), row[INPLAY]! * Math.exp(si * depth)];
     const sum = w.reduce((x, y) => x + y, 0);
     return w.map((x) => x / sum);
   });
 }
 
-/** 기준표 맞춤 잔차(척도: 비율 0.001, 투구 수 0.01) */
+/** 기준표 맞춤 잔차(척도: 비율 0.001, 투구 수 0.01, 파울 비율 0.001) */
 function shapeResiduals(base: CountTable, th: number[], t: CountTargets): number[] {
-  const c = chainSummary(shapedTable(base, th));
+  const P = shapedTable(base, th);
+  const c = chainSummary(P);
   const m = meanPitches(c);
+  const f = foulShares(P);
   return [
     (c.absorb[0] - t.rates.BB) / 0.001,
     (c.absorb[1] - t.rates.K) / 0.001,
@@ -369,6 +438,8 @@ function shapeResiduals(base: CountTable, th: number[], t: CountTargets): number
     (m[1] - t.pitches.K) / 0.01,
     (m[2] - t.pitches.HBP) / 0.01,
     (m[3] - t.pitches.IP) / 0.01,
+    (f.early - t.foul.early) / 0.001,
+    (f.twoStrike - t.foul.twoStrike) / 0.001,
   ];
 }
 
@@ -391,21 +462,23 @@ function solveN(J: number[][], r: number[]): number[] | null {
 
 /** 기준표 맞춤(보정 도구용): 레벤버그-마쿼트. 잔차 최대값(척도 단위)과 조정값을 돌려준다 */
 export function fitCountTable(base: CountTable, t: CountTargets, maxIter = 200): { table: CountTable; theta: number[]; maxScaledResidual: number } {
-  let th = [0, 0, 0, 0, 0, 0, 0];
+  // 조정값 수 = 목표 수(D-169: 9개)
+  const n = shapeResiduals(base, [], t).length;
+  let th = new Array(n).fill(0) as number[];
   let r = shapeResiduals(base, th, t);
   const cost = (v: number[]) => v.reduce((s, x) => s + x * x, 0);
   let mu = 1e-3;
   for (let it = 0; it < maxIter && Math.max(...r.map(Math.abs)) > 1e-3; it++) {
-    const J: number[][] = r.map(() => new Array(7).fill(0));
-    for (let j = 0; j < 7; j++) {
+    const J: number[][] = r.map(() => new Array(n).fill(0));
+    for (let j = 0; j < n; j++) {
       const tp = [...th];
       tp[j]! += 1e-6;
       const rp = shapeResiduals(base, tp, t);
-      for (let i = 0; i < 7; i++) J[i]![j] = (rp[i]! - r[i]!) / 1e-6;
+      for (let i = 0; i < r.length; i++) J[i]![j] = (rp[i]! - r[i]!) / 1e-6;
     }
     // (JᵀJ + μ·diag) δ = −Jᵀr
-    const JtJ = Array.from({ length: 7 }, (_, i) => Array.from({ length: 7 }, (_, j) => J.reduce((s, row) => s + row[i]! * row[j]!, 0)));
-    const Jtr = Array.from({ length: 7 }, (_, i) => -J.reduce((s, row, k) => s + row[i]! * r[k]!, 0));
+    const JtJ = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => J.reduce((s, row) => s + row[i]! * row[j]!, 0)));
+    const Jtr = Array.from({ length: n }, (_, i) => -J.reduce((s, row, k) => s + row[i]! * r[k]!, 0));
     let improved = false;
     for (let k = 0; k < 20; k++) {
       const A = JtJ.map((row, i) => row.map((v, j) => (i === j ? v * (1 + mu) + 1e-12 : v)));

@@ -39,7 +39,7 @@ describe('지난 시즌 상세 기록 압축 (D-106)', () => {
     while ((await call(d, 'game.dashboard')).phase === 'stove') await call(d, 'game.advance', { mode: 'week' });
     expect(repo.getMeta().season).toBe(season + 1);
     expect(repo.isCompressed(season)).toBe(true);
-    expect(repo.getGameEvents(fixtureId)).toEqual({ pas: [], runs: [], fielding: [] });
+    expect(repo.getGameEvents(fixtureId)).toEqual({ pas: [], runs: [], fielding: [], plays: [] });
     expect(JSON.stringify([...repo.battingTotals(season)].sort((a, b) => a[0] - b[0]))).toBe(before.bat);
     expect(JSON.stringify([...repo.battingTotals(season, undefined, 4)].sort((a, b) => a[0] - b[0]))).toBe(before.batClub);
     expect(JSON.stringify([...repo.pitchingTotals(season)].sort((a, b) => a[0] - b[0]))).toBe(before.pit);

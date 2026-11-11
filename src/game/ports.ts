@@ -266,6 +266,9 @@ export interface StoredPa {
   pitches: number;
   /** 4c-1 승부처 타석(볼카운트 층으로 진행, D-167) */
   clutch?: true;
+  /** 4c-2a 고의사구·번트(sac·squeeze) */
+  ibb?: true;
+  bunt?: string;
   /** 인플레이 타구(10b §11): 구역 ID, 유형, 질(0~2), 처리 수비수 */
   bbZone?: string;
   bbType?: string;
@@ -279,6 +282,20 @@ export interface StoredFielding {
   clubId: ClubId;
   playerId: PlayerId;
   kind: 'PO' | 'A' | 'E';
+}
+
+/** 4c-2a 주루 사건(도루·도루 실패·견제사·폭투·포일·보크) */
+export interface StoredPlay {
+  seq: number;
+  inning: number;
+  half: 'T' | 'B';
+  battingClub: ClubId;
+  kind: string;
+  runnerId: PlayerId | null;
+  from: number;
+  pitcherId: PlayerId;
+  catcherId: PlayerId;
+  outsOnPlay: number;
 }
 
 export interface StoredRun {
@@ -529,7 +546,7 @@ export interface GameRepository {
   /** 기본은 정규시즌 경기. 'postseason'이면 포스트시즌 경기 */
   getGames(season: number, stage?: 'regular' | 'postseason'): StoredGame[];
   getGame(fixtureId: FixtureId): StoredGame | null;
-  getGameEvents(fixtureId: FixtureId): { pas: StoredPa[]; runs: StoredRun[]; fielding: StoredFielding[] };
+  getGameEvents(fixtureId: FixtureId): { pas: StoredPa[]; runs: StoredRun[]; fielding: StoredFielding[]; plays: StoredPlay[] };
   battingTotals(season: number, playerIds?: PlayerId[], clubId?: ClubId): Map<PlayerId, BattingTotals>;
   pitchingTotals(season: number, playerIds?: PlayerId[], clubId?: ClubId): Map<PlayerId, PitchingTotals>;
   leaguePitchingTotals(season: number): PitchingTotals;

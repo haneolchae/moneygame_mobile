@@ -14,6 +14,9 @@ export interface BattingTotals {
   HBP: number;
   SO: number;
   SF: number;
+  /** 4c-2a 도루·도루 실패(시작 이전 생성 기록에는 없을 수 있다) */
+  SB?: number;
+  CS?: number;
 }
 
 export interface PitchingTotals {

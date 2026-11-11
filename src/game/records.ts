@@ -9,7 +9,8 @@ import { clubHistory } from '../engine/data/history';
 import { ACHIEVEMENTS, QUALIFY_PA_PER_GAME } from './achievements';
 import type { GameMeta, GameRepository } from './ports';
 
-export const BAT_COLUMNS = ['G', 'PA', 'AB', 'H', '2B', '3B', 'HR', 'RBI', 'R', 'BB', 'SO', 'AVG', 'OBP', 'SLG', 'OPS'];
+// 4c-2a(D-170 (10)): 도루·도루 실패
+export const BAT_COLUMNS = ['G', 'PA', 'AB', 'H', '2B', '3B', 'HR', 'RBI', 'R', 'BB', 'SO', 'SB', 'CS', 'AVG', 'OBP', 'SLG', 'OPS'];
 // 4c-1(D-165·D-167): 투구 수(NP)와 경기당 투구 수(NP/G = 총 투구 수 ÷ 등판 수)는 시즌·통산에 남긴다
 export const PIT_COLUMNS = ['G', 'GS', 'W', 'L', 'SV', 'IP', 'ERA', 'WHIP', 'K', 'BB', 'HR', 'K/9', 'BB/9', 'NP', 'NP/G'];
 
@@ -22,7 +23,7 @@ const f2 = (v: number | null) => (v === null ? null : v.toFixed(2));
 
 export function batValues(t: BattingTotals): Record<string, number | string | null> {
   const r = battingRates(t);
-  return { G: t.G, PA: t.PA, AB: t.AB, H: t.H, '2B': t['2B'], '3B': t['3B'], HR: t.HR, RBI: t.RBI, R: t.R, BB: t.BB, SO: t.SO, AVG: f3(r.AVG), OBP: f3(r.OBP), SLG: f3(r.SLG), OPS: f3(r.OPS) };
+  return { G: t.G, PA: t.PA, AB: t.AB, H: t.H, '2B': t['2B'], '3B': t['3B'], HR: t.HR, RBI: t.RBI, R: t.R, BB: t.BB, SO: t.SO, SB: t.SB ?? 0, CS: t.CS ?? 0, AVG: f3(r.AVG), OBP: f3(r.OBP), SLG: f3(r.SLG), OPS: f3(r.OPS) };
 }
 
 export function pitValues(t: PitchingTotals): Record<string, number | string | null> {

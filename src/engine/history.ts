@@ -167,7 +167,7 @@ export function generateHistory(seed: string, players: PlayerTruth[], lastSeason
 
 export function addBatting(a: BattingTotals, b: BattingTotals): BattingTotals {
   const out = { ...a };
-  for (const k of Object.keys(b) as Array<keyof BattingTotals>) out[k] = (a[k] ?? 0) + b[k];
+  for (const k of Object.keys(b) as Array<keyof BattingTotals>) out[k] = (a[k] ?? 0) + (b[k] ?? 0);
   return out;
 }
 

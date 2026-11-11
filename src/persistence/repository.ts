@@ -9,7 +9,7 @@ import type { ClubId, ClubProfile, Fixture, FixtureId, PlayerId, PlayerTruth, Se
 import type { Amateur } from '../engine/amateur';
 import type { HistoryLine } from '../engine/history';
 import type { StaffMember, TeamKey } from '../engine/staff';
-import type { AchievementRow, TeamSeasonTotals, ApprovalRequest, DelegationPolicy, WorkKind, WorkStatus, WorkTask, WpWeek, ApWeek, CalendarEvent, DayCommit, FaEntry, GameMeta, GameRepository, InboxMessage, InitialWorld, Obligation, OfferRow, SalaryTalk, StoredGame, StoredFielding, StoredPa, StoredRun } from '../game/ports';
+import type { AchievementRow, TeamSeasonTotals, ApprovalRequest, DelegationPolicy, WorkKind, WorkStatus, WorkTask, WpWeek, ApWeek, CalendarEvent, DayCommit, FaEntry, GameMeta, GameRepository, InboxMessage, InitialWorld, Obligation, OfferRow, SalaryTalk, StoredGame, StoredFielding, StoredPa, StoredPlay, StoredRun } from '../game/ports';
 
 type Row = Record<string, unknown>;
 
@@ -301,7 +301,7 @@ export class SqliteGameRepository implements GameRepository {
       const hit = "outcome IN ('1B','2B','3B','HR')";
       this.stmt(
         `INSERT INTO batting_season (season, stage, player_id, club_id, G, PA, AB, H, D, T, HR, RBI, R, BB, HBP, SO, SF)
-         SELECT season, stage, batter_id, batting_club, COUNT(DISTINCT game_id), COUNT(*), SUM(outcome NOT IN ('BB','HBP','SF')), SUM(${hit}),
+         SELECT season, stage, batter_id, batting_club, COUNT(DISTINCT game_id), COUNT(*), SUM(outcome NOT IN ('BB','HBP','SF','SH')), SUM(${hit}),
                 SUM(outcome = '2B'), SUM(outcome = '3B'), SUM(outcome = 'HR'), SUM(rbi), 0, SUM(outcome = 'BB'), SUM(outcome = 'HBP'), SUM(outcome = 'K'), SUM(outcome = 'SF')
            FROM plate_appearances WHERE season = ? GROUP BY stage, batter_id, batting_club`,
       ).run(season);
@@ -324,9 +324,28 @@ export class SqliteGameRepository implements GameRepository {
            FROM runs x JOIN games g ON g.fixture_id = x.game_id WHERE x.season = ? GROUP BY x.stage, x.pitcher_id, ${defClub}
          ON CONFLICT (season, stage, player_id, club_id) DO UPDATE SET R = excluded.R, ER = excluded.ER`,
       ).run(season);
+      // 4c-2a 주루 사건(D-170 (10)): 주자 도루·도루 실패, 투수 아웃(도루 실패·견제사)·폭투·보크, 포수 포일
+      this.stmt(
+        `INSERT INTO batting_season (season, stage, player_id, club_id, G, PA, AB, H, D, T, HR, RBI, R, BB, HBP, SO, SF, SB, CS)
+         SELECT season, stage, runner_id, batting_club, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, SUM(kind = 'SB'), SUM(kind = 'CS')
+           FROM plays WHERE season = ? AND kind IN ('SB','CS') GROUP BY stage, runner_id, batting_club
+         ON CONFLICT (season, stage, player_id, club_id) DO UPDATE SET SB = excluded.SB, CS = excluded.CS`,
+      ).run(season);
+      this.stmt(
+        `INSERT INTO pitching_season (season, stage, player_id, club_id, G, OUTS, BF, H, BB, HBP, K, HR, P, R, ER, WP, BK)
+         SELECT x.season, x.stage, x.pitcher_id, ${defClub}, 0, SUM(x.outs_on_play), 0, 0, 0, 0, 0, 0, 0, 0, 0, SUM(x.kind = 'WP'), SUM(x.kind = 'BK')
+           FROM plays x JOIN games g ON g.fixture_id = x.game_id WHERE x.season = ? GROUP BY x.stage, x.pitcher_id, ${defClub}
+         ON CONFLICT (season, stage, player_id, club_id) DO UPDATE SET OUTS = OUTS + excluded.OUTS, WP = excluded.WP, BK = excluded.BK`,
+      ).run(season);
       this.stmt(
         `INSERT INTO fielding_season (season, stage, player_id, club_id, PO, A, E)
          SELECT season, stage, player_id, club_id, SUM(kind = 'PO'), SUM(kind = 'A'), SUM(kind = 'E') FROM fielding WHERE season = ? GROUP BY stage, player_id, club_id`,
+      ).run(season);
+      this.stmt(
+        `INSERT INTO fielding_season (season, stage, player_id, club_id, PO, A, E, PB)
+         SELECT x.season, x.stage, x.catcher_id, ${defClub}, 0, 0, 0, COUNT(*)
+           FROM plays x JOIN games g ON g.fixture_id = x.game_id WHERE x.season = ? AND x.kind = 'PB' GROUP BY x.stage, x.catcher_id, ${defClub}
+         ON CONFLICT (season, stage, player_id, club_id) DO UPDATE SET PB = excluded.PB`,
       ).run(season);
       this.stmt(
         `INSERT INTO spray_season (season, stage, player_id, zone, bb_type, n, h, xbh)
@@ -336,6 +355,7 @@ export class SqliteGameRepository implements GameRepository {
       this.stmt('DELETE FROM plate_appearances WHERE season = ?').run(season);
       this.stmt('DELETE FROM runs WHERE season = ?').run(season);
       this.stmt('DELETE FROM fielding WHERE season = ?').run(season);
+      this.stmt('DELETE FROM plays WHERE season = ?').run(season);
     });
   }
 
@@ -402,7 +422,7 @@ export class SqliteGameRepository implements GameRepository {
 
   private teamTotalsRaw(season: number, batC: Row[] | null, pitC: Row[] | null, erC: Row[] | null): TeamSeasonTotals[] {
     const bat = batC ?? this.stmt(
-      `SELECT batting_club AS club, COUNT(DISTINCT game_id) AS G, COUNT(*) AS PA, SUM(outcome NOT IN ('BB','HBP','SF')) AS AB,
+      `SELECT batting_club AS club, COUNT(DISTINCT game_id) AS G, COUNT(*) AS PA, SUM(outcome NOT IN ('BB','HBP','SF','SH')) AS AB,
               SUM(outcome IN ('1B','2B','3B','HR')) AS H, SUM(outcome = '2B') AS D, SUM(outcome = '3B') AS T, SUM(outcome = 'HR') AS HR,
               SUM(rbi) AS RBI, SUM(outcome = 'BB') AS BB, SUM(outcome = 'HBP') AS HBP, SUM(outcome = 'K') AS SO, SUM(outcome = 'SF') AS SF
          FROM plate_appearances WHERE stage = 'regular' AND season = ? GROUP BY batting_club`,
@@ -413,6 +433,17 @@ export class SqliteGameRepository implements GameRepository {
               SUM(pa.outcome = 'K') AS K, SUM(pa.outcome = 'HR') AS HR, SUM(pa.pitches) AS P
          FROM plate_appearances pa JOIN games g ON g.fixture_id = pa.game_id WHERE pa.stage = 'regular' AND pa.season = ? GROUP BY club`,
     ).all(season) as Row[];
+    // 4c-2a: 주루 사건 아웃(도루 실패·견제사)도 수비 팀 아웃이다
+    if (!pitC) {
+      const playOuts = this.stmt(
+        `SELECT CASE WHEN x.batting_club = g.home THEN g.away ELSE g.home END AS club, SUM(x.outs_on_play) AS OUTS
+           FROM plays x JOIN games g ON g.fixture_id = x.game_id WHERE x.stage = 'regular' AND x.season = ? GROUP BY club`,
+      ).all(season) as Row[];
+      for (const o of playOuts) {
+        const row = pit.find((r) => num(r.club) === num(o.club));
+        if (row) row.OUTS = num(row.OUTS) + num(o.OUTS);
+      }
+    }
     const er = erC ?? this.stmt(
       `SELECT CASE WHEN r.batting_club = g.home THEN g.away ELSE g.home END AS club, SUM(r.earned) AS ER
          FROM runs r JOIN games g ON g.fixture_id = r.game_id WHERE r.stage = 'regular' AND r.season = ? GROUP BY club`,
@@ -699,8 +730,12 @@ export class SqliteGameRepository implements GameRepository {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insPa = this.stmt(
-        `INSERT INTO plate_appearances (game_id, seq, season, date, inning, half, batting_club, batter_id, pitcher_id, outcome, rbi, outs_on_play, pitches, stage, bb_zone, bb_type, bb_quality, fielder_id, clutch)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO plate_appearances (game_id, seq, season, date, inning, half, batting_club, batter_id, pitcher_id, outcome, rbi, outs_on_play, pitches, stage, bb_zone, bb_type, bb_quality, fielder_id, clutch, ibb, bunt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      const insPlay = this.stmt(
+        `INSERT INTO plays (game_id, seq, season, date, stage, inning, half, batting_club, kind, runner_id, from_base, pitcher_id, catcher_id, outs_on_play)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insFielding = this.stmt('INSERT INTO fielding (game_id, seq, idx, season, club_id, player_id, kind, stage) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
       const insRun = this.stmt(
@@ -711,10 +746,15 @@ export class SqliteGameRepository implements GameRepository {
         const stage = String((stageOf.get(r.fixtureId) as Row | undefined)?.stage ?? 'regular');
         insGame.run(r.fixtureId, meta.season, date, r.home, r.away, r.homeRuns, r.awayRuns, r.innings, r.starters.home, r.starters.away, r.winningPitcher, r.losingPitcher, r.savePitcher, JSON.stringify(r.lineScore), stage);
         for (const e of r.events) {
-          insPa.run(r.fixtureId, e.seq, meta.season, date, e.inning, e.half, e.battingClub, e.batterId, e.pitcherId, e.outcome, e.rbi, e.outsOnPlay, e.pitches, stage, e.bb?.zone ?? null, e.bb?.type ?? null, e.bb?.quality ?? null, e.bb?.fielderId ?? null, e.clutch ? 1 : 0);
+          insPa.run(r.fixtureId, e.seq, meta.season, date, e.inning, e.half, e.battingClub, e.batterId, e.pitcherId, e.outcome, e.rbi, e.outsOnPlay, e.pitches, stage, e.bb?.zone ?? null, e.bb?.type ?? null, e.bb?.quality ?? null, e.bb?.fielderId ?? null, e.clutch ? 1 : 0, e.ibb ? 1 : 0, e.bunt ?? null);
           // 수비 기록: 수비 팀(공격 팀의 상대)
           const defClub = e.battingClub === r.home ? r.away : r.home;
           e.credits.forEach((c, idx) => insFielding.run(r.fixtureId, e.seq, idx, meta.season, defClub, c.playerId, c.kind, stage));
+        }
+        for (const p of r.plays ?? []) {
+          insPlay.run(r.fixtureId, p.seq, meta.season, date, stage, p.inning, p.half, p.battingClub, p.kind, p.runnerId, p.from, p.pitcherId, p.catcherId, p.outsOnPlay);
+          const defClub = p.battingClub === r.home ? r.away : r.home;
+          p.credits.forEach((c, idx) => insFielding.run(r.fixtureId, p.seq, idx, meta.season, defClub, c.playerId, c.kind, stage));
         }
         r.runs.forEach((run, idx) => insRun.run(r.fixtureId, run.seq, idx, meta.season, run.battingClub, run.runnerId, run.pitcherId, run.earned ? 1 : 0, stage));
       }
@@ -751,7 +791,19 @@ export class SqliteGameRepository implements GameRepository {
     return r ? this.toGame(r) : null;
   }
 
-  getGameEvents(fixtureId: FixtureId): { pas: StoredPa[]; runs: StoredRun[]; fielding: StoredFielding[] } {
+  getGameEvents(fixtureId: FixtureId): { pas: StoredPa[]; runs: StoredRun[]; fielding: StoredFielding[]; plays: StoredPlay[] } {
+    const plays = (this.stmt('SELECT * FROM plays WHERE game_id = ? ORDER BY seq').all(fixtureId) as Row[]).map((r) => ({
+      seq: num(r.seq),
+      inning: num(r.inning),
+      half: String(r.half) as 'T' | 'B',
+      battingClub: num(r.batting_club),
+      kind: String(r.kind),
+      runnerId: r.runner_id === null ? null : num(r.runner_id),
+      from: num(r.from_base),
+      pitcherId: num(r.pitcher_id),
+      catcherId: num(r.catcher_id),
+      outsOnPlay: num(r.outs_on_play),
+    }));
     const pas = (this.stmt('SELECT * FROM plate_appearances WHERE game_id = ? ORDER BY seq').all(fixtureId) as Row[]).map((r) => ({
       seq: num(r.seq),
       inning: num(r.inning),
@@ -764,6 +816,8 @@ export class SqliteGameRepository implements GameRepository {
       outsOnPlay: num(r.outs_on_play),
       pitches: num(r.pitches),
       ...(num(r.clutch) === 1 ? { clutch: true as const } : {}),
+      ...(num(r.ibb) === 1 ? { ibb: true as const } : {}),
+      ...(r.bunt ? { bunt: String(r.bunt) } : {}),
       ...(r.bb_zone ? { bbZone: String(r.bb_zone), bbType: String(r.bb_type), bbQuality: num(r.bb_quality), fielderId: num(r.fielder_id) } : {}),
     }));
     const fielding = (this.stmt('SELECT * FROM fielding WHERE game_id = ? ORDER BY seq, idx').all(fixtureId) as Row[]).map((r) => ({
@@ -779,7 +833,7 @@ export class SqliteGameRepository implements GameRepository {
       earned: num(r.earned) === 1,
       battingClub: num(r.batting_club),
     }));
-    return { pas, runs, fielding };
+    return { pas, runs, fielding, plays };
   }
 
   private idFilter(column: string, ids?: PlayerId[]): string {
@@ -794,17 +848,17 @@ export class SqliteGameRepository implements GameRepository {
       const rows = this.db
         .prepare(
           `SELECT player_id AS id, SUM(G) AS G, SUM(PA) AS PA, SUM(AB) AS AB, SUM(H) AS H, SUM(D) AS D, SUM(T) AS T, SUM(HR) AS HR, SUM(RBI) AS RBI, SUM(R) AS R,
-                  SUM(BB) AS BB, SUM(HBP) AS HBP, SUM(SO) AS SO, SUM(SF) AS SF
+                  SUM(BB) AS BB, SUM(HBP) AS HBP, SUM(SO) AS SO, SUM(SF) AS SF, SUM(SB) AS SB, SUM(CS) AS CS
              FROM batting_season WHERE stage = 'regular' AND season = ?${this.idFilter('player_id', playerIds)}${clubF} GROUP BY player_id HAVING SUM(PA) > 0`,
         )
         .all(season) as Row[];
-      return new Map(rows.map((r) => [num(r.id), { G: num(r.G), PA: num(r.PA), AB: num(r.AB), H: num(r.H), '2B': num(r.D), '3B': num(r.T), HR: num(r.HR), RBI: num(r.RBI), R: num(r.R), BB: num(r.BB), HBP: num(r.HBP), SO: num(r.SO), SF: num(r.SF) }]));
+      return new Map(rows.map((r) => [num(r.id), { G: num(r.G), PA: num(r.PA), AB: num(r.AB), H: num(r.H), '2B': num(r.D), '3B': num(r.T), HR: num(r.HR), RBI: num(r.RBI), R: num(r.R), BB: num(r.BB), HBP: num(r.HBP), SO: num(r.SO), SF: num(r.SF), SB: num(r.SB), CS: num(r.CS) }]));
     }
     const club = clubId === undefined ? '' : ` AND batting_club = ${Math.trunc(clubId)}`;
     const rows = this.db
       .prepare(
         `SELECT batter_id AS id, COUNT(DISTINCT game_id) AS G, COUNT(*) AS PA,
-                SUM(outcome NOT IN ('BB','HBP','SF')) AS AB,
+                SUM(outcome NOT IN ('BB','HBP','SF','SH')) AS AB,
                 SUM(outcome IN ('1B','2B','3B','HR')) AS H,
                 SUM(outcome = '2B') AS D, SUM(outcome = '3B') AS T, SUM(outcome = 'HR') AS HR,
                 SUM(rbi) AS RBI, SUM(outcome = 'BB') AS BB, SUM(outcome = 'HBP') AS HBP,
@@ -816,10 +870,14 @@ export class SqliteGameRepository implements GameRepository {
       .prepare(`SELECT runner_id AS id, COUNT(*) AS R FROM runs WHERE stage = 'regular' AND season = ?${this.idFilter('runner_id', playerIds)}${club} GROUP BY runner_id`)
       .all(season) as Row[];
     const runMap = new Map(runs.map((r) => [num(r.id), num(r.R)]));
+    const steals = this.db
+      .prepare(`SELECT runner_id AS id, SUM(kind = 'SB') AS SB, SUM(kind = 'CS') AS CS FROM plays WHERE stage = 'regular' AND season = ? AND kind IN ('SB','CS')${this.idFilter('runner_id', playerIds)}${club} GROUP BY runner_id`)
+      .all(season) as Row[];
+    const stealMap = new Map(steals.map((r) => [num(r.id), r]));
     const out = new Map<PlayerId, BattingTotals>();
     for (const r of rows) {
       const id = num(r.id);
-      out.set(id, { G: num(r.G), PA: num(r.PA), AB: num(r.AB), H: num(r.H), '2B': num(r.D), '3B': num(r.T), HR: num(r.HR), RBI: num(r.RBI), R: runMap.get(id) ?? 0, BB: num(r.BB), HBP: num(r.HBP), SO: num(r.SO), SF: num(r.SF) });
+      out.set(id, { G: num(r.G), PA: num(r.PA), AB: num(r.AB), H: num(r.H), '2B': num(r.D), '3B': num(r.T), HR: num(r.HR), RBI: num(r.RBI), R: runMap.get(id) ?? 0, BB: num(r.BB), HBP: num(r.HBP), SO: num(r.SO), SF: num(r.SF), SB: num(stealMap.get(id)?.SB), CS: num(stealMap.get(id)?.CS) });
     }
     return out;
   }
@@ -852,6 +910,12 @@ export class SqliteGameRepository implements GameRepository {
           .prepare(`SELECT pitcher_id AS id, COUNT(*) AS R, SUM(earned) AS ER FROM runs WHERE stage = 'regular' AND season = ?${this.idFilter('pitcher_id', playerIds)}${club} GROUP BY pitcher_id`)
           .all(season) as Row[]);
     const runMap = new Map(runs.map((r) => [num(r.id), { R: num(r.R), ER: num(r.ER) }]));
+    // 4c-2a: 압축 전 시즌은 주루 사건 아웃(도루 실패·견제사)을 더한다(압축 표에는 이미 들어 있다)
+    const playOuts = compressed
+      ? new Map<number, number>()
+      : new Map(
+          (this.db.prepare(`SELECT pitcher_id AS id, SUM(outs_on_play) AS OUTS FROM plays WHERE stage = 'regular' AND season = ?${this.idFilter('pitcher_id', playerIds)}${club} GROUP BY pitcher_id`).all(season) as Row[]).map((r) => [num(r.id), num(r.OUTS)]),
+        );
     const decisions = this.db
       .prepare(
         `SELECT id, SUM(gs) AS GS, SUM(w) AS W, SUM(l) AS L, SUM(s) AS SV FROM (
@@ -869,7 +933,7 @@ export class SqliteGameRepository implements GameRepository {
       const id = num(r.id);
       const d = decMap.get(id);
       const rr = runMap.get(id);
-      out.set(id, { G: num(r.G), GS: num(d?.GS), OUTS: num(r.OUTS), W: num(d?.W), L: num(d?.L), SV: num(d?.SV), BF: num(r.BF), H: num(r.H), R: rr?.R ?? 0, ER: rr?.ER ?? 0, BB: num(r.BB), HBP: num(r.HBP), K: num(r.K), HR: num(r.HR), pitches: num(r.P) });
+      out.set(id, { G: num(r.G), GS: num(d?.GS), OUTS: num(r.OUTS) + (playOuts.get(id) ?? 0), W: num(d?.W), L: num(d?.L), SV: num(d?.SV), BF: num(r.BF), H: num(r.H), R: rr?.R ?? 0, ER: rr?.ER ?? 0, BB: num(r.BB), HBP: num(r.HBP), K: num(r.K), HR: num(r.HR), pitches: num(r.P) });
     }
     return out;
   }
@@ -968,7 +1032,8 @@ export class SqliteGameRepository implements GameRepository {
          FROM plate_appearances WHERE stage = 'regular' AND season = ?`,
     ).get(season) as Row;
     const runs = this.stmt("SELECT COUNT(*) AS R, SUM(earned) AS ER FROM runs WHERE stage = 'regular' AND season = ?").get(season) as Row;
+    const playOuts = this.stmt("SELECT SUM(outs_on_play) AS OUTS FROM plays WHERE stage = 'regular' AND season = ?").get(season) as Row;
     const games = this.stmt("SELECT COUNT(*) AS n FROM games WHERE stage = 'regular' AND season = ?").get(season) as Row;
-    return { G: num(games.n), GS: num(games.n) * 2, OUTS: num(r.OUTS), W: 0, L: 0, SV: 0, BF: num(r.BF), H: num(r.H), R: num(runs.R), ER: num(runs.ER), BB: num(r.BB), HBP: num(r.HBP), K: num(r.K), HR: num(r.HR), pitches: num(r.P) };
+    return { G: num(games.n), GS: num(games.n) * 2, OUTS: num(r.OUTS) + num(playOuts.OUTS), W: 0, L: 0, SV: 0, BF: num(r.BF), H: num(r.H), R: num(runs.R), ER: num(runs.ER), BB: num(r.BB), HBP: num(r.HBP), K: num(r.K), HR: num(r.HR), pitches: num(r.P) };
   }
 }

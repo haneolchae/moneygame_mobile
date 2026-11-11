@@ -2175,7 +2175,7 @@ export class GameService {
   boxScore(fixtureId: number): BoxScoreView {
     const game = this.repo.getGame(fixtureId);
     if (!game) throw new GameError('GAME_NOT_PLAYED', '아직 치르지 않은 경기입니다.');
-    const { pas, runs } = this.repo.getGameEvents(fixtureId);
+    const { pas, runs, plays } = this.repo.getGameEvents(fixtureId);
     const players = new Map(this.repo.getPlayers().map((p) => [p.id, p]));
     const name = (id: number) => players.get(id)?.name ?? `#${id}`;
     const batting = { home: [] as BoxScoreView['batting']['home'], away: [] as BoxScoreView['batting']['away'] };
@@ -2185,7 +2185,7 @@ export class GameService {
     const batLine = new Map<number, BoxScoreView['batting']['home'][number]>();
     const pitLine = new Map<number, BoxScoreView['pitching']['home'][number] & { outs: number }>();
     const isHit = (o: string) => o === '1B' || o === '2B' || o === '3B' || o === 'HR';
-    const isAb = (o: string) => !['BB', 'HBP', 'SF'].includes(o);
+    const isAb = (o: string) => !['BB', 'HBP', 'SF', 'SH'].includes(o);
     for (const pa of pas) {
       const bSide = sideOf(pa.battingClub);
       const pSide = bSide === 'home' ? 'away' : 'home';
@@ -2229,8 +2229,13 @@ export class GameService {
         if (r.earned) p.ER++;
       }
     }
+    // 4c-2a: 주루 사건 아웃(도루 실패·견제사)은 그때 던진 투수의 아웃이다
+    for (const pl of plays) {
+      const p = pitLine.get(pl.pitcherId);
+      if (p) p.outs += pl.outsOnPlay;
+    }
     for (const p of pitLine.values()) p.IP = formatInnings(p.outs);
-    const outcomeText: Record<string, string> = { '1B': '안타', '2B': '2루타', '3B': '3루타', HR: '홈런', BB: '볼넷', HBP: '몸에 맞는 공', K: '삼진', GO: '땅볼 아웃', FO: '뜬공 아웃', DP: '병살타', SF: '희생플라이', ROE: '실책 출루', FC: '야수 선택' };
+    const outcomeText: Record<string, string> = { '1B': '안타', '2B': '2루타', '3B': '3루타', HR: '홈런', BB: '볼넷', HBP: '몸에 맞는 공', K: '삼진', GO: '땅볼 아웃', FO: '뜬공 아웃', DP: '병살타', SF: '희생플라이', SH: '희생번트', ROE: '실책 출루', FC: '야수 선택' };
     // 인플레이 타구는 처리(또는 쫓아간) 수비수를 함께 보여 준다(10b §11 기록).
     const playByPlay = pas.map((pa) => ({ inning: pa.inning, half: pa.half, text: `${name(pa.batterId)}: ${outcomeText[pa.outcome] ?? pa.outcome}${pa.fielderId ? ` · ${name(pa.fielderId)}` : ''}${pa.rbi ? ` (${pa.rbi}타점)` : ''}` }));
     const stripOuts = (list: Array<BoxScoreView['pitching']['home'][number] & { outs?: number }>) => list.map(({ outs: _o, ...rest }) => rest);

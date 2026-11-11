@@ -213,7 +213,7 @@ export function prepareTeam(
     // 수동 계획에 출전할 수 없는 선수가 있으면 그 경기만 감독 추천으로 대체한다(저장된 계획은 그대로).
     const blocked = avail.out?.size ? plan.lineup.some((s) => avail.out!.has(s.playerId)) || plan.rotation.some((id) => avail.out!.has(id)) || (plan.closer !== null && avail.out.has(plan.closer)) : false;
     const effective = blocked ? repairPlan(plan, activePlayers, rotationSize).plan : plan;
-    if (planProblems(effective, activePlayers, rotationSize).length === 0) return preparePlanned(clubId, activePlayers, usage, lastStarterId, effective);
+    if (planProblems(effective, activePlayers, rotationSize).length === 0) return withBench(preparePlanned(clubId, activePlayers, usage, lastStarterId, effective), activePlayers);
   } else if (avail.tired?.size) {
     // 감독 자동 운영: 피로가 높은 야수는 대체가 가능하면 쉬게 한다.
     const rested = activePlayers.filter((p) => p.isPitcher || !avail.tired!.has(p.id));
@@ -232,5 +232,11 @@ export function prepareTeam(
   // 비상(D-126): 부상으로 출전 가능한 야수가 9명보다 적으면 선발이 아닌 투수가 빈 타순을 채운다.
   if (hitters.length < 9) hitters = [...hitters, ...bullpen.filter((p) => p !== closer).slice(-(9 - hitters.length))];
   const { lineup, defense } = buildLineup(hitters);
-  return { clubId, lineup, starter, bullpen: bullpen.filter((p) => !hitters.includes(p)), closer, defense };
+  return withBench({ clubId, lineup, starter, bullpen: bullpen.filter((p) => !hitters.includes(p)), closer, defense }, activePlayers);
+}
+
+/** 4c-2a: 라인업에 없는 1군 야수를 대타·대주자·대수비 후보로 붙인다 */
+function withBench(setup: TeamSetup, activePlayers: PlayerTruth[]): TeamSetup {
+  const inLineup = new Set(setup.lineup.map((s) => s.player.id));
+  return { ...setup, bench: activePlayers.filter((p) => !p.isPitcher && !inLineup.has(p.id)) };
 }

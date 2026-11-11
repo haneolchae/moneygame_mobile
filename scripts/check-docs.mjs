@@ -182,9 +182,12 @@ else {
     if (m && /[a-z]/.test(m[1])) progress.push({ order: m[1], name: m[3], done: Boolean(m[2]) });
   }
   if (!progress.length) errors.push('06_progress.md에서 진행 상황 표를 찾지 못함');
+  // 오래된 결과 섹션은 06_progress_archive.md로 옮긴다(최근 10개만 06에 둔다). 결과 섹션은 두 문서 중 어디에 있어도 된다.
+  const archivePath = docPath('06_progress_archive.md');
+  const results = t + (archivePath ? `\n${read(archivePath)}` : '');
   for (const p of progress.filter((p) => p.done)) {
     const re = new RegExp(`^##\\s*${p.order}\\b.*결과`, 'm');
-    if (!re.test(t)) errors.push(`${p.order}(${p.name})가 완료 표시인데 06_progress.md에 '## ${p.order} … 결과' 섹션이 없음`);
+    if (!re.test(results)) errors.push(`${p.order}(${p.name})가 완료 표시인데 06_progress.md·06_progress_archive.md에 '## ${p.order} … 결과' 섹션이 없음`);
   }
 
   // 테스트 수: 문서에 마지막으로 기록된 'N개 통과'와 실제 비교. verify는 Vitest 실행 결과를 --tests로 넘긴다.

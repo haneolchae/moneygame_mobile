@@ -55,7 +55,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
     return first ? first.from : playerClub.get(id);
   };
   for (const g of games) {
-    const { pas, runs, fielding } = repo.getGameEvents(g.fixtureId);
+    const { pas, runs, fielding, plays } = repo.getGameEvents(g.fixtureId);
     const homeRuns = runs.filter((r) => r.battingClub === g.home).length;
     const awayRuns = runs.filter((r) => r.battingClub === g.away).length;
     if (homeRuns !== g.homeRuns || awayRuns !== g.awayRuns) errors.push(`경기 ${g.fixtureId} 득점 불일치 (${g.homeRuns}:${g.awayRuns} vs ${homeRuns}:${awayRuns})`);
@@ -72,7 +72,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
     for (const pa of pas) {
       if (clubOn(pa.batterId, g.date) !== pa.battingClub) errors.push(`경기 ${g.fixtureId} 타자 소속 불일치 ${pa.batterId}`);
       if (clubOn(pa.pitcherId, g.date) === pa.battingClub) errors.push(`경기 ${g.fixtureId} 투수가 같은 팀 타자 상대 ${pa.pitcherId}`);
-      if (pa.pitches < 1) errors.push(`경기 ${g.fixtureId} 타석 ${pa.seq} 투구 수 ${pa.pitches}`);
+      if (pa.pitches < (pa.ibb ? 0 : 1)) errors.push(`경기 ${g.fixtureId} 타석 ${pa.seq} 투구 수 ${pa.pitches}`);
       pitcherSum.set(pa.pitcherId, (pitcherSum.get(pa.pitcherId) ?? 0) + pa.pitches);
       batterSum.set(pa.batterId, (batterSum.get(pa.batterId) ?? 0) + pa.pitches);
       if (pa.clutch) {
@@ -85,12 +85,13 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
     for (const v of batterSum.values()) byBatter += v;
     if (byPitcher !== byBatter) errors.push(`경기 ${g.fixtureId} 투수 투구 수 합 ${byPitcher} ≠ 타자가 본 투구 수 합 ${byBatter}`);
     // 원정팀 아웃 수: 9이닝 이상 완료 경기는 이닝 수 × 3 (끝내기·말 공격 생략은 홈팀만 해당)
-    const awayOuts = pas.filter((p) => p.half === 'T').reduce((a, p) => a + p.outsOnPlay, 0);
+    // 4c-2a: 주루 사건 아웃(도루 실패·견제사)도 이닝 아웃이다
+    const awayOuts = [...pas, ...plays].filter((p) => p.half === 'T').reduce((a, p) => a + p.outsOnPlay, 0);
     if (awayOuts !== g.innings * 3) errors.push(`경기 ${g.fixtureId} 원정 아웃 ${awayOuts} ≠ ${g.innings * 3}`);
     if (g.homeRuns !== g.awayRuns) {
       if (!g.winningPitcher || !g.losingPitcher) errors.push(`경기 ${g.fixtureId} 승패 투수 누락`);
     }
-    errors.push(...checkFielding(g.fixtureId, g.home, g.away, pas, runs, fielding));
+    errors.push(...checkFielding(g.fixtureId, g.home, g.away, pas, runs, fielding, plays));
   }
   return errors;
 }
@@ -106,6 +107,7 @@ export function checkFielding(
   pas: ReturnType<GameRepository['getGameEvents']>['pas'],
   runs: ReturnType<GameRepository['getGameEvents']>['runs'],
   fielding: ReturnType<GameRepository['getGameEvents']>['fielding'],
+  plays: ReturnType<GameRepository['getGameEvents']>['plays'] = [],
 ): string[] {
   const errors: string[] = [];
   const bySeq = new Map<number, { po: number; a: number }>();
@@ -122,6 +124,15 @@ export function checkFielding(
   ]);
   let outsBefore = 0;
   let half = '';
+  // 4c-2a: 주루 사건도 순번 순서로 함께 본다(아웃마다 자살 1개, 도루 실패·견제사는 보살 1개)
+  for (const pl of plays) {
+    const c = bySeq.get(pl.seq) ?? { po: 0, a: 0 };
+    if (c.po !== pl.outsOnPlay) errors.push(`경기 ${fixtureId} 주루 ${pl.seq}(${pl.kind}) 자살 ${c.po}개 ≠ 아웃 ${pl.outsOnPlay}개`);
+    if ((pl.kind === 'CS' || pl.kind === 'PO') !== (pl.outsOnPlay === 1)) errors.push(`경기 ${fixtureId} 주루 ${pl.seq}(${pl.kind}) 아웃 ${pl.outsOnPlay}개`);
+    const defClub = pl.battingClub === home ? away : home;
+    teamOuts.set(defClub, (teamOuts.get(defClub) ?? 0) + pl.outsOnPlay);
+  }
+  const playOutsBefore = (seq: number, key: string) => plays.filter((p) => p.seq < seq && `${p.inning}${p.half}` === key).reduce((a, p) => a + p.outsOnPlay, 0);
   for (const pa of pas) {
     const key = `${pa.inning}${pa.half}`;
     if (key !== half) {
@@ -132,7 +143,9 @@ export function checkFielding(
     if (c.po !== pa.outsOnPlay) errors.push(`경기 ${fixtureId} 타석 ${pa.seq} 자살 ${c.po}개 ≠ 아웃 ${pa.outsOnPlay}개`);
     if (c.a > 0 && pa.outsOnPlay === 0) errors.push(`경기 ${fixtureId} 타석 ${pa.seq} 아웃 없는 보살`);
     if (pa.outcome === 'DP' && pa.outsOnPlay !== 2) errors.push(`경기 ${fixtureId} 타석 ${pa.seq} 병살인데 아웃 ${pa.outsOnPlay}개`);
-    if (pa.outcome === 'SF' && (outsBefore >= 2 || !runSeqs.has(pa.seq))) errors.push(`경기 ${fixtureId} 타석 ${pa.seq} 희생플라이 조건 위반`);
+    if (pa.outcome === 'SF' && (outsBefore + playOutsBefore(pa.seq, key) >= 2 || !runSeqs.has(pa.seq))) errors.push(`경기 ${fixtureId} 타석 ${pa.seq} 희생플라이 조건 위반`);
+    if (pa.outcome === 'SH' && pa.outsOnPlay !== 1) errors.push(`경기 ${fixtureId} 타석 ${pa.seq} 희생번트인데 아웃 ${pa.outsOnPlay}개`);
+    if (pa.ibb && (pa.outcome !== 'BB' || pa.pitches !== 0)) errors.push(`경기 ${fixtureId} 타석 ${pa.seq} 고의사구 기록 위반`);
     const defClub = pa.battingClub === home ? away : home;
     teamOuts.set(defClub, (teamOuts.get(defClub) ?? 0) + pa.outsOnPlay);
     outsBefore += pa.outsOnPlay;

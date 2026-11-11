@@ -284,7 +284,7 @@ export class RosterOps {
           const l = line(e.batterId);
           batted.add(e.batterId);
           l.PA++;
-          if (!['BB', 'HBP', 'SF'].includes(e.outcome)) l.AB++;
+          if (!['BB', 'HBP', 'SF', 'SH'].includes(e.outcome)) l.AB++;
           if (['1B', '2B', '3B', 'HR'].includes(e.outcome)) l.H++;
           if (e.outcome === 'HR') l.HR++;
           if (e.outcome === 'BB') l.BB++;
@@ -299,6 +299,12 @@ export class RosterOps {
           if (e.outcome === 'BB') l.BBA++;
           if (e.outcome === 'K') l.K++;
         }
+      }
+      // 4c-2a: 주루 사건 아웃은 그때 던진 투수의 아웃
+      for (const pl of r.plays) {
+        if (!mine.has(pl.pitcherId)) continue;
+        line(pl.pitcherId).OUTS += pl.outsOnPlay;
+        pitched.add(pl.pitcherId);
       }
       for (const run of r.runs) if (mine.has(run.pitcherId) && run.earned) line(run.pitcherId).ER++;
       for (const id of batted) line(id).G++;

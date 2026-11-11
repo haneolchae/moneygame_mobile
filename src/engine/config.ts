@@ -487,6 +487,8 @@ export const CLUTCH = {
   maxPitches: 40,
   /** 승리 확률 표 만들기: 반 이닝 득점 상한, 정규시즌 마지막 이닝, 표 점수 차 범위 */
   table: { runsCap: 20, maxInnings: 11, diffMax: 10 },
+  /** 기준표 투구당 파울 비율 목표(D-169 초기안): 2스트라이크 전, 2스트라이크 */
+  foulTargets: { early: 0.16, twoStrike: 0.25 },
 } as const;
 
 /**
@@ -508,6 +510,59 @@ export const COUNT_BASE_SHAPE: readonly (readonly [number, number, number, numbe
   [0.37, 0.24, 0.19, 0.005, 0.195],
   [0.32, 0.15, 0.29, 0.005, 0.235],
 ];
+
+/** 4c-2a 작전 사건·감독 AI 판단(D-170 초기안). z = (능력 − 50) / 10 */
+export const TACTICS = {
+  /** 감독 AI가 상대 선수를 볼 때 쓰는 구단 추정 편차(구단·선수·항목 고정) */
+  estimateSd: 6,
+  /** 좌우 상대: 같은 손 대결의 투수 쪽 보정 로짓(다른 손이면 부호 반대) */
+  platoon: { b: -0.05, k: 0.1, h: -0.1, x: -0.04 },
+  // 보정 도구 측정(D-171 ①)으로 맞춘 값: 처음 기준 0.74·0.70, 손익분기 0.72·0.80, 시도 비율 0.35, 폭투 1.0%, 견제사 0.5%는 도루 시도·성공률·견제사가 범위를 넘거나 폭투가 모자랐다
+  steal: {
+    base2: 0.71,
+    base3: 0.67,
+    speed: 0.6,
+    baserunning: 0.3,
+    catcherArm: 0.35,
+    catcherTransfer: 0.15,
+    hold: 0.25,
+    breakEven2: 0.66,
+    breakEven3: 0.74,
+    maxDiff: 4,
+    /** 조건을 갖춘 타석에서 실제로 시도하는 비율(감독 판단의 변동) */
+    attemptShare: 0.16,
+  },
+  /** 타석당 주루 사건 기준 확률(주자가 있을 때)과 능력 반영 계수(로그 배율) */
+  pickoff: { rate: 0.0035, hold: 0.4 },
+  wildPitch: { rate: 0.012, control: -0.3 },
+  passedBall: { rate: 0.002, blocking: -0.4 },
+  balk: { rate: 0.0012, hold: -0.3 },
+  hitAndRun: { k: -0.25, dp: -1.5, firstToThird: 0.8, minSpeed: 55, minContact: 55, attemptShare: 0.12 },
+  bunt: { sacBase: 0.78, squeezeBase: 0.62, skill: 0.6, hitBase: 0.05, hitSpeed: 0.3, sacShare: 0.5, weakIndex: 40, squeezeShare: 0.25 },
+  ibb: { minInning: 8, maxDiff: 2, gap: 8 },
+  pinchHit: { minInning: 7, gap: 10, protectTop: 4, platoon: 4 },
+  pinchRun: { minInning: 8, maxDiff: 1, speedGap: 20 },
+  defSub: { minInning: 8, minLead: 1, maxLead: 3, gap: 15 },
+  /** 수비 위치 보정(10b §9): 도달 로짓 보정, 병살·홈 송구 */
+  align: {
+    infieldInGround: -0.5,
+    infieldInHomeSafe: 0.3,
+    dpCenter: 0.4,
+    dpSides: -0.3,
+    dpBase: 0.3,
+    outfieldIn: { SH: 0.6, DP: -0.5, WL: -0.8 },
+    outfieldBack: { SH: -0.5, DP: 0.3, WL: 0.4 },
+    linesGroundLine: 0.8,
+    linesGroundNear: -0.4,
+    linesOutfield: 0.4,
+  },
+  /** 카운트 지시 배율(그 지점부터 타석 끝까지) */
+  count: {
+    take: { ball: 1, strike: 1.15, foul: 0.5, inplay: 0.4 },
+    pitchAround: { ball: 1.35, strike: 0.85, foul: 1, inplay: 0.8 },
+    attack: { ball: 0.8, strike: 1.1, foul: 1, inplay: 1.1 },
+  },
+} as const;
 
 /** 7a AI 구단 운영 상태·긴축·AI 간 트레이드(D-155 초기안) */
 export const AI_CLUB = {
