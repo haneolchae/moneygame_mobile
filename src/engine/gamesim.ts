@@ -10,8 +10,11 @@
 //  - 실책으로 출루한 주자와 실책 플레이로 들어온 득점만 비자책으로 처리한다.
 //  - 승리투수: 결승점 시점의 투수. 선발이 5이닝(15아웃) 미만이면 가장 많은 아웃을 잡은 구원투수.
 //  - 홀드는 아직 판정하지 않는다.
-import { SIM } from './config';
+import { CLUTCH, SIM } from './config';
+import { fitMatchup, runCountPa, type CountTable } from './count';
+import COUNT_MODEL from './data/countModel.json';
 import { BATTER_DIRECTION, consistencyPerformance, FORM_EVENTS, pressureIndex, pressureLoss, type PlayerForm } from './form';
+import { leverage } from './winProb';
 import { batterSide, battingSide, combineTop, effectivePitching, framingContext, NEUTRAL_ENVIRONMENT, paProbabilities, pitcherSide, typeShares, type DefenseContext, type LeagueEnvironment, type SideLogits, type TopLevel } from './probability';
 import { Rng } from './rng';
 import type { ClubId, FixtureId, PlayerId, PlayerTruth, Position } from './types';
@@ -55,6 +58,12 @@ export interface PaEvent {
   credits: Credit[];
   /** 인플레이 타구 정보(구역·유형·질·처리 수비수). 홈런·볼넷·삼진은 없음 */
   bb?: { zone: string; type: BallType; quality: Quality; fielderId: PlayerId; infieldHit: boolean };
+  /** 4c-1 승부처 타석(볼카운트 층으로 진행, D-161). 일반 타석은 없음 */
+  clutch?: true;
+  /** 승부처 타석의 마지막 카운트(메모리에만, 저장하지 않음 — D-165) */
+  count?: { balls: number; strikes: number; fouls: number };
+  /** 승부처 기준을 넘었지만 대결 맞춤을 풀지 못해 타석 단위로 계산한 타석(D-167 (4), 목표 0건) */
+  countFallback?: true;
 }
 
 export interface RunEvent {
@@ -110,6 +119,23 @@ export { paProbabilities };
 export interface GameOptions {
   forms?: { batter: ReadonlyMap<PlayerId, PlayerForm>; pitcher: ReadonlyMap<PlayerId, PlayerForm> };
   postseason?: boolean;
+  /** 볼카운트 층 적용 범위: clutch = 승부처 타석만(게임 기본), off = 사용 안 함, all = 모든 타석(검증·보정 도구용) */
+  countLayer?: 'clutch' | 'off' | 'all';
+}
+
+/** 타석 판정 난수의 사건 종류(D-167 (5)). 투구는 PITCH_BASE + 투구 순번 */
+const DRAW = { top: 1, pitches: 2, hrSplit: 3, pitchBase: 100 } as const;
+const COUNT_P0 = (COUNT_MODEL as { version: string; table: CountTable }).table;
+export const countModelVersion = (): string => (COUNT_MODEL as { version: string }).version;
+
+/** 타석 준비 결과: 대결 확률과 승부처 판정(난수를 쓰지 않는다) */
+export interface PreparedPa {
+  batter: PlayerTruth;
+  pitcher: PlayerTruth;
+  top: TopLevel;
+  /** 타석 시작 때 레버리지(7회 전이면 계산하지 않아 0) */
+  leverage: number;
+  clutch: boolean;
 }
 
 /**
@@ -337,20 +363,21 @@ function scoreRun(g: GameState, batSide: Side, runner: Runner, extraUnearned: bo
   }
 }
 
-/** 타석 1개 진행(결정 지점 처리 뒤). 반 이닝·이닝 종료와 경기 종료까지 상태에 반영한다 */
-export function stepPlateAppearance(g: GameState): PaEvent {
+const basesMask = (b: GameState['bases']) => (b[0] ? 1 : 0) | (b[1] ? 2 : 0) | (b[2] ? 4 : 0);
+
+/**
+ * 다음 타석 준비(결정 지점 처리 뒤): 타자·투수, 대결 확률, 레버리지·승부처 판정. 상태와 난수를 바꾸지 않는다
+ * (선수별 대결 값·수행 편차의 경기 캐시만 채운다).
+ */
+export function preparePa(g: GameState): PreparedPa {
   settle(g);
   if (g.phase === 'over') throw new Error('경기가 끝났습니다.');
-  g.atHalfStart = false;
   const batSide = battingSideOf(g.half);
   const defSide = other(batSide);
   const bat = g.teams[batSide];
-  const def = g.teams[defSide];
-  const spot = bat.setup.lineup[bat.orderIndex % 9]!;
-  bat.orderIndex++;
-  const batter = spot.player;
-  const pitcher = def.stint.pitcher;
-  const { inning, half } = g;
+  const batter = bat.setup.lineup[bat.orderIndex % 9]!.player;
+  const pitcher = g.teams[defSide].stint.pitcher;
+  const { inning } = g;
   // 타석 위 단계 확률(10a 5·6장): 대결 한쪽 값 + 사건별 상황 보정(프레이밍 + 방향 계수 × (타자 수행 − 투수 수행))
   const bases0 = g.bases;
   const pressure = pressureIndex({ inning, scoreDiff: g.score.home - g.score.away, runners: (bases0[0] ? 1 : 0) + (bases0[1] ? 1 : 0) + (bases0[2] ? 1 : 0), postseason: g.opts.postseason === true });
@@ -361,7 +388,46 @@ export function stepPlateAppearance(g: GameState): PaEvent {
   for (const e of FORM_EVENTS) context[e] = fr[e] + BATTER_DIRECTION[e] * (batPerf - pitPerf);
   const eff = effectivePitching(pitcher);
   const top = combineTop(sideOf(g, batter, 'batter'), sideOf(g, pitcher, 'pitcher'), g.env, context, typeShares(batter, pitcher), eff.stuff, eff.velocityZ) as TopLevel;
-  const outcome0 = drawTop(g.rng, top);
+  // 승부처(D-161): 7회 이후 + 타석 시작 레버리지 기준 이상. 화면·참여 설정과 무관하게 모든 경기에 같은 규칙
+  const mode = g.opts.countLayer ?? 'clutch';
+  let li = 0;
+  if (inning >= CLUTCH.minInning) li = leverage(inning, g.half, g.outs, basesMask(bases0), g.score.home - g.score.away, g.opts.postseason === true);
+  const clutch = COUNT_P0.length > 0 && (mode === 'all' || (mode === 'clutch' && inning >= CLUTCH.minInning && li >= CLUTCH.leverageThreshold));
+  return { batter, pitcher, top, leverage: li, clutch };
+}
+
+/** 타석 1개 진행(결정 지점 처리 뒤). 반 이닝·이닝 종료와 경기 종료까지 상태에 반영한다 */
+export function stepPlateAppearance(g: GameState): PaEvent {
+  return resolvePa(g, preparePa(g));
+}
+
+/** 준비한 타석을 판정한다. 모든 판정 난수는 (경기 키, 경기 ID, 타석 순번, 사건 종류)에서 파생한다(D-167 (5)) */
+export function resolvePa(g: GameState, prep: PreparedPa): PaEvent {
+  g.atHalfStart = false;
+  const batSide = battingSideOf(g.half);
+  const defSide = other(batSide);
+  const bat = g.teams[batSide];
+  const def = g.teams[defSide];
+  bat.orderIndex++;
+  const { batter, pitcher, top } = prep;
+  const { inning, half } = g;
+  const paSeq = g.seq + 1;
+  const draw = (kind: number) => Rng.fromKeys(g.bbKey, g.fixtureId, paSeq, kind);
+  let outcome0: PaOutcome | 'INPLAY';
+  let counted: ReturnType<typeof runCountPa> | null = null;
+  let fallback = false;
+  if (prep.clutch) {
+    // 볼카운트 층(10a 10장): 대결 확률과 같은 결과 분포로 맞춘 체인을 투구 단위로 진행
+    const fit = fitMatchup(COUNT_P0, { BB: top.BB, K: top.K, HBP: top.HBP }, CLUTCH.fitTolerance, CLUTCH.fitMaxIter);
+    if (fit.ok) {
+      counted = runCountPa(fit.table, (n) => draw(DRAW.pitchBase + n).next(), CLUTCH.maxPitches);
+      if (counted.result === 'IP') outcome0 = draw(DRAW.hrSplit).next() * (top.HR + top.inPlay) < top.HR ? 'HR' : 'INPLAY';
+      else outcome0 = counted.result;
+    } else {
+      fallback = true;
+      outcome0 = drawTop(draw(DRAW.top), top);
+    }
+  } else outcome0 = drawTop(draw(DRAW.top), top);
   let outcome: PaOutcome = outcome0 === 'INPLAY' ? 'GO' : outcome0;
   let rbi = 0;
   const outsBefore = g.outs;
@@ -425,10 +491,10 @@ export function stepPlateAppearance(g: GameState): PaEvent {
     }
   }
   const outsOnPlay = g.outs - outsBefore;
-  const pitches = Math.max(1, Math.round(
-    (outcome === 'K' ? SIM.pitches.k : outcome === 'BB' ? SIM.pitches.bb : outcome === 'HBP' ? SIM.pitches.hbp : SIM.pitches.other) +
-      g.rng.normal(0, SIM.pitches.jitter),
-  ));
+  // 투구 수(10a 10.4): 승부처 타석은 실제 투구 수, 일반 타석은 결과별 투구 수 모델
+  const pitches = counted
+    ? counted.pitches
+    : Math.max(1, Math.round((outcome === 'K' ? SIM.pitches.k : outcome === 'BB' ? SIM.pitches.bb : outcome === 'HBP' ? SIM.pitches.hbp : SIM.pitches.other) + draw(DRAW.pitches).normal(0, SIM.pitches.jitter)));
   def.stint.pitches += pitches;
   def.stint.outs += outsOnPlay;
   const ev: PaEvent = {
@@ -448,6 +514,11 @@ export function stepPlateAppearance(g: GameState): PaEvent {
     credits,
   };
   if (bb) ev.bb = bb;
+  if (counted) {
+    ev.clutch = true;
+    ev.count = { balls: counted.balls, strikes: counted.strikes, fouls: counted.fouls };
+  }
+  if (fallback) ev.countFallback = true;
   g.events.push(ev);
   endOfPlay(g, batSide);
   return ev;

@@ -1,6 +1,8 @@
-// 4c-0 엔진 구조 전환(D-164): 고정 세계·고정 시드 경기 표본의 결과(타석 사건·득점·투수 기록 전체)가
-// 전환 전 엔진과 완전히 같은지 요약 해시로 확인한다. 기준 해시는 전환 전 엔진(커밋 661dc05)으로 만든 값이다.
-// 볼카운트 층(4c-1)부터는 승부처 타석의 결과가 달라지므로, 이 시험은 승부처 판정을 끈 경기로 같은 값을 확인한다.
+// 경기 엔진 기준 결과(골든): 고정 세계·고정 시드 경기 표본의 결과(타석 사건·득점·투수 기록 전체)를 요약 해시로 고정해
+// 의도하지 않은 엔진 변경을 잡는다. 엔진 동작을 일부러 바꾸는 차수에서만 해시를 새로 기록하고 이유를 남긴다.
+//  - 4c-0(D-164): 전환 전 엔진(커밋 661dc05)과 같은 값 147d0e0c… 으로 구조 전환이 동작을 바꾸지 않았음을 확인했다.
+//  - 4c-1(D-167 (5)): 타석 판정 난수를 (경기 키, 타석 순번, 사건 종류)에서 파생하도록 바꿔 결과 경로가 달라졌다(분포는 같음,
+//    보정 도구로 확인). 볼카운트 층 표(winProbability.json·countModel.json)를 다시 만들어도 해시가 바뀐다.
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { PlayerForm } from '../src/engine/form';
@@ -11,8 +13,8 @@ import { Rng } from '../src/engine/rng';
 import type { PlayerTruth } from '../src/engine/types';
 import { generateWorld } from '../src/engine/worldgen';
 
-/** 전환 전 엔진의 표본 요약 해시 */
-const EXPECTED = '147d0e0c3ff81b314cdbde656d2f56c103d3c519';
+/** 4c-1 엔진(표 wp-4d63a27f59·cm-0c26720e84)의 표본 요약 해시 */
+const EXPECTED = 'd5480b6c339da4bedce65539c15a0ab8d357ea38';
 
 function sample(): string {
   const world = generateWorld(Rng.fromSeed('parity-sample'), 2026);
@@ -40,8 +42,8 @@ function sample(): string {
   return createHash('sha1').update(hashes.join('\n')).digest('hex');
 }
 
-describe('경기 엔진 표본 일치 (4c-0)', () => {
-  it('고정 세계·시드 경기 표본이 전환 전 엔진과 같다', () => {
+describe('경기 엔진 기준 결과', () => {
+  it('고정 세계·시드 경기 표본이 기록한 기준 해시와 같다', () => {
     expect(sample()).toBe(EXPECTED);
   });
 });

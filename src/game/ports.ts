@@ -53,6 +53,8 @@ export interface GameMeta {
   supportCutBp?: Record<string, number>;
   supportDeduction?: Record<string, number>;
   rebuild?: { declaredSeason: number; from: number; until: number } | null;
+  /** 4c-1(D-167): 경기 계산에 쓴 승리 확률 표·볼카운트 기준표 버전(새 게임·시즌 시작 때 기록) */
+  engineTables?: { win: string; count: string };
   /** 7a(D-155) AI 구단 운영 상태: 구단 ID → 상태. 매월 1일에만 바뀐다 */
   clubStance?: Record<string, StanceState>;
   /** 운영 상태 변경 기록(최근 400건) */
@@ -262,6 +264,8 @@ export interface StoredPa {
   rbi: number;
   outsOnPlay: number;
   pitches: number;
+  /** 4c-1 승부처 타석(볼카운트 층으로 진행, D-167) */
+  clutch?: true;
   /** 인플레이 타구(10b §11): 구역 ID, 유형, 질(0~2), 처리 수비수 */
   bbZone?: string;
   bbType?: string;

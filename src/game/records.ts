@@ -10,7 +10,8 @@ import { ACHIEVEMENTS, QUALIFY_PA_PER_GAME } from './achievements';
 import type { GameMeta, GameRepository } from './ports';
 
 export const BAT_COLUMNS = ['G', 'PA', 'AB', 'H', '2B', '3B', 'HR', 'RBI', 'R', 'BB', 'SO', 'AVG', 'OBP', 'SLG', 'OPS'];
-export const PIT_COLUMNS = ['G', 'GS', 'W', 'L', 'SV', 'IP', 'ERA', 'WHIP', 'K', 'BB', 'HR', 'K/9', 'BB/9'];
+// 4c-1(D-165·D-167): 투구 수(NP)와 경기당 투구 수(NP/G = 총 투구 수 ÷ 등판 수)는 시즌·통산에 남긴다
+export const PIT_COLUMNS = ['G', 'GS', 'W', 'L', 'SV', 'IP', 'ERA', 'WHIP', 'K', 'BB', 'HR', 'K/9', 'BB/9', 'NP', 'NP/G'];
 
 /** ASSUMPTION(D-079): 시작 이전 기록의 규정 기준(144경기) */
 const QUALIFY_PA = Math.floor(144 * QUALIFY_PA_PER_GAME);
@@ -26,7 +27,7 @@ export function batValues(t: BattingTotals): Record<string, number | string | nu
 
 export function pitValues(t: PitchingTotals): Record<string, number | string | null> {
   const r = pitchingRates(t, null);
-  return { G: t.G, GS: t.GS, W: t.W, L: t.L, SV: t.SV, IP: formatInnings(t.OUTS), ERA: f2(r.ERA), WHIP: f2(r.WHIP), K: t.K, BB: t.BB, HR: t.HR, 'K/9': f2(r['K/9']), 'BB/9': f2(r['BB/9']) };
+  return { G: t.G, GS: t.GS, W: t.W, L: t.L, SV: t.SV, IP: formatInnings(t.OUTS), ERA: f2(r.ERA), WHIP: f2(r.WHIP), K: t.K, BB: t.BB, HR: t.HR, 'K/9': f2(r['K/9']), 'BB/9': f2(r['BB/9']), NP: t.pitches, 'NP/G': t.G > 0 ? (t.pitches / t.G).toFixed(1) : null };
 }
 
 interface ClubSeason {

@@ -33,6 +33,11 @@ export interface LeagueTotals {
   infieldHits: number;
   errors: number;
   dp: number;
+  /** 4c-1 승부처 타석(D-168 ⑥): 승부처 타석 수, 승부처가 있는 경기 수, 경기별 min(2, 승부처 타석 수) 합, 대결 맞춤 실패로 타석 단위 처리한 수 */
+  clutchPa: number;
+  clutchGames: number;
+  clutchChances: number;
+  countFallback: number;
 }
 
 /** 구단별 1군 선수로 무작위 대진 경기를 돌려 리그 합계를 잰다(선발은 로테이션 순서). */
@@ -53,7 +58,10 @@ export function measureLeague(active: Map<ClubId, PlayerTruth[]>, games: number,
     const r = simulateGame(g + 1, th, ta, Rng.derive(seed, 'league-calib-game', key, g), C.seasonCalibration.maxInnings, env);
     t.games++;
     t.runs += r.homeRuns + r.awayRuns;
+    let clutch = 0;
     for (const e of r.events) {
+      if (e.clutch) clutch++;
+      if (e.countFallback) t.countFallback++;
       t.pa++;
       const o = e.outcome;
       if (o === 'BB') t.bb++;
@@ -79,6 +87,9 @@ export function measureLeague(active: Map<ClubId, PlayerTruth[]>, games: number,
         if (e.bb.infieldHit) t.infieldHits++;
       }
     }
+    t.clutchPa += clutch;
+    if (clutch > 0) t.clutchGames++;
+    t.clutchChances += Math.min(2, clutch);
   }
   return t;
 }
@@ -102,5 +113,5 @@ export function seasonAdjustment(active: Map<ClubId, PlayerTruth[]>, seed: strin
 }
 
 export function emptyTotals(): LeagueTotals {
-  return { games: 0, runs: 0, pa: 0, ab: 0, h: 0, hr: 0, bb: 0, hbp: 0, k: 0, sf: 0, tb: 0, b2: 0, b3: 0, roe: 0, bipGB: 0, hitGB: 0, bipLD: 0, hitLD: 0, bipFB: 0, hitFB: 0, infieldHits: 0, errors: 0, dp: 0 };
+  return { games: 0, runs: 0, pa: 0, ab: 0, h: 0, hr: 0, bb: 0, hbp: 0, k: 0, sf: 0, tb: 0, b2: 0, b3: 0, roe: 0, bipGB: 0, hitGB: 0, bipLD: 0, hitLD: 0, bipFB: 0, hitFB: 0, infieldHits: 0, errors: 0, dp: 0, clutchPa: 0, clutchGames: 0, clutchChances: 0, countFallback: 0 };
 }

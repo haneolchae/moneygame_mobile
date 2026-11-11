@@ -61,6 +61,21 @@ export class Rng {
     return rng;
   }
 
+  /**
+   * 정수 키 4개로 독립 흐름을 만든다(4c-1, D-167). 타석 판정 난수를 (경기 키, 경기 ID, 타석 순번, 사건 종류·투구 순번)에서
+   * 파생할 때 쓴다. fromInts의 3키 흐름(인플레이 타구·수행 편차)과 섞이지 않도록 다른 상수로 섞는다.
+   */
+  static fromKeys(a: number, b: number, c: number, d: number): Rng {
+    const mix = (x: number) => {
+      x = Math.imul(x ^ (x >>> 16), 0x7feb352d);
+      x = Math.imul(x ^ (x >>> 15), 0x846ca68b);
+      return (x ^ (x >>> 16)) >>> 0;
+    };
+    const rng = new Rng([mix(a ^ 0x3c6ef372), mix(b + 0xa54ff53a), mix(c ^ 0x510e527f), mix((d + Math.imul(a + b + c, 0x9b05688c)) ^ 0x1f83d9ab)]);
+    for (let i = 0; i < 4; i++) rng.nextUint32();
+    return rng;
+  }
+
   /** 시드와 키 조합으로 독립 흐름을 만든다. 예: 경기별 난수 = derive(seed, 'game', fixtureId). */
   static derive(seed: string, ...keys: Array<string | number>): Rng {
     return Rng.fromSeed(`${seed}::${keys.join('::')}`);

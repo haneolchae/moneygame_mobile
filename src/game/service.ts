@@ -6,7 +6,8 @@ import { STANCE_LABEL } from '../engine/aiClub';
 import { AI_CLUB, FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
 import { compensationFor, foreignRenewalDemandUsd, offerTotal, wonToUsd, type ContractOffer } from '../engine/contracts';
 import { CATEGORY_LABEL, FINANCE_BASE, NOT_YET_IMPLEMENTED, scheduledEntries, stadiumFee, type LedgerEntry } from '../engine/finance';
-import { simulateGame, type GameResult } from '../engine/gamesim';
+import { countModelVersion, simulateGame, type GameResult } from '../engine/gamesim';
+import { winTableVersion } from '../engine/winProb';
 import { prepareTeam, type GamePlan } from '../engine/lineup';
 import { rosterCounts } from '../engine/roster';
 import { EOK } from '../engine/money';
@@ -226,6 +227,7 @@ export function createNewGame(repo: GameRepository, opts: NewGameOptions): void 
     saveName: opts.saveName,
     createdAt: opts.createdAt,
     rulesVersion: RULES_VERSION,
+    engineTables: { win: winTableVersion(), count: countModelVersion() },
     rngStreams: { world: worldRng.state(), schedule: scheduleRng.state(), business: Rng.derive(seed, 'business').state() },
     nextFixtureId: fixtures.length + 1,
     ownerLevel: 1,
@@ -510,6 +512,7 @@ export class GameService {
       for (const p of this.repo.getPlayers()) if (p.clubId !== null && p.level === '1군') active.set(p.clubId, [...(active.get(p.clubId) ?? []), p]);
       const env = seasonAdjustment(active, meta.seed, season, deviation);
       metaUpdate.leagueEnvironment = { ...(meta.leagueEnvironment ?? {}), [String(season)]: env };
+      metaUpdate.engineTables = { win: winTableVersion(), count: countModelVersion() };
       const pct = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`;
       const target = PROBABILITY_CONFIG.leagueTarget;
       inbox.push({ date: next, kind: 'news', sender: 'KBO 소식', title: `${season} 시즌 리그 환경: 득점 ${pct(env.runs)}, 홈런 ${pct(env.hr)}`, body: `올해 리그는 기준(경기당 득점 ${target.runsPerGame}, 타석당 홈런 ${target.hrPerPa}) 대비 득점 ${pct(env.runs)}, 홈런 ${pct(env.hr)} 수준의 환경으로 예상됩니다. 공인구·스트라이크 존 같은 리그 조건 변화를 요약한 값이며, 기준 대비 ±10%를 넘지 않습니다.\n올해 1군 선수 구성으로 리그 기준을 다시 맞췄습니다(보정 전 예상: 경기당 ${env.measuredRunsPerGame}득점, 타석당 홈런 ${env.measuredHrPerPa}).` });
@@ -2188,7 +2191,7 @@ export class GameService {
       const pSide = bSide === 'home' ? 'away' : 'home';
       let b = batLine.get(pa.batterId);
       if (!b) {
-        b = { playerId: pa.batterId, name: name(pa.batterId), position: players.get(pa.batterId)?.position ?? '', PA: 0, AB: 0, R: 0, H: 0, RBI: 0, HR: 0, BB: 0, SO: 0 };
+        b = { playerId: pa.batterId, name: name(pa.batterId), position: players.get(pa.batterId)?.position ?? '', PA: 0, AB: 0, R: 0, H: 0, RBI: 0, HR: 0, BB: 0, SO: 0, NP: 0 };
         batLine.set(pa.batterId, b);
         batting[bSide].push(b);
       }
@@ -2202,6 +2205,7 @@ export class GameService {
       if (pa.outcome === 'BB') b.BB++;
       if (pa.outcome === 'K') b.SO++;
       b.RBI += pa.rbi;
+      b.NP += pa.pitches;
       let p = pitLine.get(pa.pitcherId);
       if (!p) {
         const decision = game.winningPitcher === pa.pitcherId ? 'W' : game.losingPitcher === pa.pitcherId ? 'L' : game.savePitcher === pa.pitcherId ? 'S' : '';

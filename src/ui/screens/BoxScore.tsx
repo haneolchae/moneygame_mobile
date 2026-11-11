@@ -46,12 +46,12 @@ export function BoxScore({ nav, fixtureId }: { nav: Nav; fixtureId: number }) {
           <section key={s.key} className="panel">
             <h2>{s.club.name} 타격</h2>
             <table className="grid dense">
-              <thead><tr><th>선수</th><th title="이 경기 수비 위치가 아니라 선수의 주 포지션">주 포지션</th><th className="num">타석</th><th className="num">타수</th><th className="num">득점</th><th className="num">안타</th><th className="num">홈런</th><th className="num">타점</th><th className="num">볼넷</th><th className="num">삼진</th></tr></thead>
+              <thead><tr><th>선수</th><th title="이 경기 수비 위치가 아니라 선수의 주 포지션">주 포지션</th><th className="num">타석</th><th className="num">타수</th><th className="num">득점</th><th className="num">안타</th><th className="num">홈런</th><th className="num">타점</th><th className="num">볼넷</th><th className="num">삼진</th><th className="num" title="이 경기에서 본 투구 수">투구</th></tr></thead>
               <tbody>
                 {b.batting[s.key].map((l) => (
                   <tr key={l.playerId} className="clickable" onClick={() => nav.go({ name: 'player', playerId: l.playerId, back: { name: 'boxScore', fixtureId } })}>
                     <td>{l.name}</td><td>{POSITION_LABELS[l.position] ?? l.position}</td>
-                    <td className="num">{l.PA}</td><td className="num">{l.AB}</td><td className="num">{l.R}</td><td className="num">{l.H}</td><td className="num">{l.HR}</td><td className="num">{l.RBI}</td><td className="num">{l.BB}</td><td className="num">{l.SO}</td>
+                    <td className="num">{l.PA}</td><td className="num">{l.AB}</td><td className="num">{l.R}</td><td className="num">{l.H}</td><td className="num">{l.HR}</td><td className="num">{l.RBI}</td><td className="num">{l.BB}</td><td className="num">{l.SO}</td><td className="num">{l.NP}</td>
                   </tr>
                 ))}
               </tbody>

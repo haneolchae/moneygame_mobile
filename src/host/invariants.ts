@@ -1,6 +1,6 @@
 // 규칙 위반 검사. 장기 실행·테스트·자체 점검에서 같은 검사를 쓴다.
 import { seasonKeyDates } from '../engine/schedule';
-import { AI_CLUB, DEVELOPMENT, FACILITY, LEAGUE, ROSTER_MOVE, SPONSOR, TRADE, TRAINING } from '../engine/config';
+import { AI_CLUB, CLUTCH, DEVELOPMENT, FACILITY, LEAGUE, ROSTER_MOVE, SPONSOR, TRADE, TRAINING } from '../engine/config';
 import { STANCES } from '../engine/aiClub';
 import { weekIdFor } from '../game/week';
 import { FACILITY_KINDS } from '../engine/business';
@@ -64,10 +64,26 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
     if (lineHome !== g.homeRuns || lineAway !== g.awayRuns) errors.push(`경기 ${g.fixtureId} 이닝별 점수 합 불일치`);
     const rbi = pas.reduce((a, p) => a + p.rbi, 0);
     if (rbi > runs.length) errors.push(`경기 ${g.fixtureId} 타점(${rbi}) > 득점(${runs.length})`);
+    // 4c-1(D-167 (7)): 투수 총 투구 수 = 타자가 본 투구 수 합(둘 다 타석별 투구 수에서 계산), 승부처 타석은 7회 이후·종료 조건에 맞는 투구 수
+    let byPitcher = 0;
+    let byBatter = 0;
+    const pitcherSum = new Map<number, number>();
+    const batterSum = new Map<number, number>();
     for (const pa of pas) {
       if (clubOn(pa.batterId, g.date) !== pa.battingClub) errors.push(`경기 ${g.fixtureId} 타자 소속 불일치 ${pa.batterId}`);
       if (clubOn(pa.pitcherId, g.date) === pa.battingClub) errors.push(`경기 ${g.fixtureId} 투수가 같은 팀 타자 상대 ${pa.pitcherId}`);
+      if (pa.pitches < 1) errors.push(`경기 ${g.fixtureId} 타석 ${pa.seq} 투구 수 ${pa.pitches}`);
+      pitcherSum.set(pa.pitcherId, (pitcherSum.get(pa.pitcherId) ?? 0) + pa.pitches);
+      batterSum.set(pa.batterId, (batterSum.get(pa.batterId) ?? 0) + pa.pitches);
+      if (pa.clutch) {
+        if (pa.inning < CLUTCH.minInning) errors.push(`경기 ${g.fixtureId} 타석 ${pa.seq} 7회 전 승부처 타석`);
+        const min = pa.outcome === 'BB' ? 4 : pa.outcome === 'K' ? 3 : 1;
+        if (pa.pitches < min || pa.pitches > CLUTCH.maxPitches) errors.push(`경기 ${g.fixtureId} 타석 ${pa.seq} 승부처 투구 수 ${pa.pitches}(${pa.outcome})`);
+      }
     }
+    for (const v of pitcherSum.values()) byPitcher += v;
+    for (const v of batterSum.values()) byBatter += v;
+    if (byPitcher !== byBatter) errors.push(`경기 ${g.fixtureId} 투수 투구 수 합 ${byPitcher} ≠ 타자가 본 투구 수 합 ${byBatter}`);
     // 원정팀 아웃 수: 9이닝 이상 완료 경기는 이닝 수 × 3 (끝내기·말 공격 생략은 홈팀만 해당)
     const awayOuts = pas.filter((p) => p.half === 'T').reduce((a, p) => a + p.outsOnPlay, 0);
     if (awayOuts !== g.innings * 3) errors.push(`경기 ${g.fixtureId} 원정 아웃 ${awayOuts} ≠ ${g.innings * 3}`);

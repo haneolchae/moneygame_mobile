@@ -10,7 +10,8 @@ import type { DatabaseSync } from 'node:sqlite';
  * 출시 전에는 세이브 호환을 보장하지 않는다(D-094): 이전 버전 저장본은 변환하지 않고 불러오기 때 이유를 안내하고 거부한다.
  */
 // 11: 고정 관측·보고서 이력·세이브별 메모와 관심 등록(D-113).
-export const SCHEMA_VERSION = 11;
+// 12: 4c-1 승부처 타석 표시(plate_appearances.clutch, D-167). 타석별 투구 수는 이미 있어 경기별 투수·타자 투구 수는 그 값에서 계산한다.
+export const SCHEMA_VERSION = 12;
 
 const SCHEMA_V3 = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -330,6 +331,7 @@ export function createSchema(db: DatabaseSync): void {
     db.exec(SCHEMA_V7_ADDITIONS);
     db.exec(SCHEMA_V9_ADDITIONS);
     db.exec(SCHEMA_V10_ADDITIONS);
+    db.exec('ALTER TABLE plate_appearances ADD COLUMN clutch INTEGER NOT NULL DEFAULT 0;');
     db.exec(`CREATE TABLE scouting_snapshots (club_id INTEGER NOT NULL, player_id INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (club_id, player_id));
       CREATE TABLE scouting_history (club_id INTEGER NOT NULL, player_id INTEGER NOT NULL, date TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (club_id, player_id, date));
       CREATE TABLE player_notes (player_id INTEGER PRIMARY KEY, text TEXT NOT NULL, watched INTEGER NOT NULL, updated_at TEXT NOT NULL);`);

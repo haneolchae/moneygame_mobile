@@ -699,8 +699,8 @@ export class SqliteGameRepository implements GameRepository {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insPa = this.stmt(
-        `INSERT INTO plate_appearances (game_id, seq, season, date, inning, half, batting_club, batter_id, pitcher_id, outcome, rbi, outs_on_play, pitches, stage, bb_zone, bb_type, bb_quality, fielder_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO plate_appearances (game_id, seq, season, date, inning, half, batting_club, batter_id, pitcher_id, outcome, rbi, outs_on_play, pitches, stage, bb_zone, bb_type, bb_quality, fielder_id, clutch)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       const insFielding = this.stmt('INSERT INTO fielding (game_id, seq, idx, season, club_id, player_id, kind, stage) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
       const insRun = this.stmt(
@@ -711,7 +711,7 @@ export class SqliteGameRepository implements GameRepository {
         const stage = String((stageOf.get(r.fixtureId) as Row | undefined)?.stage ?? 'regular');
         insGame.run(r.fixtureId, meta.season, date, r.home, r.away, r.homeRuns, r.awayRuns, r.innings, r.starters.home, r.starters.away, r.winningPitcher, r.losingPitcher, r.savePitcher, JSON.stringify(r.lineScore), stage);
         for (const e of r.events) {
-          insPa.run(r.fixtureId, e.seq, meta.season, date, e.inning, e.half, e.battingClub, e.batterId, e.pitcherId, e.outcome, e.rbi, e.outsOnPlay, e.pitches, stage, e.bb?.zone ?? null, e.bb?.type ?? null, e.bb?.quality ?? null, e.bb?.fielderId ?? null);
+          insPa.run(r.fixtureId, e.seq, meta.season, date, e.inning, e.half, e.battingClub, e.batterId, e.pitcherId, e.outcome, e.rbi, e.outsOnPlay, e.pitches, stage, e.bb?.zone ?? null, e.bb?.type ?? null, e.bb?.quality ?? null, e.bb?.fielderId ?? null, e.clutch ? 1 : 0);
           // 수비 기록: 수비 팀(공격 팀의 상대)
           const defClub = e.battingClub === r.home ? r.away : r.home;
           e.credits.forEach((c, idx) => insFielding.run(r.fixtureId, e.seq, idx, meta.season, defClub, c.playerId, c.kind, stage));
@@ -763,6 +763,7 @@ export class SqliteGameRepository implements GameRepository {
       rbi: num(r.rbi),
       outsOnPlay: num(r.outs_on_play),
       pitches: num(r.pitches),
+      ...(num(r.clutch) === 1 ? { clutch: true as const } : {}),
       ...(r.bb_zone ? { bbZone: String(r.bb_zone), bbType: String(r.bb_type), bbQuality: num(r.bb_quality), fielderId: num(r.fielder_id) } : {}),
     }));
     const fielding = (this.stmt('SELECT * FROM fielding WHERE game_id = ? ORDER BY seq, idx').all(fixtureId) as Row[]).map((r) => ({

@@ -393,6 +393,8 @@ export interface BoxBatterLine {
   HR: number;
   BB: number;
   SO: number;
+  /** 4c-1: 이 경기에서 본 투구 수(타석별 투구 수 합) */
+  NP: number;
 }
 
 export interface BoxPitcherLine {
