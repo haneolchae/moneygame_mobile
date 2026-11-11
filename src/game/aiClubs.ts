@@ -120,6 +120,12 @@ export class AiClubOps {
     if (offers.some((o) => weekIdFor(o.date) === weekId)) return [];
     if (offers.filter((o) => o.status === 'open').length >= O.maxOpen) return [];
     if (offers.filter((o) => o.season === meta.season && o.period === period).length >= O.maxPerPeriod) return [];
+    // D-159: 시즌 중에는 4~8월에만, 한 달에 1건
+    if (period === 'season') {
+      const month = Number(date.slice(5, 7));
+      if (month < O.seasonFromMonth || month > O.seasonToMonth) return [];
+      if (offers.filter((o) => o.period === 'season' && o.date.slice(0, 7) === date.slice(0, 7)).length >= O.seasonPerMonth) return [];
+    }
     const user = meta.userClubId;
     const players = this.repo.getPlayers();
     const rosterOf = (id: ClubId) => players.filter((p) => p.clubId === id && !p.retired);

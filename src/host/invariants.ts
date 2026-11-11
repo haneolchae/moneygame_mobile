@@ -341,6 +341,12 @@ export function checkAiClubs(repo: GameRepository): string[] {
     offerWeek.set(w, (offerWeek.get(w) ?? 0) + 1);
     const k = `${o.season}:${o.period}`;
     offerPeriod.set(k, (offerPeriod.get(k) ?? 0) + 1);
+    if (o.period === 'season') {
+      const month = Number(o.date.slice(5, 7));
+      if (month < AI_CLUB.offer.seasonFromMonth || month > AI_CLUB.offer.seasonToMonth) errors.push(`받은 제안 시즌 기간 위반: ${o.date}`);
+      const mk = `m:${o.date.slice(0, 7)}`;
+      offerPeriod.set(mk, (offerPeriod.get(mk) ?? 0) + AI_CLUB.offer.maxPerPeriod / AI_CLUB.offer.seasonPerMonth);
+    }
     const prev = offerClub.get(o.clubId);
     if (prev && diffDays(o.date, prev) < AI_CLUB.offer.clubGapDays) errors.push(`받은 제안 구단 간격 위반: 구단 ${o.clubId} ${prev} → ${o.date}`);
     offerClub.set(o.clubId, o.date);

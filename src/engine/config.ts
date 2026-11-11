@@ -494,7 +494,11 @@ export const AI_CLUB = {
   },
   /** 7b(D-157): AI 구단이 우리 구단에 먼저 보내는 트레이드 제안 */
   offer: {
+    /** D-159(사용자 확정): 스토브리그 주 1건·최대 4건, 시즌 중 4~8월 최대 4건. 시즌 중 월 1건은 초기안 */
     maxPerPeriod: 4,
+    seasonFromMonth: 4,
+    seasonToMonth: 8,
+    seasonPerMonth: 1,
     maxOpen: 2,
     clubGapDays: 30,
     /** 받은 날 포함 유효 일수. 스토브리그는 주 단위로 진행하므로 받은 다음 주까지 응답할 수 있어야 한다 */
