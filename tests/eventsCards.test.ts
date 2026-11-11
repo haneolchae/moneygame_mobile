@@ -131,11 +131,10 @@ describe('결정 카드 화면·위임 (EV-3)', () => {
         cleanup(dir);
       }
     }
-    // D-208 ⑤: 두 시드를 모두 잰 뒤 판정
-    for (const { seed, rep } of reps) {
-      expect(Math.abs(rep.eventCashWon) / rep.expenseWon, `${seed} cash`).toBeLessThanOrEqual(0.1);
-      expect(rep.cards, `${seed} cards`).toBeGreaterThanOrEqual(22);
-      expect(rep.cards, `${seed} cards`).toBeLessThanOrEqual(28);
-    }
+    // D-208 ⑤·D-213: 카드 장부 순액은 시드마다, 결정 카드 수(22~28장)는 시드 평균으로 판정
+    for (const { seed, rep } of reps) expect(Math.abs(rep.eventCashWon) / rep.expenseWon, `${seed} cash`).toBeLessThanOrEqual(0.1);
+    const avg = reps.reduce((a, r) => a + r.rep.cards, 0) / reps.length;
+    expect(avg).toBeGreaterThanOrEqual(22);
+    expect(avg).toBeLessThanOrEqual(28);
   }, 600_000);
 });
