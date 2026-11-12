@@ -4,9 +4,24 @@ export type GameDate = string;
 
 const DAY_MS = 86_400_000;
 
+// 성능(9a, D-240): 날짜 문자열 → 1970-01-01부터의 일수는 순수 함수라 메모한다(값은 같다). 크기가 너무 커지면 비운다
+const dayNumMemo = new Map<GameDate, number>();
+const addMemo = new Map<string, GameDate>();
+const MEMO_MAX = 200_000;
+
+function dayNum(d: GameDate): number {
+  let n = dayNumMemo.get(d);
+  if (n === undefined) {
+    const [y, m, day] = d.split('-').map(Number) as [number, number, number];
+    n = Math.round(Date.UTC(y, m - 1, day) / DAY_MS);
+    if (dayNumMemo.size >= MEMO_MAX) dayNumMemo.clear();
+    dayNumMemo.set(d, n);
+  }
+  return n;
+}
+
 export function toDate(d: GameDate): Date {
-  const [y, m, day] = d.split('-').map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, day));
+  return new Date(dayNum(d) * DAY_MS);
 }
 
 export function fromDate(date: Date): GameDate {
@@ -18,16 +33,23 @@ export function makeDate(year: number, month: number, day: number): GameDate {
 }
 
 export function addDays(d: GameDate, days: number): GameDate {
-  return fromDate(new Date(toDate(d).getTime() + days * DAY_MS));
+  const key = `${d}|${days}`;
+  let out = addMemo.get(key);
+  if (out === undefined) {
+    out = fromDate(new Date((dayNum(d) + days) * DAY_MS));
+    if (addMemo.size >= MEMO_MAX) addMemo.clear();
+    addMemo.set(key, out);
+  }
+  return out;
 }
 
 export function diffDays(a: GameDate, b: GameDate): number {
-  return Math.round((toDate(a).getTime() - toDate(b).getTime()) / DAY_MS);
+  return dayNum(a) - dayNum(b);
 }
 
 /** 0=일요일 … 6=토요일 */
 export function weekday(d: GameDate): number {
-  return toDate(d).getUTCDay();
+  return (((dayNum(d) + 4) % 7) + 7) % 7; // 1970-01-01은 목요일(4)
 }
 
 /** 해당 주의 월요일 (게임 주는 월~일) */

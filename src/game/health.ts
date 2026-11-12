@@ -120,18 +120,27 @@ export class HealthOps {
   /** 하루 시작(경기 전): 복귀, AI·자동 운영 되돌리기, 1군 건강 인원 확보, 휴식 지시 정리, 월요일 주간 건강 보고 */
   beforeGames(meta: GameMeta, date: GameDate): InboxMessage[] {
     const inbox: InboxMessage[] = [];
-    const players = this.repo.getPlayers();
     const changed = new Set<PlayerTruth>();
     const returned: string[] = [];
-    for (const p of players) {
+    // 1) 복귀일이 된 부상을 먼저 모두 끝내고 저장한다.
+    // 9a: 저장(savePlayers)은 캐시에 새 사본을 넣으므로, 이동을 한 뒤에 옛 객체를 다시 저장하면 그 이동이 되돌려진다
+    //     (같은 날 같은 구단 두 명이 복귀하면 1군 27명이 되던 결함). 이동은 저장 뒤 새로 읽은 선수로 한다.
+    const returning: Array<{ id: PlayerId; inj: NonNullable<NonNullable<PlayerTruth['health']>['injury']> }> = [];
+    for (const p of this.repo.getPlayers()) {
       const inj = p.health?.injury;
       if (!inj || diffDays(date, inj.returnDate) < 0) continue;
       p.health!.history.push({ date: inj.date, returnDate: inj.returnDate, part: inj.part, severity: inj.severity });
       p.health!.injury = null;
       changed.add(p);
       if (p.retired || p.clubId === null) continue;
+      returning.push({ id: p.id, inj });
+    }
+    if (changed.size) this.repo.savePlayers([...changed]);
+    // 2) 부상으로 내렸던 1군 선수: AI 구단과 우리 구단 감독 자동 운영은 같은 쪽 가장 약한 건강 1군 선수와 바꿔 되돌린다.
+    for (const { id, inj } of returning) {
+      const players = this.repo.getPlayers();
+      const p = players.find((x) => x.id === id)!;
       const isUser = p.clubId === meta.userClubId;
-      // 부상으로 내렸던 1군 선수: AI 구단과 우리 구단 감독 자동 운영은 같은 쪽 가장 약한 건강 1군 선수와 바꿔 되돌린다.
       const autoReturn = inj.demoted && inj.wasActive && p.level === '2군' && meta.mode === 'season' && (!isUser || (meta.userPlan?.mode ?? 'auto') === 'auto') && !(isUser && this.roster.reRegisterDate(meta, p.id));
       if (autoReturn) {
         const sameSide = players.filter((x) => x.clubId === p.clubId && x.level === '1군' && x.isPitcher === p.isPitcher && !this.hurt(x, date) && (p.position === 'C' || x.position !== 'C'));
@@ -144,8 +153,8 @@ export class HealthOps {
       }
       if (isUser) returned.push(`${p.name} 복귀(${p.level}) — 출전 가능`);
     }
-    if (changed.size) this.repo.savePlayers([...changed]);
     if (meta.mode === 'season') {
+      const players = this.repo.getPlayers();
       for (const c of this.repo.getClubs()) {
         const lines = this.settleClub(meta, c.id, addDays(date, -1), players);
         if (lines.length) inbox.push({ date, kind: 'report', sender: '감독', title: '부상 선수 1군 정리', body: lines.join('\n') });

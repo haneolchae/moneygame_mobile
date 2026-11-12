@@ -390,7 +390,7 @@ export class AllStarOps {
       if (row.hrRace || !row.picks.length) return [];
       const notes = this.replaceInjured(row, date);
       const m = players();
-      const { batting } = this.repo.awardLines(season, { from: d.opening, to: date });
+      const { batting } = this.repo.awardLines(season, { from: d.opening, to: date }, undefined, true);
       const hr = (id: PlayerId) => batting.get(id)?.HR ?? 0;
       const entrants = (team: AllStarTeam) => row!.picks.filter((p) => p.team === team && p.status === 'ok' && recKind(p.slot) === 'F' && m.has(p.playerId)).sort((a, b) => hr(b.playerId) - hr(a.playerId) || a.playerId - b.playerId).slice(0, AS.hrRace.perTeam).map((p) => m.get(p.playerId)!);
       const dream = entrants('dream');

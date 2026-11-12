@@ -190,7 +190,8 @@ else {
   const archivePath = docPath('06_progress_archive.md');
   const results = t + (archivePath ? `\n${read(archivePath)}` : '');
   for (const p of progress.filter((p) => p.done)) {
-    const re = new RegExp(`^##\\s*${p.order}\\b.*결과`, 'm');
+    // 묶어서 진행한 차수(D-221, 예: '## 7c·9a(④ 마감) 결과')는 한 섹션으로 둘 다 인정한다
+    const re = new RegExp(`^##\\s*(?:[0-9a-z]+·)*${p.order}\\b.*결과`, 'm');
     if (!re.test(results)) errors.push(`${p.order}(${p.name})가 완료 표시인데 06_progress.md·06_progress_archive.md에 '## ${p.order} … 결과' 섹션이 없음`);
   }
 

@@ -31,7 +31,7 @@ export function NewGame({ nav }: { nav: Nav }) {
     <div className="start wide">
       <h1>새 게임 — 구단 선택</h1>
       <p className="muted">
-        2026년 11월 8일, 한국시리즈가 끝난 밤 스토브리그에서 시작합니다. 구단마다 시작 자금, 모기업 지원, 시장 규모, 팬 충성도, 시작 전력이 다르고, 구단 선택이 곧 난이도 선택입니다.
+        2027년 2월 1일 스프링캠프에서 구단주로 취임합니다. 첫 스토브리그(2026년 11월~2027년 1월)는 전임 경영진이 꾸렸고, 결과는 「지난겨울 보고서」로 넘겨받습니다. 구단마다 시작 자금, 모기업 지원, 시장 규모, 팬 충성도, 시작 전력이 다르고, 구단 선택이 곧 난이도 선택입니다.
       </p>
       <table className="grid selectable" style={{ background: 'var(--paper)' }}>
         <thead>

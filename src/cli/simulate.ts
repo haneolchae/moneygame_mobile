@@ -11,6 +11,7 @@ import { performance } from 'node:perf_hooks';
 import { PROBABILITY_CONFIG } from '../engine/probabilityConfig';
 import { CLOSE_RULES } from '../game/seasonClose';
 import { Dispatcher } from '../host/dispatcher';
+import type { GameService } from '../game/service';
 import { coreAverage } from '../engine/development';
 import { checkForeignQuota, checkInvariants, injuryStats, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
 import type { AdvanceResult, BudgetPlanInput, BudgetView, DashboardView, DelegationPolicyView, BusinessView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView, TradeOffersView, TradeResultView, TradeView } from '../shared/protocol';
@@ -24,7 +25,9 @@ async function main() {
   const seasons = Number(arg('seasons', '3'));
   const seed = arg('seed', 'sim-seed');
   const maxStall = Number(arg('max-stall', '10'));
-  const baseDir = mkdtempSync(join(tmpdir(), 'fo-sim-'));
+  // --keep-dir: 지정한 폴더에서 돌리고 지우지 않는다. 시즌마다 정규시즌 끝 상태를 슬롯 s<시즌>으로 남긴다(원인 조사용)
+  const keepDir = arg('keep-dir', '');
+  const baseDir = keepDir || mkdtempSync(join(tmpdir(), 'fo-sim-'));
   const d = new Dispatcher({ baseDir, platform: () => ({ steam: { mode: 'mock', initialized: false, detail: 'CLI' }, appVersion: 'cli' }) });
   const call = async <T>(name: string, payload?: unknown): Promise<T> => {
     const r = await d.respond(name as never, payload as never);
@@ -32,6 +35,10 @@ async function main() {
     return r.result as T;
   };
   const rows: Array<Record<string, unknown>> = [];
+  // 7c·9a(D-239) 장기 관측: 직전 시즌 누적값과 10시즌 판정 요약
+  const obsPrev = { retired: 0, maxId: 0 };
+  let summaryObs: Record<string, unknown> | null = null;
+  const svc = () => (d as unknown as { game(): GameService }).game();
   // 진행 정체 감시: 0일 진행이 연속 maxStall회면 원인(멈춘 이유·날짜)을 출력하고 실패로 끝낸다.
   let stall = 0;
   const advance = async (mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn') => {
@@ -45,6 +52,28 @@ async function main() {
     }
     return r;
   };
+  async function dailyChecked(): Promise<AdvanceResult> {
+    let total: AdvanceResult | null = null;
+    let prev = new Map<number, string>();
+    for (;;) {
+      // --save-at <날짜>: 그 날짜를 처리하기 직전 상태를 슬롯 'at'에 남긴다(--keep-dir와 함께, 원인 조사용)
+      if (arg('save-at', '') && d.saves.repository().getMeta().currentDate === arg('save-at', '')) await call('save.save', { slot: 'at' });
+      const r = await advance('day');
+      total = total ? { ...r, daysProcessed: total.daysProcessed + r.daysProcessed, gamesPlayed: total.gamesPlayed + r.gamesPlayed } : r;
+      const repo = d.saves.repository();
+      const date = repo.getMeta().currentDate;
+      const now = new Map(repo.getPlayers().filter((p) => p.clubId !== null && !p.retired).map((p) => [p.id, `${p.clubId}:${p.level}`]));
+      const counts = new Map<number, number>();
+      for (const p of repo.getPlayers()) if (p.clubId !== null && !p.retired && p.level === '1군') counts.set(p.clubId, (counts.get(p.clubId) ?? 0) + 1);
+      const bad = [...counts].filter(([, n]) => n !== 26);
+      if (bad.length) {
+        const diff = [...now].filter(([id, v]) => prev.get(id) !== v).map(([id, v]) => `${id} ${prev.get(id) ?? '-'}→${v}`);
+        console.log(JSON.stringify({ dailyActive: date, bad, diff: diff.slice(0, 20), reason: r.stoppedReason }));
+      }
+      prev = now;
+      if ((await call<DashboardView>('game.dashboard')).phase === 'postseason' || r.daysProcessed === 0) return total;
+    }
+  }
   const tNew = performance.now();
   await call<DashboardView>('game.new', { clubId: 1, saveName: '장기 실행', seed });
   const newGameMs = Math.round(performance.now() - tNew);
@@ -267,7 +296,8 @@ async function main() {
       console.log(JSON.stringify({ trades: { attempts, done }, extensions }));
     }
     const t0 = performance.now();
-    const adv = await advance('untilSeasonEnd');
+    // --check-daily: 정규시즌을 하루씩 진행하며 모든 구단 1군 인원을 매일 확인한다(원인 조사용, 결과는 같다)
+    const adv = process.argv.includes('--check-daily') ? await dailyChecked() : await advance('untilSeasonEnd');
     const simMs = performance.now() - t0;
     const dash = await call<DashboardView>('game.dashboard');
     const q0 = performance.now();
@@ -283,6 +313,7 @@ async function main() {
     const t5 = performance.now();
     await call('save.save', { slot: 'longrun' });
     const saveMs = performance.now() - t5;
+    if (keepDir) await call('save.save', { slot: `s${dash.season}` });
     const inv = [...stoveErrors, ...checkInvariants(d.saves.repository(), dash.season)];
     // 정규시즌 경기 수는 시즌 ID별 기록에서 읽는다.
     const regular = dash.lastRegularSeason;
@@ -473,6 +504,113 @@ async function main() {
       last.firstErrors = [...(last.firstErrors as string[]), ...after].slice(0, 3);
       console.log(JSON.stringify({ season: dash.season, afterPostseasonErrors: after }));
     }
+    // 7c·9a(D-239): 장기 관측 — 포스트시즌까지 끝난 시즌 기준
+    {
+      const repo = d.saves.repository();
+      const meta = repo.getMeta();
+      const season = dash.season;
+      const players = repo.getPlayers();
+      const cases = (meta.eventState?.cases ?? []).filter((c) => c.season === season);
+      const aw = repo.getAwards({ season }).filter((x) => !x.award.startsWith('monthly_'));
+      const awardsByClub: Record<string, number> = {};
+      for (const x of aw) if (x.clubId !== null) awardsByClub[String(x.clubId)] = (awardsByClub[String(x.clubId)] ?? 0) + 1;
+      const champ = repo.getSeasonStandings(season).find((x) => x.postseason === '한국시리즈 우승')?.clubId ?? null;
+      const clubsById = new Map(repo.getClubs().map((c) => [c.id, c]));
+      // 홈런 레이스: 참가자별 레이스 홈런 합과 장타 능력
+      const race = repo.getAllStar(season)?.hrRace;
+      const raceHr = new Map<number, number>();
+      for (const m of race?.matches ?? []) {
+        raceHr.set(m.a, (raceHr.get(m.a) ?? 0) + m.hrA);
+        raceHr.set(m.b, (raceHr.get(m.b) ?? 0) + m.hrB);
+      }
+      const byId = new Map(players.map((p) => [p.id, p]));
+      const hrRace = (race?.entrants ?? []).map((id) => ({ id, power: byId.get(id)?.batting?.power ?? null, hr: raceHr.get(id) ?? 0 })).filter((x) => x.power !== null);
+      const retiredTotal = players.filter((p) => p.retired).length;
+      const maxId = players.reduce((a, p) => Math.max(a, p.id), 0);
+      const rostered = players.filter((p) => p.clubId !== null && !p.retired);
+      const payrollEok = +(rostered.reduce((a, p) => a + p.salary, 0) / clubsById.size / 1e8).toFixed(1);
+      const last = rows[rows.length - 1]!;
+      last.obs = {
+        cards: svc().events.report(season, meta.userClubId).cards,
+        majorOurs: cases.filter((c) => c.clubId === meta.userClubId).length,
+        majorLeague: cases.length,
+        sanctionGames: cases.reduce((a, c) => a + c.games, 0),
+        awards: aw.length,
+        awardsByClub,
+        mvpClub: aw.find((x) => x.award === 'mvp')?.clubId ?? null,
+        champion: champ,
+        championDifficulty: champ !== null ? (clubsById.get(champ)?.difficulty ?? null) : null,
+        hrRace,
+        retired: retiredTotal - obsPrev.retired,
+        newPlayers: obsPrev.maxId ? maxId - obsPrev.maxId : null,
+        // D-239 ③ 국내 무소속(국내 선수만). 외국인·아시아쿼터 무소속은 관측값
+        freeAgents: players.filter((p) => p.clubId === null && !p.retired && p.origin === 'domestic').length,
+        foreignFree: players.filter((p) => p.clubId === null && !p.retired && p.origin !== 'domestic').length,
+        amateurs: repo.getAmateurs('active').length,
+        payrollEok,
+        level: meta.ownerLevel,
+        xp: meta.achievementXp?.[String(season)] ?? 0,
+        // ①(D-234) MLB 관심: 이 시즌 앞 스토브리그(시즌 번호 season − 1로 기록)의 카드 수·성사·이적료
+        mlb: {
+          cards: repo.getEventLog({ season: season - 1 }).filter((r) => r.cardId === 'MLB-01').length,
+          posted: (meta.postings ?? []).filter((x) => x.season === season - 1).length,
+          feeEok: +((meta.postings ?? []).filter((x) => x.season === season - 1).reduce((a, x) => a + x.feeWon, 0) / 1e8).toFixed(1),
+        },
+      };
+      obsPrev.retired = retiredTotal;
+      obsPrev.maxId = maxId;
+      console.log(JSON.stringify({ season, obs: last.obs }));
+    }
+  }
+  // 9a(D-239·D-211 ⑦·D-236 (1)): 10시즌 이상 실행(최종 마일스톤)에서만 판정하는 평균·누적 기준
+  if (seasons >= 10 && rows.length) {
+    const obs = rows.map((r) => r.obs as Record<string, unknown> | undefined).filter((o): o is Record<string, unknown> => !!o);
+    const errs: string[] = [];
+    const mean = (xs: number[]) => xs.reduce((a, x) => a + x, 0) / Math.max(1, xs.length);
+    const cards = mean(obs.map((o) => Number(o.cards)));
+    if (cards < 22 || cards > 28) errs.push(`사전 등록 D-236 (1) 위반: 시즌 결정 카드 평균 ${cards.toFixed(1)}장(22~28)`);
+    const majorOurs = mean(obs.map((o) => Number(o.majorOurs)));
+    const majorLeague = mean(obs.map((o) => Number(o.majorLeague)));
+    if (majorOurs < 0.4 || majorOurs > 0.6) errs.push(`사전 등록 D-211 ⑦ 위반: 우리 구단 중대 사건 평균 ${majorOurs.toFixed(2)}건(0.4~0.6)`);
+    if (majorLeague < 3 || majorLeague > 6) errs.push(`사전 등록 D-211 ⑦ 위반: 리그 중대 사건 평균 ${majorLeague.toFixed(2)}건(3~6)`);
+    const awardTotals: Record<string, number> = {};
+    for (const o of obs) for (const [c, n] of Object.entries(o.awardsByClub as Record<string, number>)) awardTotals[c] = (awardTotals[c] ?? 0) + n;
+    const awardAll = Object.values(awardTotals).reduce((a, b) => a + b, 0);
+    const topShare = awardAll ? Math.max(...Object.values(awardTotals)) / awardAll : 0;
+    if (topShare > 0.25) errs.push(`사전 등록 D-239 ① 위반: 수상 한 구단 몫 ${(100 * topShare).toFixed(1)}% > 25%`);
+    const mvpBy: Record<string, number> = {};
+    for (const o of obs) if (o.mvpClub !== null) mvpBy[String(o.mvpClub)] = (mvpBy[String(o.mvpClub)] ?? 0) + 1;
+    const mvpMax = Math.max(0, ...Object.values(mvpBy));
+    if (mvpMax > 4) errs.push(`사전 등록 D-239 ① 위반: 정규시즌 MVP 한 구단 ${mvpMax}회 > 4`);
+    const pts = obs.flatMap((o) => o.hrRace as Array<{ power: number; hr: number }>);
+    const corr = (() => {
+      if (pts.length < 3) return null;
+      const mx = mean(pts.map((p) => p.power));
+      const my = mean(pts.map((p) => p.hr));
+      const sxy = pts.reduce((a, p) => a + (p.power - mx) * (p.hr - my), 0);
+      const sxx = pts.reduce((a, p) => a + (p.power - mx) ** 2, 0);
+      const syy = pts.reduce((a, p) => a + (p.hr - my) ** 2, 0);
+      return sxx && syy ? sxy / Math.sqrt(sxx * syy) : null;
+    })();
+    if (corr === null || corr < 0.2) errs.push(`사전 등록 D-239 ② 위반: 홈런 레이스 장타–홈런 상관 ${corr === null ? '표본 없음' : corr.toFixed(2)} < 0.2`);
+    const first = obs[0]!;
+    const lastO = obs.at(-1)!;
+    for (const k of ['freeAgents', 'amateurs'] as const) {
+      const r = Number(lastO[k]) / Math.max(1, Number(first[k]));
+      if (r < 0.5 || r > 2) errs.push(`사전 등록 D-239 ③ 위반: ${k === 'freeAgents' ? '국내 무소속' : '아마추어 풀'} ${first[k]} → ${lastO[k]}(50~200%)`);
+    }
+    const champs: Record<string, number> = {};
+    for (const o of obs) if (o.champion !== null) champs[String(o.champion)] = (champs[String(o.champion)] ?? 0) + 1;
+    const champMax = Math.max(0, ...Object.values(champs));
+    if (champMax > 5) errs.push(`사전 등록 D-239 ④ 위반: 한국시리즈 우승 한 구단 ${champMax}회 > 5`);
+    // D-183 ⑥·D-185 ⑤·D-187 ⑥(02 페이싱): 보통 운영 10시즌 뒤 구단주 레벨 17~20(업적 경험치 포함)
+    const lastLevel = Number(lastO.level);
+    if (seasons === 10 && (lastLevel < 17 || lastLevel > 20)) errs.push(`사전 등록 D-183 ⑥ 위반: 10시즌 뒤 구단주 레벨 ${lastLevel}(17~20)`);
+    summaryObs = { cardsAvg: +cards.toFixed(2), majorOursAvg: +majorOurs.toFixed(2), majorLeagueAvg: +majorLeague.toFixed(2), awardTopShare: +topShare.toFixed(3), awardTotals, mvpBy, hrRaceCorr: corr === null ? null : +corr.toFixed(3), hrRaceSample: pts.length, champions: champs, lastLevel, errors: errs };
+    const last = rows[rows.length - 1]!;
+    last.invariantErrors = Number(last.invariantErrors) + errs.length;
+    last.firstErrors = [...(last.firstErrors as string[]), ...errs].slice(0, 6);
+    console.log(JSON.stringify({ summaryObs }));
   }
   const tLoad = performance.now();
   await call('save.load', { slot: 'longrun' });
@@ -488,11 +626,12 @@ async function main() {
     stoveTurnsBySeason: Object.fromEntries([...new Set(stoveTurns)].map((s) => [String(s), stoveTurns.filter((x) => x === s).length])),
     loadMs,
     rows,
+    summaryObs,
   };
   const out = arg('out', '');
   if (out) writeFileSync(out, JSON.stringify(report, null, 2));
   d.close();
-  rmSync(baseDir, { recursive: true, force: true });
+  if (!keepDir) rmSync(baseDir, { recursive: true, force: true });
   console.log(JSON.stringify({ newGameMs, loadMs }));
 }
 

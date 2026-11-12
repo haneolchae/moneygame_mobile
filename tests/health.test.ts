@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { HEALTH } from '../src/engine/config';
 import { injuredOn, rollInjury } from '../src/engine/health';
 import type { PlayerTruth } from '../src/engine/types';
+import { overall } from '../src/engine/worldgen';
 import type { Dispatcher } from '../src/host/dispatcher';
 import { checkHealthPlay } from '../src/host/invariants';
 import { call, cleanup, makeDispatcher, tempDir } from './helpers';
@@ -73,4 +74,48 @@ describe('건강 (4b-1)', () => {
       cleanup(dir);
     }
   });
+
+  // 9a 회귀: 같은 날 같은 구단 두 선수가 부상에서 돌아와 차례로 1군에 복귀하면 1군이 27명이 되던 결함(낡은 객체 재저장)
+  it('같은 날 두 명 복귀해도 1군 26명', async () => {
+    const dir = tempDir();
+    const d = makeDispatcher(dir);
+    try {
+      await call(d, 'game.new', { clubId: 1, saveName: 't', seed: 'health-twin-return', start: 'camp' });
+      await until(d, '2027-04-10');
+      const repo = d.saves.repository();
+      const date = repo.getMeta().currentDate;
+      // 결함 재현 조건: 먼저 처리되는(번호가 작은) 복귀 선수가 1군 최약체보다 조금만 강해 복귀 뒤 새 최약체가 되고,
+      // 다음 복귀 선수(번호가 큼, 강함)가 그 선수와 바뀐다.
+      const injury = { part: '손목', severity: '경미', date: addDaysIso(date, -12), returnDate: date, estimate: { from: date, to: date }, demoted: true, wasActive: true } as const;
+      let setup: { club: number; ids: number[]; saved: PlayerTruth[] } | null = null;
+      for (const c of repo.getClubs().filter((x) => x.id !== 1)) {
+        const all = repo.getPlayers();
+        const act = all.filter((p) => p.clubId === c.id && p.level === '1군' && !p.isPitcher && p.position !== 'C' && !p.health?.injury).sort((a, b) => overall(a) - overall(b));
+        const minors = all.filter((p) => p.clubId === c.id && p.level === '2군' && !p.isPitcher && p.position !== 'C' && !p.health?.injury).sort((a, b) => a.id - b.id);
+        if (act.length < 2 || minors.length < 2) continue;
+        const [w1, w2] = act;
+        const weak = { ...minors[0]!, batting: { ...w1!.batting, contact: Math.min(99, w1!.batting.contact + 1) }, defense: w1!.defense, positions: w1!.positions, position: w1!.position, health: { history: [], injury } } as PlayerTruth;
+        const strong = { ...minors[1]!, batting: Object.fromEntries(Object.entries(minors[1]!.batting).map(([k, v]) => [k, typeof v === 'number' ? Math.min(99, v + 30) : v])) as PlayerTruth['batting'], health: { history: [], injury } } as PlayerTruth;
+        if (!(overall(weak) > overall(w1!) && overall(weak) < overall(w2!) && overall(strong) > overall(weak))) continue;
+        setup = { club: c.id, ids: [weak.id, strong.id], saved: [weak, strong] };
+        break;
+      }
+      expect(setup).not.toBeNull();
+      repo.savePlayers(setup!.saved);
+      const minors = setup!.saved;
+      await call(d, 'game.advance', { mode: 'day' });
+      const after = repo.getPlayers();
+      for (const c of repo.getClubs()) expect(after.filter((p) => p.clubId === c.id && p.level === '1군'), c.name).toHaveLength(26);
+      expect(after.find((x) => x.id === minors[1]!.id)!.level).toBe('1군');
+    } finally {
+      d.close();
+      cleanup(dir);
+    }
+  });
 });
+
+function addDaysIso(d: string, n: number): string {
+  const t = new Date(`${d}T00:00:00Z`);
+  t.setUTCDate(t.getUTCDate() + n);
+  return t.toISOString().slice(0, 10);
+}

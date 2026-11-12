@@ -33,7 +33,7 @@ export function StartScreen({ nav, status }: { nav: Nav; status: AppStatus | nul
         </svg>
         <div>
           <h1>프런트 오피스</h1>
-          <div style={{ color: '#c9d2e3' }}>프로야구 구단 경영 시뮬레이션 · 개발 빌드 2a (스토브리그·재정 기반)</div>
+          <div style={{ color: '#c9d2e3' }}>프로야구 구단 경영 시뮬레이션 · 개발 빌드</div>
         </div>
       </div>
       <div className="start-actions">

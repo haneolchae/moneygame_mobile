@@ -291,8 +291,8 @@ export class StoryOps {
     st.done[ch.id] = { choice: choice.id, by: 'ai', date, clubOwner: false };
   }
 
-  /** 우리 구단이 스토리 카드를 골랐다(구단주·자동 실행 기본 응답 공용) */
-  chosen(clubId: ClubId, chapterId: string, choiceId: string, date: GameDate): void {
+  /** 우리 구단이 스토리 카드를 골랐다(구단주·자동 실행 기본 응답 공용). 답하지 않아 기본 응답이면 by = 'default' */
+  chosen(clubId: ClubId, chapterId: string, choiceId: string, date: GameDate, by: 'owner' | 'default' = 'owner'): void {
     const found = storyChapter(chapterId);
     const meta = this.repo.getMeta();
     const st = meta.stories?.[String(clubId)];
@@ -301,7 +301,7 @@ export class StoryOps {
     const s = next[String(clubId)]!;
     const choice = found.chapter.choices.find((c) => c.id === choiceId);
     Object.assign(s.flags, choice?.flags ?? {});
-    s.done[chapterId] = { choice: choiceId, by: 'owner', date, clubOwner: true };
+    s.done[chapterId] = { choice: choiceId, by, date, clubOwner: true };
     this.save(next);
   }
 

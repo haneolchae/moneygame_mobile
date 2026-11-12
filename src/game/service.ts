@@ -846,6 +846,11 @@ export class GameService {
    * 엔진의 날짜 처리는 같아서 주 단위 진행(시험·비교용)도 그대로 받는다.
    */
   advance(mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn', onProgress?: (p: AdvanceProgress) => void, shouldStop?: () => boolean, autoCards = false) {
+    // 9a(D-240): 여러 날을 이어 처리하는 동안은 날마다의 디스크 동기화를 미룬다(날짜별 트랜잭션은 그대로)
+    return this.repo.bulkWrites(() => this.advanceDays(mode, onProgress, shouldStop, autoCards));
+  }
+
+  private advanceDays(mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn', onProgress?: (p: AdvanceProgress) => void, shouldStop?: () => boolean, autoCards = false) {
     const start = this.meta();
     if (start.mode === 'stove' && mode !== 'week' && mode !== 'turn') throw new GameError('STOVE_TURN_ONLY', '스토브리그는 턴 단위로 진행합니다.');
     if (start.mode !== 'stove' && mode === 'turn') throw new GameError('INVALID', '턴 진행은 스토브리그에만 합니다.');
@@ -1713,7 +1718,7 @@ export class GameService {
       const pending = !d && (meta.eventState?.pendingCard?.cardId === ch.id || (meta.eventState?.stoveCards ?? []).some((c) => c.cardId === ch.id));
       const status: StoryChapterView['status'] = d ? (d.by === 'skip' ? (other ? 'otherBranch' : 'skipped') : 'done') : other ? 'otherBranch' : pending ? 'pending' : 'upcoming';
       const when = ch.phase === 'season' ? `${ch.season}시즌 ${md(ch.from!)}~${md(ch.to!)}` : `${ch.offseason === 1 ? '첫' : '두 번째'} 스토브리그 ${ch.turns![0]}~${ch.turns![1]}턴`;
-      return { id: ch.id, act: ch.act, branch: ch.branch ?? null, title: ch.title, when, status, choice, by: d && d.by !== 'skip' ? (d.by === 'owner' ? '구단주' : 'AI 운영') : null, date: d?.date ?? null };
+      return { id: ch.id, act: ch.act, branch: ch.branch ?? null, title: ch.title, when, status, choice, by: d && d.by !== 'skip' ? (d.by === 'owner' ? '구단주' : d.by === 'default' ? '기본 응답' : 'AI 운영') : null, date: d?.date ?? null };
     });
     return {
       club: this.ref(id),

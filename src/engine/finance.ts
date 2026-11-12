@@ -131,7 +131,7 @@ export function broadcastLeagueTotal(seasonYear: number): Won {
 }
 
 /**
- * 모기업 지원금 재협상 배수(bp, D-135): 보유 현금 / 시작 현금 R이 1.2를 넘으면 줄이고(하한 0.4), 0.8보다 낮으면 늘린다(상한 1.2).
+ * 모기업 지원금 재협상 배수(bp, D-135): 보유 현금 / 시작 현금 R이 1.2를 넘으면 줄이고(하한 0.2, D-242), 0.8보다 낮으면 늘린다(상한 1.2).
  */
 export function supportFactorBp(cash: Won, startCash: Won): number {
   const S = SUPPORT_RENEGOTIATION;

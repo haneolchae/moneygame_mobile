@@ -118,7 +118,9 @@ export class TradeOps {
 
   /** 두 구단 교환 뒤 양쪽 선수단 규칙 위반(40명·외국인·포지션 최소 인원). AI 간 거래와 공용 */
   swapErrors(players: PlayerTruth[], clubA: ClubId, clubB: ClubId, aToB: number[], bToA: number[]): string[] {
-    const next = players.map((p) => (aToB.includes(p.id) ? { ...p, clubId: clubB } : bToA.includes(p.id) ? { ...p, clubId: clubA } : p));
+    // 9a: 두 구단 선수와 옮기는 선수만 본다(은퇴 선수가 쌓여도 같은 비용, 순서·결과는 같다)
+    const moving = new Set([...aToB, ...bToA]);
+    const next = players.filter((p) => p.clubId === clubA || p.clubId === clubB || moving.has(p.id)).map((p) => (aToB.includes(p.id) ? { ...p, clubId: clubB } : bToA.includes(p.id) ? { ...p, clubId: clubA } : p));
     return [...this.rosterErrors('A', next.filter((p) => p.clubId === clubA && !p.retired)), ...this.rosterErrors('B', next.filter((p) => p.clubId === clubB && !p.retired))];
   }
 

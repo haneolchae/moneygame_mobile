@@ -257,6 +257,8 @@ if (!STAGE.build) {
       const totalInv = (sim.rows ?? []).reduce((a, r) => a + r.invariantErrors, 0);
       const summary = `${(sim.rows ?? []).length}시즌, 규칙 위반 ${totalInv}건, 마지막 시즌 저장 ${last.saveMs}ms·저장본 ${last.saveFileMB}MB, 불러오기 ${sim.loadMs}ms, ${cashNote}`;
       record('sim', `장기 실행 ${SEASONS}시즌 (시드 ${SEED})`, worst(...st), m.sec, summary, checks, m.log);
+      // 7c·9a(D-239): 장기 관측 표(판정은 위 규칙 위반·경고에 들어 있다)
+      steps.at(-1).observations = observationTable(sim);
     }
   }
 }
@@ -291,6 +293,26 @@ if (STAGE.git) {
 
 finish();
 
+/** 장기 관측 표(7c, D-239): 시즌별 성능·재무·리그·이벤트·순환 지표 */
+function observationTable(sim) {
+  const rows = sim.rows ?? [];
+  if (!rows.length) return [];
+  const f = (v) => (v === null || v === undefined ? '-' : typeof v === 'number' ? String(v) : String(v));
+  const out = ['| 시즌 | 진행(초) | 정렬(ms) | 저장(ms)·MB | 현금 배수 우리·AI | 득점·목표 | 홈런/타석 | 팬 | 점유율 | 결정 카드 | 중대 사건 우리·리그 | 징계 경기 | 우승(난이도) | 은퇴·신규 | 국내 무소속·외국인 무소속·아마추어 | 연봉 평균(억) | 레벨·업적 경험치 | 운영 상태 |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |'];
+  for (const r of rows) {
+    const o = r.obs ?? {};
+    out.push(`| ${r.season} | ${r.simSec} | ${Math.max(r.hitterListMs, r.pitcherListMs)} | ${r.saveMs}·${r.saveFileMB} | ${r.cashRatio}·${r.aiCashRatio} | ${r.runsPerGame}·${r.targetRunsPerGame} | ${f(r.leagueHRperPA)} | ${f(r.fanAvg)} | ${r.occupancy} | ${f(o.cards)} | ${f(o.majorOurs)}·${f(o.majorLeague)} | ${f(o.sanctionGames)} | ${f(o.champion)}(${f(o.championDifficulty)}) | ${f(o.retired)}·${f(o.newPlayers)} | ${f(o.freeAgents)}·${f(o.foreignFree)}·${f(o.amateurs)} | ${f(o.payrollEok)} | ${f(o.level)}·${f(o.xp)} | ${String(r.stances ?? '').split('|').join('/')} |`);
+  }
+  const s = sim.summaryObs;
+  if (s) {
+    out.push('', `- 10시즌 평균: 결정 카드 ${s.cardsAvg}장(22~28), 중대 사건 우리 ${s.majorOursAvg}건(0.4~0.6)·리그 ${s.majorLeagueAvg}건(3~6)`);
+    out.push(`- 수상 한 구단 최대 몫 ${(100 * s.awardTopShare).toFixed(1)}%(25% 이하), 구단별 수상 ${JSON.stringify(s.awardTotals)}, 정규시즌 MVP 구단별 ${JSON.stringify(s.mvpBy)}`);
+    out.push(`- 홈런 레이스 장타–홈런 상관 ${s.hrRaceCorr}(표본 ${s.hrRaceSample}, 0.2 이상), 한국시리즈 우승 구단별 ${JSON.stringify(s.champions)}(한 구단 5회 이하), 10시즌 뒤 구단주 레벨 ${s.lastLevel}(17~20)`);
+    if (s.errors?.length) out.push(`- 판정 위반: ${s.errors.join(' / ')}`);
+  }
+  return out;
+}
+
 function finish() {
   const overall = worst(...steps.map((s) => s.status));
   const word = { PASS: '통과', WARN: '조건부 통과(경고 있음)', FAIL: '실패' }[overall];
@@ -313,6 +335,8 @@ function finish() {
       md.push('');
     }
   }
+  const obsStep = steps.find((s) => s.observations?.length);
+  if (obsStep) md.push('## 장기 관측 (7c, D-239)', '', ...obsStep.observations, '');
   const docs = steps.find((s) => s.id === 'docs');
   if (docs?.progress?.length) {
     md.push('## 문서상 개발 진행 (06_progress.md)', '', '| 순서 | 묶음 | 상태 |', '| --- | --- | --- |');

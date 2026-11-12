@@ -164,6 +164,8 @@ export interface GameMeta {
   /** ① 턴 브리핑 집계 시작일(직전 턴 첫날) */
   stoveTurnFrom?: GameDate;
   /** D-228 MLB 진출(포스팅 성사) 기록 */
+  /** 9a: 시즌 중 방출 기록(경기 기록 소속 검사용) */
+  releases?: Array<{ playerId: PlayerId; clubId: ClubId; date: GameDate; season: number }>;
   postings?: Array<{ playerId: PlayerId; clubId: ClubId | null; season: number; date: GameDate; feeWon: number }>;
   /** ② 구단 스토리(D-222·D-224·D-237): 구단 ID → 진행 상태(우리·AI 구단 모두) */
   stories?: Record<string, ClubStoryState>;
@@ -228,7 +230,8 @@ export interface ClubStoryState {
   /** 2막 분기(1시즌 마감 때 정한다) */
   branch: string | null;
   /** 장 ID → 처리 결과(선택지, 처리한 쪽). skip = 조건·시기를 놓쳐 건너뜀 */
-  done: Record<string, { choice: string | null; by: 'owner' | 'ai' | 'skip'; date: GameDate; clubOwner: boolean }>;
+  /** by: 구단주 선택 · AI 구단 · 건너뜀 · 기본 응답(우리 구단이 답하지 않아 위임 기본 선택지로 처리, 9a) */
+  done: Record<string, { choice: string | null; by: 'owner' | 'ai' | 'skip' | 'default'; date: GameDate; clubOwner: boolean }>;
   flags: Record<string, number>;
   /** 배역 → 선수 */
   cast: Record<string, PlayerId>;
@@ -790,6 +793,8 @@ export interface TeamSeasonTotals {
 
 export interface PlayerNote { text: string; watched: boolean; updatedAt: string | null }
 export interface GameRepository {
+  /** 여러 날 진행 동안 날마다의 디스크 동기화를 미루고 끝에 한 번 동기화한다(9a, D-240). 결과는 같다 */
+  bulkWrites<T>(fn: () => T): T;
   getScouting(clubId: number): ScoutingSnapshot[];
   saveScouting(snapshot: ScoutingSnapshot): void;
   getPlayerNote(playerId: number): PlayerNote;
@@ -875,7 +880,7 @@ export interface GameRepository {
   sprayTotals(season: number, playerId: PlayerId): Array<{ zone: string; type: string; n: number; h: number; xbh: number }>;
   /** 8a 리그 시상(D-180) */
   /** ids를 주면 그 선수만 집계한다(같은 값, 빠름) */
-  awardLines(season: number, range?: { from: GameDate; to: GameDate }, ids?: readonly PlayerId[]): { batting: Map<PlayerId, BattingTotals>; pitching: Map<PlayerId, PitchingTotals & { HLD: number; BS: number; QS: number }> };
+  awardLines(season: number, range?: { from: GameDate; to: GameDate }, ids?: readonly PlayerId[], battingOnly?: boolean): { batting: Map<PlayerId, BattingTotals>; pitching: Map<PlayerId, PitchingTotals & { HLD: number; BS: number; QS: number }> };
   positionOuts(season: number): Array<{ playerId: PlayerId; clubId: ClubId; position: string; outs: number }>;
   awardFielding(season: number): { fielding: Map<PlayerId, { PO: number; A: number; E: number }>; catcher: Map<PlayerId, { SB: number; CS: number; PB: number }> };
   positionOutChecks(season: number): Array<{ gameId: number; clubId: ClubId; fieldOuts: number; dhOuts: number; defOuts: number }>;

@@ -2,7 +2,7 @@ import type { ScoutingSnapshot } from '../engine/scouting';
 import type { AllStarSeason, AwardRecord, EventLogRow, NewsRow, PlayerNote } from '../game/ports';
 // GameRepository의 SQLite 구현 (node:sqlite).
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
-import type { GameDate } from '../engine/calendar';
+import { addDays, type GameDate } from '../engine/calendar';
 import type { LedgerCategory, LedgerEntry } from '../engine/finance';
 import type { BattingTotals, PitchingTotals } from '../engine/stats';
 import type { ClubId, ClubProfile, Fixture, FixtureId, PlayerId, PlayerTruth, SeasonStanding } from '../engine/types';
@@ -33,8 +33,39 @@ export class SqliteGameRepository implements GameRepository {
    * 값은 깊게 얼려 둔다: 읽은 meta를 제자리에서 고치면 바로 오류가 나서 캐시와 저장본이 어긋나지 않는다(고칠 때는 복사 후 updateMeta).
    */
   private metaCache: Map<string, unknown> | null = null;
+  /**
+   * 성능(9a): 날짜별 출전 기록 캐시(피로·휴식·선발 판단이 하루에 여러 번 같은 7일 창을 읽는다).
+   * 그날 경기를 기록하면(commitDay) 그 날짜만 지우고, 시즌 압축·롤백·초기화 때 모두 비운다.
+   */
+  private usageDays = new Map<GameDate, { bat: Array<{ date: GameDate; batterId: PlayerId }>; pit: Array<{ date: GameDate; pitcherId: PlayerId; pitches: number; started: boolean }> }>();
+  /** 성능(9a): 업적 목록 캐시(매일 판정이 읽는다). 넣을 때·롤백·초기화 때 비운다 */
+  private achCache: AchievementRow[] | null = null;
+  private bulkDepth = 0;
+  /** 성능(9a): 구단별 현금 잔액·시즌 항목별 합계 캐시. 장부에 넣을 때 그 구단 값만 고치고, 롤백·초기화 때 비운다 */
+  private cashCache = new Map<ClubId, number>();
+  private categoryCache = new Map<string, Array<{ category: LedgerCategory; amount: number }>>();
 
   constructor(private readonly db: DatabaseSync) {}
+
+  /**
+   * 성능(9a, D-240): 여러 날을 이어 처리하는 동안은 날마다의 커밋에서 디스크 동기화(fsync)를 하지 않는다(WAL + synchronous=NORMAL).
+   * 날짜별 트랜잭션과 원자성은 그대로라 앱 강제 종료에는 마지막 확정 날짜까지 남는다. 끝나면 FULL로 돌리고 WAL을 동기화한다(체크포인트).
+   */
+  bulkWrites<T>(fn: () => T): T {
+    if (this.bulkDepth > 0 || this.txDepth > 0) return fn();
+    this.bulkDepth = 1;
+    this.db.exec('PRAGMA synchronous = NORMAL');
+    // 자동 체크포인트(매번 fsync)도 끝으로 미룬다. WAL은 진행 동안만 커진다
+    this.db.exec('PRAGMA wal_autocheckpoint = 0');
+    try {
+      return fn();
+    } finally {
+      this.bulkDepth = 0;
+      this.db.exec('PRAGMA synchronous = FULL');
+      this.db.exec('PRAGMA wal_autocheckpoint = 1000');
+      this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    }
+  }
 
   private loadMeta(): Map<string, unknown> {
     if (!this.metaCache) {
@@ -92,6 +123,10 @@ export class SqliteGameRepository implements GameRepository {
       this.db.exec('ROLLBACK');
       this.playerCache = null;
       this.metaCache = null;
+      this.usageDays.clear();
+      this.achCache = null;
+      this.cashCache.clear();
+      this.categoryCache.clear();
       throw e;
     } finally {
       this.txDepth = 0;
@@ -279,7 +314,12 @@ export class SqliteGameRepository implements GameRepository {
 
   private insertLedger(entries: LedgerEntry[], season: number): void {
     const ins = this.stmt('INSERT INTO ledger (club_id, date, season, category, amount, memo) VALUES (?, ?, ?, ?, ?, ?)');
-    for (const e of entries) ins.run(e.clubId, e.date, season, e.category, e.amount, e.memo);
+    for (const e of entries) {
+      ins.run(e.clubId, e.date, season, e.category, e.amount, e.memo);
+      const c = this.cashCache.get(e.clubId);
+      if (c !== undefined) this.cashCache.set(e.clubId, c + e.amount);
+      this.categoryCache.delete(`${e.clubId}|${season}`);
+    }
   }
 
   // ───────── 기록·업적 (2e) ─────────
@@ -391,6 +431,7 @@ export class SqliteGameRepository implements GameRepository {
            FROM plate_appearances WHERE season = ? AND bb_zone IS NOT NULL GROUP BY stage, batter_id, bb_zone, bb_type`,
       ).run(season);
       this.stmt('DELETE FROM plate_appearances WHERE season = ?').run(season);
+      this.usageDays.clear();
       this.stmt('DELETE FROM runs WHERE season = ?').run(season);
       this.stmt('DELETE FROM fielding WHERE season = ?').run(season);
       this.stmt('DELETE FROM plays WHERE season = ?').run(season);
@@ -413,7 +454,7 @@ export class SqliteGameRepository implements GameRepository {
   }
 
   /** 시상용 정규시즌 원시 기록(압축 전 시즌): 타자·투수 합계(홀드·블론·QS 포함). range가 있으면 그 기간만 */
-  awardLines(season: number, range?: { from: GameDate; to: GameDate }, ids?: readonly PlayerId[]): { batting: Map<PlayerId, BattingTotals>; pitching: Map<PlayerId, PitchingTotals & { HLD: number; BS: number; QS: number }> } {
+  awardLines(season: number, range?: { from: GameDate; to: GameDate }, ids?: readonly PlayerId[], battingOnly = false): { batting: Map<PlayerId, BattingTotals>; pitching: Map<PlayerId, PitchingTotals & { HLD: number; BS: number; QS: number }> } {
     const dr = this.dateRange(range);
     // 대상 선수만 집계(인덱스 (season, 선수 ID)를 탄다). 빈 목록이면 아무도 없다
     const only = (col: string) => (ids ? ` AND ${col} IN (${ids.map((x) => Math.trunc(Number(x))).join(',') || 'NULL'})` : '');
@@ -431,6 +472,8 @@ export class SqliteGameRepository implements GameRepository {
       const id = num(r.id);
       batting.set(id, { G: num(r.G), PA: num(r.PA), AB: num(r.AB), H: num(r.H), '2B': num(r.D), '3B': num(r.T), HR: num(r.HR), RBI: num(r.RBI), R: runs.get(id) ?? 0, BB: num(r.BB), HBP: num(r.HBP), SO: num(r.SO), SF: num(r.SF), SB: num(steals.get(id)?.SB), CS: num(steals.get(id)?.CS) });
     }
+    // 성능(9a): 타자 기록만 필요한 호출(부진·홈런 레이스)은 투수 집계를 건너뛴다
+    if (battingOnly) return { batting, pitching: new Map() };
     const pit = this.db.prepare(
       `SELECT pitcher_id AS id, COUNT(DISTINCT game_id) AS G, SUM(outs_on_play) AS OUTS, COUNT(*) AS BF, SUM(${hit}) AS H, SUM(outcome = 'BB') AS BB, SUM(outcome = 'HBP') AS HBP,
               SUM(outcome = 'K') AS K, SUM(outcome = 'HR') AS HR, SUM(pitches) AS P
@@ -721,10 +764,12 @@ export class SqliteGameRepository implements GameRepository {
   }
 
   getAchievements(): AchievementRow[] {
-    return (this.stmt('SELECT * FROM achievements ORDER BY date, key').all() as Row[]).map((r) => ({ key: String(r.key), season: num(r.season), date: String(r.date), detail: String(r.detail), xp: num(r.xp) }));
+    this.achCache ??= (this.stmt('SELECT * FROM achievements ORDER BY date, key').all() as Row[]).map((r) => ({ key: String(r.key), season: num(r.season), date: String(r.date), detail: String(r.detail), xp: num(r.xp) }));
+    return this.achCache.map((a) => ({ ...a }));
   }
 
   insertAchievement(a: AchievementRow): void {
+    this.achCache = null;
     this.stmt('INSERT INTO achievements (key, season, date, detail, xp) VALUES (?, ?, ?, ?, ?)').run(a.key, a.season, a.date, a.detail, a.xp);
   }
 
@@ -872,6 +917,10 @@ export class SqliteGameRepository implements GameRepository {
     });
     this.playerCache = null;
     this.metaCache = null;
+    this.usageDays.clear();
+    this.achCache = null;
+    this.cashCache.clear();
+    this.categoryCache.clear();
   }
 
   getMeta(): GameMeta {
@@ -929,20 +978,39 @@ export class SqliteGameRepository implements GameRepository {
     return { total: num(r.total), played: num(r.played) };
   }
 
+  /** 그 날짜의 출전 기록(캐시). 날짜 순으로 이어 붙이면 예전 기간 조회와 같은 순서다 */
+  private usageOn(date: GameDate) {
+    let u = this.usageDays.get(date);
+    if (!u) {
+      const bat = (this.stmt('SELECT DISTINCT date, batter_id FROM plate_appearances INDEXED BY pa_date WHERE date = ?').all(date) as Row[]).map((r) => ({ date: String(r.date), batterId: num(r.batter_id) }));
+      const pit = (
+        this.stmt(
+          `SELECT pa.date AS date, pa.pitcher_id AS pitcher_id, SUM(pa.pitches) AS pitches,
+                  MAX(g.home_sp = pa.pitcher_id OR g.away_sp = pa.pitcher_id) AS started
+             FROM plate_appearances pa JOIN games g ON g.fixture_id = pa.game_id
+            WHERE pa.date = ?
+            GROUP BY pa.date, pa.pitcher_id`,
+        ).all(date) as Row[]
+      ).map((r) => ({ date: String(r.date), pitcherId: num(r.pitcher_id), pitches: num(r.pitches), started: num(r.started) === 1 }));
+      u = { bat, pit };
+      this.usageDays.set(date, u);
+    }
+    return u;
+  }
+
+  /** 창 안의 날짜(피로 창은 7일) */
+  private usageDates(fromDate: GameDate, toDateExclusive: GameDate): GameDate[] {
+    const out: GameDate[] = [];
+    for (let d = fromDate; d < toDateExclusive; d = addDays(d, 1)) out.push(d);
+    return out;
+  }
+
   getRecentBatterGames(fromDate: GameDate, toDateExclusive: GameDate) {
-    const rows = this.stmt('SELECT DISTINCT date, batter_id FROM plate_appearances INDEXED BY pa_date WHERE date >= ? AND date < ?').all(fromDate, toDateExclusive) as Row[];
-    return rows.map((r) => ({ date: String(r.date), batterId: num(r.batter_id) }));
+    return this.usageDates(fromDate, toDateExclusive).flatMap((d) => this.usageOn(d).bat);
   }
 
   getRecentPitcherUsage(fromDate: GameDate, toDateExclusive: GameDate) {
-    const rows = this.stmt(
-      `SELECT pa.date AS date, pa.pitcher_id AS pitcher_id, SUM(pa.pitches) AS pitches,
-              MAX(g.home_sp = pa.pitcher_id OR g.away_sp = pa.pitcher_id) AS started
-         FROM plate_appearances pa JOIN games g ON g.fixture_id = pa.game_id
-        WHERE pa.date >= ? AND pa.date < ?
-        GROUP BY pa.date, pa.pitcher_id`,
-    ).all(fromDate, toDateExclusive) as Row[];
-    return rows.map((r) => ({ date: String(r.date), pitcherId: num(r.pitcher_id), pitches: num(r.pitches), started: num(r.started) === 1, daysAgo: 0 }));
+    return this.usageDates(fromDate, toDateExclusive).flatMap((d) => this.usageOn(d).pit.map((u) => ({ ...u, daysAgo: 0 })));
   }
 
   getLastStarters(season: number): Map<ClubId, PlayerId> {
@@ -970,6 +1038,7 @@ export class SqliteGameRepository implements GameRepository {
       }
       // 같은 날짜를 두 번 처리하지 않는다: 기본키 충돌로 전체 변경이 취소된다.
       this.stmt('INSERT INTO processed_days (date) VALUES (?)').run(date);
+      this.usageDays.delete(date);
       const insGame = this.stmt(
         `INSERT INTO games (fixture_id, season, date, home, away, home_runs, away_runs, innings, home_sp, away_sp, wp, lp, sv, line_score, stage)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1135,7 +1204,7 @@ export class SqliteGameRepository implements GameRepository {
   pitchingTotals(season: number, playerIds?: PlayerId[], clubId?: ClubId): Map<PlayerId, PitchingTotals> {
     // 구단 지정 시: 그 구단 경기에서 상대 타석만(그 구단 소속으로 던진 기록)
     const c = clubId === undefined ? null : Math.trunc(clubId);
-    const club = c === null ? '' : ` AND batting_club != ${c} AND game_id IN (SELECT fixture_id FROM games WHERE home = ${c} OR away = ${c})`;
+    const club = c === null ? '' : ` AND batting_club != ${c} AND game_id IN (SELECT fixture_id FROM games WHERE season = ${Math.trunc(season)} AND (home = ${c} OR away = ${c}))`; // 9a: 그 시즌 경기만 훑는다(값은 같다)
     const compressed = this.isCompressed(season);
     const rows = compressed
       ? (this.db
@@ -1245,15 +1314,24 @@ export class SqliteGameRepository implements GameRepository {
   }
 
   cashBalance(clubId: ClubId): number {
-    const r = this.stmt('SELECT COALESCE(SUM(amount), 0) AS cash FROM ledger WHERE club_id = ?').get(clubId) as Row;
-    return num(r.cash);
+    let c = this.cashCache.get(clubId);
+    if (c === undefined) {
+      c = num((this.stmt('SELECT COALESCE(SUM(amount), 0) AS cash FROM ledger WHERE club_id = ?').get(clubId) as Row).cash);
+      this.cashCache.set(clubId, c);
+    }
+    return c;
   }
 
   ledgerByCategory(clubId: ClubId, season: number) {
-    return (this.stmt('SELECT category, SUM(amount) AS amount FROM ledger WHERE club_id = ? AND season = ? GROUP BY category ORDER BY amount DESC').all(clubId, season) as Row[]).map((r) => ({
+    const key = `${clubId}|${season}`;
+    const hit = this.categoryCache.get(key);
+    if (hit) return hit.map((r) => ({ ...r }));
+    const out = (this.stmt('SELECT category, SUM(amount) AS amount FROM ledger WHERE club_id = ? AND season = ? GROUP BY category ORDER BY amount DESC').all(clubId, season) as Row[]).map((r) => ({
       category: String(r.category) as LedgerCategory,
       amount: num(r.amount),
     }));
+    this.categoryCache.set(key, out);
+    return out.map((r) => ({ ...r }));
   }
 
   ledgerEntries(clubId: ClubId, limit: number) {

@@ -222,7 +222,7 @@ export function Market({ nav }: { nav: Nav }) {
             <span className="meta">선수는 매주 일요일 받은 제안 중 가장 좋은 조건을 고릅니다. 우리 제안에는 바로 답합니다. · 운영팀: {MODE_LABEL[v.ops.mode]}</span>
           </div>
           {v.fa.length === 0 ? (
-            <div className="panel-body muted">FA 자격 선수는 11월 13일에 공시됩니다.</div>
+            <div className="panel-body muted">{v.stageLabel.startsWith('FA 공시 전') ? `FA 자격 선수 명단은 공시일에 나옵니다 — ${v.stageLabel}.` : '지금 시장에 나온 FA 선수가 없습니다.'}</div>
           ) : (
             <table className="grid dense">
               <thead>

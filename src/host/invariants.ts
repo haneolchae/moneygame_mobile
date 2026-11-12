@@ -68,6 +68,9 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
     for (const id of h.aToB) moves.set(id, [...(moves.get(id) ?? []), { date: h.date, from: h.clubA }]);
     for (const id of h.bToA) moves.set(id, [...(moves.get(id) ?? []), { date: h.date, from: h.clubB }]);
   }
+  // 9a: 시즌 중 방출(중대 사건 계약 해지 등)도 그날부터 소속이 바뀐 것으로 본다
+  for (const r of repo.getMeta().releases ?? []) moves.set(r.playerId, [...(moves.get(r.playerId) ?? []), { date: r.date, from: r.clubId }]);
+  for (const [id, ms] of moves) moves.set(id, [...ms].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)));
   const clubOn = (id: number, date: string) => {
     const first = moves.get(id)?.find((m) => m.date > date);
     return first ? first.from : playerClub.get(id);

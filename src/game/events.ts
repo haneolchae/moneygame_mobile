@@ -865,7 +865,7 @@ export class EventOps {
         'player.active': p.level === '1군' && !(inj && diffDays(date, inj.returnDate) < 0) ? 1 : 0,
         get 'player.slump'(): ExprValue {
           if (p.isPitcher) return 0;
-          recent ??= repo.awardLines(season, { from: addDays(date, -28), to: addDays(date, -1) }, ourIds).batting;
+          recent ??= repo.awardLines(season, { from: addDays(date, -28), to: addDays(date, -1) }, ourIds, true).batting;
           const b = recent.get(p.id);
           return b && b.PA >= E.slumpMinPa && (opsOf(b) || 0) < E.slumpOps ? 1 : 0;
         },
@@ -941,7 +941,7 @@ export class EventOps {
     const row: EventLogRow = { season: meta.season, weekId, week, date, cardId: card.id, category: card.category, playerId, choiceId: choice.id, by, outcome, text: `${text} → ${choice.text}` };
     this.repo.addEventLog(row);
     // ②: 스토리 장 처리 기록(선택·스토리 플래그)
-    if (card.category === 'story') this.story?.chosen(meta.userClubId, card.id, choice.id, date);
+    if (card.category === 'story') this.story?.chosen(meta.userClubId, card.id, choice.id, date, by === 'owner' ? 'owner' : 'default');
   }
 
   // ───────── 턴 브리핑(D-192·D-203 (8)) ─────────

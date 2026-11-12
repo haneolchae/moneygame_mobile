@@ -53,6 +53,9 @@ function openDb(path: string, readOnly = false): DatabaseSync {
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('PRAGMA synchronous = FULL');
     db.exec('PRAGMA foreign_keys = ON');
+    // 9a(D-240): 페이지 캐시 64MB(기본 2MB). 10시즌 저장본(약 40MB)의 기록 집계가 디스크를 다시 읽지 않는다
+    db.exec(`PRAGMA cache_size = -${SAVE.cacheKiB}`);
+    db.exec('PRAGMA temp_store = MEMORY');
   }
   return db;
 }

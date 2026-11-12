@@ -223,13 +223,15 @@ export class AiClubOps {
           .map((p) => ({ p, r: this.trades.rating(meta, s.id, p) }))
           .sort((x, y) => y.r - x.r || x.p.id - y.p.id)
           .reduce<Array<{ p: PlayerTruth; r: number }>>((acc, x) => (acc.length < A.trade.prospectCandidates && tradable(x.p, b.id) ? [...acc, x] : acc), []);
+        // 9a(D-240): 명단 검사는 두 구단 선수만 보면 된다(은퇴 선수가 쌓여도 같은 비용, 결과 같음)
+        const pair = players.filter((p) => p.clubId === b.id || p.clubId === s.id);
         for (const v of veterans) {
           for (const y of young) {
-            if (this.trades.swapErrors(players, b.id, s.id, [y.p.id], [v.p.id]).length) continue;
+            if (this.trades.swapErrors(pair, b.id, s.id, [y.p.id], [v.p.id]).length) continue;
             const tryCash = (cash: number) => {
               // 구매 구단: 베테랑을 받고 젊은 선수(와 현금)를 준다. 판매 구단은 그 반대
-              const eb = this.trades.evaluate(meta, b.id, { give: [v.p.id], get: [y.p.id], cashWon: -cash }, players);
-              const es = this.trades.evaluate(meta, s.id, { give: [y.p.id], get: [v.p.id], cashWon: cash }, players);
+              const eb = this.trades.evaluate(meta, b.id, { give: [v.p.id], get: [y.p.id], cashWon: -cash }, pair);
+              const es = this.trades.evaluate(meta, s.id, { give: [y.p.id], get: [v.p.id], cashWon: cash }, pair);
               return { eb, es };
             };
             let cash = 0;

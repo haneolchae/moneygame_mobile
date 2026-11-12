@@ -376,6 +376,9 @@ export class Market {
     p.contractYears = 0;
     p.career.franchise = false;
     this.repo.savePlayers([p]);
+    // 9a: 시즌 중 방출은 날짜와 원소속을 남긴다(경기 기록의 소속 검사가 트레이드처럼 그날 이전 경기를 원소속으로 본다)
+    const cur = this.repo.getMeta();
+    if (cur.mode === 'season') this.repo.updateMeta({ releases: [...(cur.releases ?? []), { playerId: p.id, clubId, date, season: cur.season }] });
     return `${p.name} ${reason}.${text}`;
   }
 

@@ -144,6 +144,8 @@ export const SAVE = {
   autosaveEveryDays: 7,
   manualBackupsKept: 2,
   autosaveBackupsKept: 3,
+  /** 9a(D-240): 세션 DB 페이지 캐시(KiB). 기본 2MB에서 64MB로 */
+  cacheKiB: 65_536,
 } as const;
 
 /**
@@ -430,7 +432,8 @@ export const SUPPORT_RENEGOTIATION = {
   upper: 1.2,
   /** D-139(사용자 확정): 0.6 → 1.0 */
   cutSlope: 1.0,
-  minFactor: 0.4,
+  /** D-242(사용자 확정 2026-11-12): 0.4 → 0.2. 9a 10시즌에서 현금 1.8배 이상이면 하한에 닿아 더 줄지 않았다 */
+  minFactor: 0.2,
   lower: 0.8,
   raiseSlope: 0.5,
   maxFactor: 1.2,
