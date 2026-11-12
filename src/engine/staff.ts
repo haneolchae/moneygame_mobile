@@ -249,8 +249,9 @@ export function teamCapacity(staff: StaffMember[], team: TeamKey, mode: 'season'
     managementFactor = (0.8 + (head.abilities.management ?? 50) * 0.004) * 0.7;
     span = 4 + Math.floor((head.abilities.management ?? 50) / 20);
   } else {
-    managementFactor = 0.5;
-    span = 0;
+    // 03 문서: 팀장·본부장 모두 없으면 정기 업무만 팀원 기여 50%(아래 한 번만 줄인다). ① 정리: 예전에는 관리 보정 0.5·관리 범위 0·기여 50%가 겹쳐 12.5%였다
+    managementFactor = 1;
+    span = Number.POSITIVE_INFINITY;
   }
   members.forEach((m, i) => (total += contribution(m) * (i < span ? 1 : 0.5)));
   if (!leader && !head) total *= 0.5; // 팀장·본부장 모두 없으면 정기 업무만 절반 효율로

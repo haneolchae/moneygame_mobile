@@ -13,7 +13,7 @@ import { GameError } from '../shared/protocol';
 import type { Organization } from './organization';
 import type { ActionLogEntry, GameMeta, GameRepository, InboxMessage, TradePackage, TradeTalk } from './ports';
 import type { RosterOps } from './rosterOps';
-import { weekIdFor } from './week';
+import { apPeriodId, weekIdFor } from './week';
 import { NO_GUARD, type BudgetGuard } from './budget';
 
 const EOK = 100_000_000;
@@ -79,6 +79,8 @@ export class TradeOps {
     if (!p || p.clubId !== clubId) return '해당 구단 소속 선수가 아닙니다.';
     if (p.retired) return '은퇴한 선수입니다.';
     if (p.career.faEligible && p.contractYears === 0 && meta.mode === 'stove') return 'FA 자격으로 계약이 끝난 선수입니다.';
+    // D-233: 첫 안건의 미계약 간판 외야수(시즌 모드 2월)는 FA 협상 중이라 거래할 수 없다
+    if (meta.firstAgenda?.playerId === p.id && meta.firstAgenda.status === 'open') return '잔류 협상 중인 미계약 FA입니다.';
     if ((meta.retirementPending ?? []).some((x) => x.playerId === p.id)) return '은퇴를 고민 중인 선수입니다.';
     if (meta.mode === 'stove' && this.repo.getSalaryTalks(meta.season).some((t) => t.playerId === p.id && t.status === 'open')) return '연봉 협상 중인 선수입니다.';
     // D-155 (5): 연쇄 교환 방지
@@ -223,7 +225,8 @@ export class TradeOps {
 
   private talk(meta: GameMeta, clubId: ClubId): TradeTalk {
     const t = meta.tradeTalks?.[String(clubId)];
-    return t && t.season === meta.season ? t : { clubId, season: meta.season, weeksPaid: [], log: [], counter: null };
+    // 저장본 meta는 읽기 전용(캐시)이라 고쳐 쓸 협상 기록은 복사한다
+    return t && t.season === meta.season ? structuredClone(t) : { clubId, season: meta.season, weeksPaid: [], log: [], counter: null };
   }
 
   /** 이번 주 세션 상태 */

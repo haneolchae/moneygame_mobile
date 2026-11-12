@@ -68,7 +68,7 @@ export class Dispatcher {
         const name = p.saveName.trim() || '새 게임';
         const repo = this.saves.createSession();
         this.service = null;
-        createNewGame(repo, { clubId: p.clubId, saveName: name.slice(0, 40), seed: p.seed, createdAt: this.now() });
+        createNewGame(repo, { clubId: p.clubId, saveName: name.slice(0, 40), seed: p.seed, createdAt: this.now(), start: p.start, onProgress: (prog) => this.opts.onEvent?.({ type: 'advanceProgress', ...prog }) });
         this.service = new GameService(repo);
         return this.dashboard() as R;
       }
@@ -80,7 +80,9 @@ export class Dispatcher {
         const result = this.game().advance(p.mode, (prog) => this.opts.onEvent?.({ type: 'advanceProgress', ...prog }), undefined, !!p.autoCards);
         const autosaveDue = this.saves.noteDaysAdvanced(result.daysProcessed);
         let autosaved = false;
-        if (autosaveDue || result.stoppedReason?.startsWith('정규시즌 종료') || result.stoppedReason?.startsWith('스토브리그 종료')) {
+        // D-220: 스토브리그 자동 저장은 턴 단위(턴 진행이 끝날 때마다)
+        const turnEnd = p.mode === 'turn' && /끝 — 구간 보고/.test(result.stoppedReason ?? '');
+        if ((autosaveDue && this.game().meta().mode === 'season') || turnEnd || result.stoppedReason?.startsWith('정규시즌 종료') || result.stoppedReason?.startsWith('스토브리그 종료')) {
           this.saves.save('autosave', 'auto');
           autosaved = true;
         }
@@ -274,10 +276,18 @@ export class Dispatcher {
         return this.game().setPolicy(payload as RequestMap['org.setPolicy']['payload']) as R;
       case 'org.delegateFa': {
         const p = payload as RequestMap['org.delegateFa']['payload'];
-        return this.game().delegateFa(p.playerId, p.maxTotalWon, p.maxYears) as R;
+        return this.game().delegateFa(p.playerId, p.maxTotalWon, p.maxYears, p.minTotalWon, p.deadline) as R;
       }
-      case 'org.delegateSalary':
-        return this.game().delegateSalary((payload as RequestMap['org.delegateSalary']['payload'] | undefined)?.playerId) as R;
+      case 'org.delegateSalary': {
+        const p = payload as RequestMap['org.delegateSalary']['payload'] | undefined;
+        return this.game().delegateSalary(p?.playerId, p?.maxRatioBp) as R;
+      }
+      case 'stove.chooseCard': {
+        const p = payload as RequestMap['stove.chooseCard']['payload'];
+        return this.game().chooseStoveCard(p.cardId, p.choiceId) as R;
+      }
+      case 'game.winterReport':
+        return this.game().winterReport() as R;
       case 'org.delegateHire': {
         const p = payload as RequestMap['org.delegateHire']['payload'];
         return this.game().delegateHire(p.team, p.title, p.maxSalaryWon) as R;

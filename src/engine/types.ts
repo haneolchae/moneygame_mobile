@@ -212,6 +212,8 @@ export interface PlayerTruth {
   training?: TrainingPlan;
   /** 연장 계약(D-136): 새 연봉과 적용 시즌. 그 시즌 시작(2/1)에 연봉으로 옮긴다 */
   nextContract?: { salary: number; startSeason: number };
+  /** D-227: 샐러리캡 산정용 계약금 연평균(계약한 구단·적용 시즌 from~to). 장부는 계약 때 한 번에 인식(D-225 (3)) */
+  bonusCap?: { perYear: number; clubId: number; from: number; to: number };
 }
 
 export type TrainingIntensity = 'low' | 'normal' | 'high';

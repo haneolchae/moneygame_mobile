@@ -6,6 +6,9 @@ import { dateKo, int, POSITION_LABELS, rate3, shortDate, won } from '../format';
 import { Icon } from '../icons';
 import { NextGameCard } from '../NextGameCard';
 import { PostseasonBracket } from '../PostseasonBracket';
+import { TurnMeeting } from '../TurnMeeting';
+import { WinterReportPopup } from '../WinterReport';
+import { useState } from 'react';
 
 const TASK_ICON: Record<string, string> = { inbox: 'mail', players: 'users', finance: 'coins', schedule: 'calendar', standings: 'chart', market: 'handshake', org: 'org', draft: 'star', roster: 'ball' };
 const LEVEL_CLASS: Record<TaskView['level'], string> = { 필수: 'req', 권장: 'rec', 선택: 'opt', 정보: 'opt' };
@@ -49,7 +52,7 @@ function StoveWeek({ d }: { d: DashboardView }) {
   return (
     <section className="panel">
       <div className="panel-head">
-        <h2>이번 주 스토브리그</h2>
+        <h2>스토브리그 리그 일정</h2>
         <span className="meta">
           {d.owner.weekLabel} | 개막 {dateKo(d.openingDay)}
         </span>
@@ -72,16 +75,52 @@ function StoveWeek({ d }: { d: DashboardView }) {
   );
 }
 
+/** D-215 첫 안건: 간판 외야수 잔류 협상(2월 2주 말 마감)과 지난겨울 보고서 다시 보기 */
+function FirstAgenda({ d, nav }: { d: DashboardView; nav: Nav }) {
+  const [open, setOpen] = useState(false);
+  const a = d.firstAgenda;
+  if (!a && !d.hasWinterReport) return null;
+  const label: Record<string, string> = { open: '협상 중', signed: '잔류 계약', reopened: '시장에 다시 나감', gone: '떠남' };
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <h2>첫 안건</h2>
+        <span className="meta">구단주 취임 · 2027 스프링캠프</span>
+      </div>
+      <div className="panel-body">
+        {a && (
+          <p>
+            간판 외야수 <strong>{a.name}</strong> 잔류 협상 — {label[a.status] ?? a.status} · 마감 {shortDate(a.deadline)}{' '}
+            {a.status === 'open' && (
+              <button className="small" onClick={() => nav.go({ name: 'player', playerId: a.playerId, back: { name: 'dashboard' } })}>
+                협상하기
+              </button>
+            )}
+          </p>
+        )}
+        {d.hasWinterReport && (
+          <button className="small" onClick={() => setOpen(true)}>
+            지난겨울 보고서 다시 보기
+          </button>
+        )}
+      </div>
+      {open && <WinterReportPopup onClose={() => setOpen(false)} />}
+    </section>
+  );
+}
+
 export function Dashboard({ nav }: { nav: Nav }) {
   const d = nav.dashboard!;
   const inSeason = d.phase === 'regular' || d.phase === 'postseason' || d.phase === 'seasonComplete';
   return (
     <div className="page">
-      <h1>구단 현황</h1>
+      <h1>{d.stove ? '구단 현황 · 턴 회의' : '구단 현황'}</h1>
       <Kpis d={d} />
       <div className="columns">
         <div>
           {d.postseason && <PostseasonBracket ps={d.postseason} userClubId={d.userClub.id} />}
+          {d.stove && <TurnMeeting d={d} nav={nav} />}
+          {d.firstAgenda && d.phase === 'preseason' && <FirstAgenda d={d} nav={nav} />}
           {d.phase === 'stove' ? <StoveWeek d={d} /> : <NextGameCard d={d} nav={nav} back={{ name: 'dashboard' }} />}
           <section className="panel">
             <div className="panel-head">

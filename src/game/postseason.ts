@@ -18,7 +18,7 @@ export interface SeriesState {
   highWins: number;
   lowWins: number;
   ties: number;
-  /** 계획된 경기 날짜(무승부 재경기는 뒤에 붙는다) */
+  /** 계획된 경기 날짜(재경기 없음, D-225 (2)) */
   dates: GameDate[];
   fixtureIds: number[];
   winner: ClubId | null;
@@ -46,8 +46,16 @@ const DAY_OFFSETS: Record<SeriesKey, number[]> = {
 /** 상위 시드 홈 경기 차수(1부터). 와일드카드는 모두 4위 홈 */
 const HIGH_HOME: Record<SeriesKey, number[]> = { wc: [1, 2], semi: [1, 2, 5], po: [1, 2, 5], ks: [1, 2, 6, 7] };
 
-/** ASSUMPTION(D-081): 포스트시즌 연장 15회. 와일드카드 외 무승부는 재경기(시리즈 마지막 일정 다음 날) */
+/** D-081·D-225 (2): 포스트시즌 연장 15회(끝나면 무승부). 시리즈의 마지막 예정 경기만 무제한 이닝, 재경기 없음 */
 export const POSTSEASON_MAX_INNINGS = 15;
+/** 무제한 이닝을 엔진에 넘기는 값(실제로 닿지 않는 이닝 수) */
+export const UNLIMITED_INNINGS = 99;
+
+/** 그 경기의 연장 한도: 시리즈 마지막 예정 경기(와일드카드 2차전·준PO/PO 5차전·KS 7차전)는 무제한 */
+export function postseasonMaxInnings(stage: string, gameInSeries: number | undefined): number {
+  const n = DAY_OFFSETS[stage as SeriesKey]?.length;
+  return n !== undefined && gameInSeries === n ? UNLIMITED_INNINGS : POSTSEASON_MAX_INNINGS;
+}
 
 /** 정규시즌 종료 주 다음 목요일 (01 문서) */
 export function postseasonStart(regularSeasonEnd: GameDate): GameDate {
@@ -109,9 +117,8 @@ export class Postseason {
   /** 시리즈의 다음 경기를 일정에 넣는다. 반환값은 다음 경기 ID */
   private schedule(s: SeriesState, season: number, nextId: number): number {
     const n = s.fixtureIds.length; // 지금까지 잡힌 경기 수
-    while (s.dates.length <= n) s.dates.push(addDays(s.dates[s.dates.length - 1]!, 1)); // 무승부 재경기
     const gameNo = n + 1;
-    const highHome = HIGH_HOME[s.key].includes(gameNo) || gameNo > DAY_OFFSETS[s.key].length;
+    const highHome = HIGH_HOME[s.key].includes(gameNo);
     const f: Fixture = { id: nextId, season, date: s.dates[n]!, home: highHome ? s.high! : s.low!, away: highHome ? s.low! : s.high!, seriesId: 0, gameInSeries: gameNo, stage: s.key };
     this.repo.addFixtures([f], { nextFixtureId: nextId + 1 });
     s.fixtureIds.push(nextId);
@@ -120,8 +127,10 @@ export class Postseason {
 
   /** 하루 경기 결과를 시리즈에 반영하고 다음 경기를 잡는다. */
   onResults(meta: GameMeta, date: GameDate, results: GameResult[]): { state: PostseasonState; inbox: InboxMessage[]; nextFixtureId: number; finished: boolean } | null {
-    const state = this.state(meta);
-    if (!state || state.champion !== null) return null;
+    // 저장본 meta는 읽기 전용(캐시)이라 진행할 대진은 복사해서 고친다
+    const cur = this.state(meta);
+    if (!cur || cur.champion !== null) return null;
+    const state = structuredClone(cur);
     let nextId = meta.nextFixtureId;
     const inbox: InboxMessage[] = [];
     const name = (id: ClubId) => this.repo.getClubs().find((c) => c.id === id)?.shortName ?? `#${id}`;
@@ -138,6 +147,8 @@ export class Postseason {
         else s.ties++;
         if (s.highWins >= s.winsNeeded) s.winner = s.high;
         else if (s.lowWins >= s.winsNeeded) s.winner = s.low;
+        // D-225 (2): 예정 경기를 다 치르면 승수가 많은 팀, 같으면 상위 시드가 올라간다(재경기 없음)
+        else if (s.fixtureIds.length >= DAY_OFFSETS[s.key].length) s.winner = s.lowWins > s.highWins ? s.low : s.high;
         if (s.winner === null) {
           nextId = this.schedule(s, state.season, nextId);
           continue;
@@ -149,9 +160,7 @@ export class Postseason {
         const next = state.series[idx + 1];
         if (next) {
           next.low = s.winner;
-          // 앞 시리즈가 늦게 끝나면(재경기) 다음 시리즈 일정을 그만큼 미룬다.
-          const shift = Math.max(0, Math.round((Date.parse(addDays(date, 2)) - Date.parse(next.dates[0]!)) / 86_400_000));
-          if (shift > 0) next.dates = next.dates.map((d) => addDays(d, shift));
+          // 재경기가 없어 다음 시리즈 시작일은 고정이다(01 문서)
           nextId = this.schedule(next, state.season, nextId);
         } else {
           state.champion = s.winner;

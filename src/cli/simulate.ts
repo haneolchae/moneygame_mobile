@@ -12,7 +12,7 @@ import { PROBABILITY_CONFIG } from '../engine/probabilityConfig';
 import { CLOSE_RULES } from '../game/seasonClose';
 import { Dispatcher } from '../host/dispatcher';
 import { coreAverage } from '../engine/development';
-import { checkInvariants, injuryStats, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
+import { checkForeignQuota, checkInvariants, injuryStats, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
 import type { AdvanceResult, BudgetPlanInput, BudgetView, DashboardView, DelegationPolicyView, BusinessView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView, TradeOffersView, TradeResultView, TradeView } from '../shared/protocol';
 
 const arg = (name: string, fallback: string) => {
@@ -34,7 +34,7 @@ async function main() {
   const rows: Array<Record<string, unknown>> = [];
   // 진행 정체 감시: 0일 진행이 연속 maxStall회면 원인(멈춘 이유·날짜)을 출력하고 실패로 끝낸다.
   let stall = 0;
-  const advance = async (mode: 'day' | 'week' | 'untilSeasonEnd') => {
+  const advance = async (mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn') => {
     const r = await call<AdvanceResult>('game.advance', { mode, autoCards: true });
     stall = r.daysProcessed === 0 ? stall + 1 : 0;
     if (stall >= maxStall) {
@@ -48,6 +48,8 @@ async function main() {
   const tNew = performance.now();
   await call<DashboardView>('game.new', { clubId: 1, saveName: '장기 실행', seed });
   const newGameMs = Math.round(performance.now() - tNew);
+  // ①(D-214·D-215): 새 게임은 첫 스토브리그를 자동 실행하고 2027-02-01 캠프에서 시작한다
+  const startDate = (await call<DashboardView>('game.dashboard')).date;
   // 우리 구단: 위임 가능한 팀을 완전 위임으로 둔다(정책 한도는 기본값).
   const org = await call<OrganizationView>('org.view');
   for (const p of org.policies.filter((x) => x.team === 'ops' || x.team === 'admin')) await call('org.setPolicy', { ...p, mode: 'auto' } satisfies DelegationPolicyView);
@@ -109,6 +111,8 @@ async function main() {
     }
   };
   const tStove = performance.now();
+  // 두 번째 이후 스토브리그 턴 수 기록(시즌 번호를 턴마다 하나씩)
+  const stoveTurns: number[] = [];
   let stoveWeeks = 0;
   while ((await call<DashboardView>('game.dashboard')).phase === 'stove') {
     await trySponsor();
@@ -150,9 +154,11 @@ async function main() {
         await trySponsor();
         await tryOffer();
         await tryBudget();
-        await advance('week');
+        // D-216: 스토브리그는 턴 단위로 진행한다
+        await advance('turn');
+        stoveTurns.push(s);
       }
-    stoveErrors.push(...[...checkRosterLimits(d.saves.repository()), ...checkRosterComposition(d.saves.repository())].map((e) => `스토브리그 후 ${e}`));
+    stoveErrors.push(...[...checkRosterLimits(d.saves.repository()), ...checkRosterComposition(d.saves.repository()), ...checkForeignQuota(d.saves.repository())].map((e) => `스토브리그 후 ${e}`));
     // 2d(D-120): 위임 구단주도 캠프 중 감독 추천을 수동 계획으로 저장하고, 계획의 지명타자를 2군 타자와 바꿔
     // 수동 경기 운영·계획 보정 경로를 시즌 내내 함께 검사한다(규칙 판정은 게임 쪽 명령이 한다).
     try {
@@ -476,8 +482,10 @@ async function main() {
     seed,
     seasons,
     newGameMs,
+    startDate,
     stoveWeeks,
     stoveMs,
+    stoveTurnsBySeason: Object.fromEntries([...new Set(stoveTurns)].map((s) => [String(s), stoveTurns.filter((x) => x === s).length])),
     loadMs,
     rows,
   };

@@ -514,7 +514,8 @@
     "phases": [
       "preseason",
       "regular",
-      "postseason"
+      "postseason",
+      "stove"
     ],
     "target": "club",
     "trigger": "club.cashEok < 30",
@@ -779,7 +780,8 @@
     "phases": [
       "preseason",
       "regular",
-      "postseason"
+      "postseason",
+      "stove"
     ],
     "target": "ourPlayer",
     "trigger": "player.starter == 1 && player.active == 1",
@@ -1006,7 +1008,8 @@
     "category": "coach",
     "priority": false,
     "phases": [
-      "regular"
+      "regular",
+      "stove"
     ],
     "target": "club",
     "trigger": "club.rank >= 4 && club.week >= 6",
@@ -1146,7 +1149,8 @@
     "category": "ops",
     "priority": false,
     "phases": [
-      "regular"
+      "regular",
+      "stove"
     ],
     "target": "club",
     "trigger": "club.tradeRecent == 1",
@@ -1782,6 +1786,207 @@
           }
         ],
         "text": "선수 개인 기부로 두었다."
+      }
+    ]
+  },
+  {
+    "id": "STV-01",
+    "type": "decision",
+    "category": "transfer",
+    "priority": false,
+    "phases": [
+      "stove"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.faOpen == 1 && player.faRivals >= 1",
+    "weight": 6,
+    "cooldownWeeks": 3,
+    "seasonCap": 2,
+    "delegateTeam": "operations",
+    "delegateDefault": "keep",
+    "texts": [
+      "다른 구단이 {player}에게 더 큰 조건을 내밀었다는 소식입니다.",
+      "{player} 측이 경쟁 구단의 거액 제안을 알려 왔습니다.",
+      "\"다른 팀 조건이 훨씬 좋습니다.\" {player}의 에이전트가 연락했습니다."
+    ],
+    "choices": [
+      {
+        "id": "raise",
+        "label": "협상 지시서 한도를 올린다(+15%)",
+        "effects": [
+          {
+            "type": "DIRECTIVE",
+            "value": 15
+          },
+          {
+            "type": "MOOD",
+            "value": 3
+          }
+        ],
+        "text": "{player} 협상 한도를 15% 올렸다.",
+        "link": "market"
+      },
+      {
+        "id": "keep",
+        "label": "조건을 그대로 둔다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": -3
+          }
+        ],
+        "text": "기존 조건을 유지했다."
+      },
+      {
+        "id": "stop",
+        "label": "협상을 중단한다",
+        "effects": [
+          {
+            "type": "DIRECTIVE",
+            "value": -100
+          },
+          {
+            "type": "FAN_NOW",
+            "value": -2
+          }
+        ],
+        "text": "{player}와의 잔류 협상을 접었다."
+      }
+    ]
+  },
+  {
+    "id": "STV-02",
+    "type": "decision",
+    "category": "transfer",
+    "priority": false,
+    "phases": [
+      "stove"
+    ],
+    "target": "ourPlayer",
+    "trigger": "player.talkRounds >= 2",
+    "weight": 4,
+    "cooldownWeeks": 3,
+    "seasonCap": 2,
+    "delegateTeam": "operations",
+    "delegateDefault": "deadline",
+    "texts": [
+      "{player}의 협상이 길어지자 에이전트가 압박해 옵니다.",
+      "\"이번 주 안에 답을 주십시오.\" {player} 측의 요구입니다.",
+      "{player} 협상이 길어지며 언론에 이야기가 새 나가고 있습니다."
+    ],
+    "choices": [
+      {
+        "id": "deadline",
+        "label": "기한을 제시한다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": -4
+          },
+          {
+            "type": "PRESS",
+            "value": 1
+          }
+        ],
+        "text": "구단 최종 기한을 통보했다."
+      },
+      {
+        "id": "concede",
+        "label": "조금 양보한다(+5%)",
+        "effects": [
+          {
+            "type": "DIRECTIVE",
+            "value": 5
+          },
+          {
+            "type": "MOOD",
+            "value": 2
+          }
+        ],
+        "text": "협상 한도를 5% 올렸다."
+      },
+      {
+        "id": "ignore",
+        "label": "무시한다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": -6
+          },
+          {
+            "type": "PRESS",
+            "value": -1
+          }
+        ],
+        "text": "에이전트 요구에 대응하지 않았다."
+      }
+    ]
+  },
+  {
+    "id": "MLB-01",
+    "type": "decision",
+    "category": "transfer",
+    "priority": false,
+    "phases": [
+      "stove"
+    ],
+    "target": "ourPlayer",
+    "trigger": "club.turn == 1 && player.proSeasons >= 7 && player.clubRank <= 2",
+    "weight": 2,
+    "cooldownWeeks": 52,
+    "seasonCap": 1,
+    "delegateTeam": "operations",
+    "delegateDefault": "refuse",
+    "texts": [
+      "메이저리그 구단들이 {player}에게 관심을 보이고 있습니다. 포스팅을 허락할까요?",
+      "{player}가 메이저리그 도전을 원합니다. 구단의 동의가 필요합니다.",
+      "\"꿈의 무대에 도전하고 싶습니다.\" {player}가 포스팅을 요청했습니다."
+    ],
+    "choices": [
+      {
+        "id": "agree",
+        "label": "포스팅에 동의한다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": 5
+          }
+        ],
+        "outcomes": [
+          {
+            "p": 0.6,
+            "hint": "성사되면 이적료 수입, 선수는 떠난다",
+            "effects": [
+              {
+                "type": "CONTRACT",
+                "kind": "posting"
+              },
+              {
+                "type": "CASH",
+                "grade": "large",
+                "income": true
+              }
+            ],
+            "text": "{player}의 메이저리그 진출이 성사됐다."
+          }
+        ],
+        "elseText": "{player}의 포스팅이 무산돼 팀에 남는다.",
+        "text": "{player}의 포스팅에 동의했다."
+      },
+      {
+        "id": "refuse",
+        "label": "거절한다",
+        "effects": [
+          {
+            "type": "MOOD",
+            "value": -20
+          },
+          {
+            "type": "FAN_NOW",
+            "value": -2
+          }
+        ],
+        "text": "{player}의 포스팅 요청을 거절했다."
       }
     ]
   }

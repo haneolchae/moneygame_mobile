@@ -77,7 +77,8 @@ export class AwardOps {
     if (!ids.length) return out;
     const NEAR: Record<string, number> = { H: 15, HR: 3, RBI: 15, SB: 5, W: 3, SV: 5, K: 25 };
     const before = this.careerBefore(season);
-    const { batting, pitching } = this.repo.awardLines(season);
+    // 성능(① 후속): 이번 시즌 기록은 대상 선수만 집계한다(값은 같다)
+    const { batting, pitching } = this.repo.awardLines(season, undefined, ids);
     for (const id of ids) {
       const b = batting.get(id);
       const pb = before.bat.get(id);

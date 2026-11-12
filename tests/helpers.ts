@@ -23,7 +23,9 @@ export function makeDispatcher(dir: string): Dispatcher {
 
 export async function call<K extends RequestName>(d: Dispatcher, name: K, payload?: RequestMap[K]['payload']): Promise<RequestMap[K]['result']> {
   // EV-3(D-207 (2)): 시험은 화면 없는 자동 실행이라 대기 결정 카드를 위임 기본 선택지로 처리한다
-  const p = name === 'game.advance' && payload && (payload as { autoCards?: boolean }).autoCards === undefined ? { ...(payload as object), autoCards: true } : payload;
+  let p = name === 'game.advance' && payload && (payload as { autoCards?: boolean }).autoCards === undefined ? { ...(payload as object), autoCards: true } : payload;
+  // ①(D-214): 새 게임 기본은 2/1 캠프 시작(첫 스토브리그 자동 실행). 기존 시험은 스토브리그 기능을 보려고 2026-11-08 스토브리그에서 시작한다.
+  if (name === 'game.new' && payload && (payload as { start?: string }).start === undefined) p = { ...(payload as object), start: 'stove' } as typeof p;
   const r = await d.respond(name, p as RequestMap[K]['payload']);
   if (!r.ok) throw new Error(`${name}: [${r.error.code}] ${r.error.message}`);
   return r.result;

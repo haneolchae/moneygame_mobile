@@ -114,21 +114,24 @@ async function runSelfTest() {
   const t0 = Date.now();
   await call('game.new', { clubId: 5, saveName: '자체 점검', seed: 'selftest-seed' });
   report.newGameMs = Date.now() - t0;
-  // 스토브리그를 1주씩 지나 시즌 모드로 간 뒤 정규시즌을 끝까지 진행한다.
+  // ①(D-214): 첫 스토브리그는 새 게임 생성 때 자동 실행되어 2027-02-01 캠프에서 시작한다
+  report.startDate = (await call('game.dashboard')).date;
+  // ①(D-214): 새 게임은 캠프에서 시작하므로 스토브리그 진행은 0회여야 한다. 그 뒤 정규시즌을 끝까지 진행한다.
   const tStove = Date.now();
   let stoveWeeks = 0;
   while ((await call('game.dashboard')).phase === 'stove') {
-    await call('game.advance', { mode: 'week' });
+    await call('game.advance', { mode: 'turn', autoCards: true });
     stoveWeeks++;
   }
   report.stoveWeeks = stoveWeeks;
   report.stoveMs = Date.now() - tStove;
   const t1 = Date.now();
-  const adv = await call('game.advance', { mode: 'untilSeasonEnd' });
+  // EV-3(D-207): 화면 없는 자체 점검은 결정 카드를 위임 기본 선택지로 처리한다
+  const adv = await call('game.advance', { mode: 'untilSeasonEnd', autoCards: true });
   report.seasonAdvanceMs = Date.now() - t1;
   report.advance = adv;
   const tPs = Date.now();
-  const ps = await call('game.advance', { mode: 'untilSeasonEnd' });
+  const ps = await call('game.advance', { mode: 'untilSeasonEnd', autoCards: true });
   report.postseasonMs = Date.now() - tPs;
   report.postseason = ps.stoppedReason;
   loop.disable();

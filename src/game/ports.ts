@@ -148,8 +148,55 @@ export interface GameMeta {
   sponsorTotals?: Record<string, Record<string, number>>;
   /** 6d 굿즈(D-153): 구단 ID → 제작업체·재고·발주·판매 집계 */
   merch?: Record<string, MerchState>;
-  /** D-136 계약 세션: 선수 ID → 이번 주 세션(주·제안 횟수) */
+  /** D-136 계약 세션: 선수 ID → 이번 주(스토브리그는 턴, D-218) 세션(기간 ID·제안 횟수) */
   contractSessions?: Record<string, { weekId: string; count: number }>;
+  /**
+   * ① 진행 구조 전환(D-215·D-230): 새 게임 생성 때 첫 스토브리그를 화면 없이 자동 실행하는 중.
+   * 켜져 있으면 업적 판정·경험치·행동력 지급을 하지 않고, 우리 구단은 완전 위임 + 현상 유지형 정책으로 돈다.
+   */
+  autoRun?: { franchiseId: PlayerId | null; foreignVacancy: boolean } | null;
+  /** D-215: 첫 안건 — 자동 실행에서 미계약으로 남긴 간판 외야수(시작 예외: AI 입찰 제외)와 마감일 */
+  firstAgenda?: { playerId: PlayerId; deadline: GameDate; status: 'open' | 'signed' | 'reopened' | 'gone' } | null;
+  /** D-215: 「지난겨울 보고서」(자동 실행 결과를 실제 기록에서 집계, 2/1에 한 번 만든다) */
+  winterReport?: WinterReport | null;
+  /** D-216·D-219: 스토브리그 턴 진행 상태(턴 번호·이번 구간 멈춤 횟수·이미 멈춘 사유 키) */
+  stoveTurn?: StoveTurnState | null;
+  /** ① 턴 브리핑 집계 시작일(직전 턴 첫날) */
+  stoveTurnFrom?: GameDate;
+  /** D-228 MLB 진출(포스팅 성사) 기록 */
+  postings?: Array<{ playerId: PlayerId; clubId: ClubId | null; season: number; date: GameDate; feeWon: number }>;
+}
+
+/** D-216·D-219·D-220 스토브리그 턴 진행 상태 */
+export interface StoveTurnState {
+  /** K 기준 오프시즌 연도 */
+  offseason: number;
+  index: number;
+  /** 이번 구간 진행에서 멈춘 횟수(구간당 STOVE_TURN.maxStops) */
+  stops: number;
+  /** 이미 멈춘 사유(같은 사유로 두 번 멈추지 않는다) */
+  stopKeys: string[];
+  /** 기본 처리로 넘긴 멈춤(구간 보고에 한 줄) */
+  defaulted: string[];
+}
+
+/** D-215 지난겨울 보고서: 전임 경영진 인수인계서 */
+export interface WinterReport {
+  from: GameDate;
+  to: GameDate;
+  incoming: Array<{ playerId: PlayerId; name: string; how: string }>;
+  outgoing: Array<{ playerId: PlayerId; name: string; how: string }>;
+  contracts: Array<{ playerId: PlayerId; name: string; text: string }>;
+  sponsors: string[];
+  hires: string[];
+  facilities: string[];
+  cashStart: number;
+  cashEnd: number;
+  /** 장부 분류별 합(원) */
+  ledger: Array<{ category: string; amount: number }>;
+  rosterCount: number;
+  foreignCount: number;
+  notes: string[];
 }
 
 /** 트레이드 교환안: cashWon > 0이면 우리가 상대에게, < 0이면 상대가 우리에게 낸다 */
@@ -241,6 +288,8 @@ export interface EventState {
   caseWeek?: number;
   /** EV-3(D-207 (1)) 구단주가 고를 대기 카드(선택 전 진행 불가) */
   pendingCard?: { cardId: string; playerId: PlayerId | null; week: number; weekId: GameDate; date: GameDate; text: string } | null;
+  /** ①(D-220) 스토브리그 턴 회의 결정 카드(턴당 최대 3장). 답하지 않은 카드는 그 턴 첫날 처리 전에 기본 응답 */
+  stoveCards?: Array<{ cardId: string; playerId: PlayerId | null; week: number; weekId: GameDate; date: GameDate; text: string }>;
   /** 다음 브리핑의 결과 회수 줄 */
   pendingLines: string[];
   lastCategory: string | null;
@@ -679,7 +728,10 @@ export interface GameRepository {
   getSalaryTalks(offseason: number): SalaryTalk[];
   saveSalaryTalks(rows: SalaryTalk[]): void;
   /** 이번 주 행동력 사용. 부족하면 오류 */
+  /** 행동력 사용. 스토브리그에는 주 ID 대신 지금 턴의 기간 ID로 차감한다(D-217) */
   spendAp(weekId: string, amount: number): void;
+  /** 행동력 지급(이미 있으면 그대로). 스토브리그 턴 지급용(D-217) */
+  grantAp(row: ApWeek): void;
   addLedger(entries: LedgerEntry[]): void;
   addInbox(messages: InboxMessage[]): void;
   /** clubId: 숫자면 그 구단, null이면 채용 시장 후보, 생략하면 전체 */
@@ -743,7 +795,8 @@ export interface GameRepository {
   /** 스프레이 차트 합계(타자·구역·타구 유형) */
   sprayTotals(season: number, playerId: PlayerId): Array<{ zone: string; type: string; n: number; h: number; xbh: number }>;
   /** 8a 리그 시상(D-180) */
-  awardLines(season: number, range?: { from: GameDate; to: GameDate }): { batting: Map<PlayerId, BattingTotals>; pitching: Map<PlayerId, PitchingTotals & { HLD: number; BS: number; QS: number }> };
+  /** ids를 주면 그 선수만 집계한다(같은 값, 빠름) */
+  awardLines(season: number, range?: { from: GameDate; to: GameDate }, ids?: readonly PlayerId[]): { batting: Map<PlayerId, BattingTotals>; pitching: Map<PlayerId, PitchingTotals & { HLD: number; BS: number; QS: number }> };
   positionOuts(season: number): Array<{ playerId: PlayerId; clubId: ClubId; position: string; outs: number }>;
   awardFielding(season: number): { fielding: Map<PlayerId, { PO: number; A: number; E: number }>; catcher: Map<PlayerId, { SB: number; CS: number; PB: number }> };
   positionOutChecks(season: number): Array<{ gameId: number; clubId: ClubId; fieldOuts: number; dhOuts: number; defOuts: number }>;

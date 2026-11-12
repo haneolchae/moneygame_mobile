@@ -8,7 +8,8 @@ import { exprVars, parseExpr, type ExprNode } from './expr';
 export const CARD_CATEGORIES = ['injury', 'award', 'sponsor', 'coach', 'transfer', 'ops', 'personal', 'positive'] as const;
 export type CardCategory = (typeof CARD_CATEGORIES)[number];
 export const CATEGORY_LABEL: Record<CardCategory, string> = { injury: '부상·건강', award: '시상·기록', sponsor: '스폰서·사업', coach: '감독·코치', transfer: '이적·육성', ops: '운영·팬', personal: '일상 개인사', positive: '긍정 개인사' };
-export const PHASES = ['preseason', 'regular', 'postseason'] as const;
+/** stove: 스토브리그 턴 회의 카드(①, D-220) */
+export const PHASES = ['preseason', 'regular', 'postseason', 'stove'] as const;
 export type CardPhase = (typeof PHASES)[number];
 /** freeAgent: 국내 무소속 선수(D-212 DEV-01) */
 export const TARGETS = ['club', 'ourPlayer', 'freeAgent'] as const;
@@ -16,19 +17,21 @@ export const TEAMS = ['medical', 'pr', 'partnership', 'operations', 'marketing']
 export const TEAM_LABEL: Record<string, string> = { medical: '컨디셔닝·메디컬팀', pr: '홍보팀', partnership: '사업제휴팀', operations: '운영팀', marketing: '마케팅팀' };
 
 /** 26 4장 효과 전체 */
-export const EFFECT_TYPES = ['CASH', 'RECUR', 'DEMAND', 'MERCH', 'FAN_NOW', 'FAN_TARGET', 'PRESS', 'MOOD', 'COND', 'INJ_RISK', 'REST', 'SUSPEND', 'GROWTH', 'TRUST', 'CLUBHOUSE', 'FLAG', 'SPAWN', 'CONTRACT', 'HEAL', 'SPONSOR_CUT'] as const;
+/** DIRECTIVE(①): 대상 선수의 진행 중 협상 지시서 한도 ±value%(-100이면 협상 중단) */
+export const EFFECT_TYPES = ['CASH', 'RECUR', 'DEMAND', 'MERCH', 'FAN_NOW', 'FAN_TARGET', 'PRESS', 'MOOD', 'COND', 'INJ_RISK', 'REST', 'SUSPEND', 'GROWTH', 'TRUST', 'CLUBHOUSE', 'FLAG', 'SPAWN', 'CONTRACT', 'HEAL', 'SPONSOR_CUT', 'DIRECTIVE'] as const;
 export type EffectType = (typeof EFFECT_TYPES)[number];
 /** 실제 모델에 연결한 효과(EV-1 6종 + EV-2 10종 + EV-3 HEAL + EV-4 징계·계약·품위 조항) */
-export const CONNECTED: ReadonlySet<EffectType> = new Set<EffectType>(['CASH', 'FAN_NOW', 'REST', 'TRUST', 'FLAG', 'SPAWN', 'MOOD', 'CLUBHOUSE', 'COND', 'INJ_RISK', 'DEMAND', 'MERCH', 'RECUR', 'FAN_TARGET', 'PRESS', 'GROWTH', 'HEAL', 'SUSPEND', 'CONTRACT', 'SPONSOR_CUT']);
+export const CONNECTED: ReadonlySet<EffectType> = new Set<EffectType>(['CASH', 'FAN_NOW', 'REST', 'TRUST', 'FLAG', 'SPAWN', 'MOOD', 'CLUBHOUSE', 'COND', 'INJ_RISK', 'DEMAND', 'MERCH', 'RECUR', 'FAN_TARGET', 'PRESS', 'GROWTH', 'HEAL', 'SUSPEND', 'CONTRACT', 'SPONSOR_CUT', 'DIRECTIVE']);
 /** EV-4 계약 조치 종류 */
-export const CONTRACT_KINDS = ['release', 'withdrawPick', 'payCut', 'fireManager', 'signTrial', 'signElsewhere'] as const;
+/** posting(①, D-228): MLB 진출(포스팅 성사) — 소속 해제·해외 진출 기록 */
+export const CONTRACT_KINDS = ['release', 'withdrawPick', 'payCut', 'fireManager', 'signTrial', 'signElsewhere', 'posting'] as const;
 /** 기간(주)이 필요한 효과 */
 export const TIMED: ReadonlySet<EffectType> = new Set<EffectType>(['COND', 'INJ_RISK', 'DEMAND', 'MERCH', 'RECUR', 'FAN_TARGET']);
 export const COST_GRADES = ['small', 'medium', 'large'] as const;
 
 /** 조건식에서 쓸 수 있는 변수(flag.이름은 따로 허용) */
-export const CLUB_VARS = ['club.rank', 'club.streak', 'club.fan', 'club.cashEok', 'club.week', 'season.half', 'club.subSlotsFree', 'club.feat', 'club.tradeRecent', 'club.stadiumLevel', 'club.rosterRoom'] as const;
-export const PLAYER_VARS = ['player.injuryDays', 'player.starter', 'player.age', 'player.fatigue', 'player.pitcher', 'player.active', 'player.slump', 'player.awardRecent', 'player.selfControl', 'player.publicAwareness', 'player.warmth', 'player.humility', 'player.milestoneNear', 'player.pressureSensitivity'] as const;
+export const CLUB_VARS = ['club.rank', 'club.streak', 'club.fan', 'club.cashEok', 'club.week', 'season.half', 'club.subSlotsFree', 'club.feat', 'club.tradeRecent', 'club.stadiumLevel', 'club.rosterRoom', 'club.turn'] as const;
+export const PLAYER_VARS = ['player.injuryDays', 'player.starter', 'player.age', 'player.fatigue', 'player.pitcher', 'player.active', 'player.slump', 'player.awardRecent', 'player.selfControl', 'player.publicAwareness', 'player.warmth', 'player.humility', 'player.milestoneNear', 'player.pressureSensitivity', 'player.proSeasons', 'player.clubRank', 'player.faOpen', 'player.faRivals', 'player.talkRounds'] as const;
 
 /** EV-3(D-207 (2)): 분류별 담당 팀(D-199). 시상·기록과 감독·코치는 담당 팀이 없어 위임할 수 없다 */
 export const CATEGORY_TEAM: Record<CardCategory, (typeof TEAMS)[number] | null> = { injury: 'medical', personal: 'pr', positive: 'pr', sponsor: 'partnership', transfer: 'operations', ops: 'marketing', award: null, coach: null };
@@ -120,6 +123,7 @@ function effectErrors(e: unknown, where: string, cardIds: Set<string>): string[]
   if (x.type === 'SUSPEND' && !(Number.isInteger(x.games) && x.games !== 0)) bad.push(`${where}: SUSPEND games 필요`);
   if (x.type === 'CONTRACT' && !within(CONTRACT_KINDS, x.kind)) bad.push(`${where}: CONTRACT kind 필요`);
   if (x.type === 'FLAG' && !isText(x.name)) bad.push(`${where}: FLAG name 필요`);
+  if (x.type === 'DIRECTIVE' && !(Number.isInteger(x.value) && x.value !== 0)) bad.push(`${where}: DIRECTIVE value(%) 필요`);
   if (x.type === 'SPAWN' && !(isText(x.card) && cardIds.has(x.card) && Number.isInteger(x.weeks) && x.weeks! >= 1)) bad.push(`${where}: SPAWN card·weeks 오류`);
   return bad;
 }

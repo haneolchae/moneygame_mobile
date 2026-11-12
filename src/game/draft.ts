@@ -5,6 +5,7 @@ import { asTruth, awardHonors, prospectScore, seasonLine, type Amateur } from '.
 import { WORLDGEN } from '../engine/config';
 import type { LedgerEntry } from '../engine/finance';
 import { EOK } from '../engine/money';
+import { bonusCapOf } from '../engine/contracts';
 import { observePlayer } from '../engine/observation';
 import { Rng, stableNormal } from '../engine/rng';
 import { needFirst } from '../engine/roster';
@@ -143,6 +144,8 @@ export class Draft {
       };
       players.push(p);
       const bonus = DRAFT.bonusByRound[a.draft!.round - 1] ?? 0;
+      // D-227: 신인 계약금도 계약 연수(1년, 다음 시즌)로 샐러리캡에 넣는다
+      p.bonusCap = bonusCapOf(bonus, p.contractYears, p.clubId!, meta.season + 1);
       ledger.push({ clubId: p.clubId!, date, category: 'signingBonus', amount: -bonus, memo: `${p.name} 신인 계약금(${a.draft!.round}라운드)` });
       a.status = 'gone';
     }

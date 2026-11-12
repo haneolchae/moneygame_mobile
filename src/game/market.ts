@@ -18,6 +18,8 @@ import {
   respondToOffer,
   salaryAccepts,
   salaryCap,
+  bonusCapOf,
+  capPayroll,
   salaryDemand,
   FA_RULES,
   validateForeign,
@@ -33,7 +35,7 @@ import type { ClubId, ClubProfile, PlayerTruth } from '../engine/types';
 import { Rng } from '../engine/rng';
 import { assignActiveRoster, domesticSalary, FA_SERVICE_YEARS_REQUIRED, generateDomesticFreePool, overall } from '../engine/worldgen';
 import { dealWindowReason } from './trade';
-import { weekIdFor } from './week';
+import { apPeriodId, weekIdFor } from './week';
 import { GameError } from '../shared/protocol';
 import type { FaEntry, GameMeta, GameRepository, InboxMessage, OfferRow, SalaryTalk } from './ports';
 import { NO_GUARD, type BudgetGuard } from './budget';
@@ -49,8 +51,6 @@ export interface MarketDayOutput {
 
 export interface StoveDates {
   faNotice: GameDate;
-  faApplyDeadline: GameDate;
-  faApproval: GameDate;
   faMarketOpen: GameDate;
   reserveList: GameDate;
   salaryTalksOpen: GameDate;
@@ -62,11 +62,9 @@ export function stoveDates(kDate: GameDate): StoveDates {
   const ev = Object.fromEntries(stoveEvents(kDate).map((e) => [e.kind, e.date])) as Record<string, GameDate>;
   return {
     faNotice: ev.faNotice!,
-    faApplyDeadline: ev.faApplyDeadline!,
-    faApproval: ev.faApproval!,
     faMarketOpen: ev.faMarketOpen!,
     reserveList: ev.reserveList!,
-    salaryTalksOpen: ev.inactivePeriod!,
+    salaryTalksOpen: ev.salaryTalks!,
     arbitration: ev.arbitrationDeadline!,
     campRoster: ev.campRoster!,
   };
@@ -143,11 +141,17 @@ export class Market {
 
   onDay(date: GameDate, meta: GameMeta): MarketDayOutput {
     const out: MarketDayOutput = { inbox: [], ledger: [] };
-    if (meta.mode !== 'stove') return out;
+    if (meta.mode !== 'stove') {
+      this.firstAgendaDeadline(meta, date, out);
+      return out;
+    }
     const d = stoveDates(meta.kDate);
-    if (date === d.faNotice) this.createFaList(meta);
-    if (date === d.faApplyDeadline) this.decideApplications(meta, date, out);
-    if (date === d.faApproval) this.approveFa(meta, date, out);
+    // D-225 (5): 공시·신청 → 시장 개장 2단계. 공시일에 명단·신청 여부·보상 등급이 함께 정해진다.
+    if (date === d.faNotice) {
+      this.createFaList(meta);
+      this.decideApplications(meta, date, out);
+      this.approveFa(meta, date, out);
+    }
     if (this.marketOpen(meta, date)) {
       if (weekday(date) === 1) this.aiFaOffers(meta, date);
       if (weekday(date) === 0) this.resolveFaWeek(meta, date, out);
@@ -198,7 +202,7 @@ export class Market {
     this.repo.saveFa(fa);
     const byId = new Map(this.players().map((p) => [p.id, p]));
     const lines = applied.map((e) => `· ${byId.get(e.playerId)?.name} (${this.club(e.originClub).shortName}, ${e.grade}등급, 직전 연봉 ${won(e.priorSalary)})`);
-    out.inbox.push({ date, kind: 'news', sender: 'KBO 소식', title: `FA 승인 선수 ${applied.length}명 공시`, body: `내일부터 모든 구단과 교섭할 수 있습니다. 원소속 구단이 아닌 구단이 영입하면 등급별 보상금(A 300%, B 200%, C 150%)을 원소속 구단에 냅니다.\n${lines.join('\n')}` });
+    out.inbox.push({ date, kind: 'news', sender: 'KBO 소식', title: `FA 신청 선수 ${applied.length}명`, body: `${stoveDates(meta.kDate).faMarketOpen.slice(5).replace('-', '/')} 시장이 열리면 모든 구단과 교섭할 수 있습니다. 원소속 구단이 아닌 구단이 영입하면 등급별 보상금(A 300%, B 200%, C 150%)을 원소속 구단에 냅니다.\n${lines.join('\n')}` });
   }
 
   private offerContext(meta: GameMeta, p: PlayerTruth, e: FaEntry, clubId: ClubId): OfferContext {
@@ -222,6 +226,8 @@ export class Market {
         .map((e) => ({ e, p: byId.get(e.playerId)!, est: clubEstimate(meta.seed, club.id, byId.get(e.playerId)!) }))
         // D-155 (2): 재정 긴축 구단은 자기 FA 재계약만 한다
         .filter(({ e }) => this.stanceOf(club.id) !== 'austerity' || e.originClub === club.id)
+        // D-215 시작 예외: 첫 스토브리그 자동 실행·첫 안건 마감 전에는 간판 외야수를 AI 입찰에서 뺀다
+        .filter(({ e }) => !this.startException(meta, e.playerId))
         .filter(({ e, est }) => !mine.some((o) => o.playerId === e.playerId) && (est >= 54 || (e.originClub === club.id && est >= 48)))
         .sort((a, b) => b.est - a.est || a.e.playerId - b.e.playerId);
       const roster = this.players().filter((p) => p.clubId === club.id);
@@ -236,6 +242,70 @@ export class Market {
         made++;
       }
     }
+  }
+
+  /** D-215 시작 예외(첫 안건 간판 외야수): 자동 실행 중이거나 첫 안건 마감 전 */
+  startException(meta: GameMeta, playerId: number): boolean {
+    return meta.autoRun?.franchiseId === playerId || (meta.firstAgenda?.playerId === playerId && meta.firstAgenda.status === 'open');
+  }
+
+  /**
+   * D-219 ① 경쟁 구단의 최종 제안: 이날(일요일 결정일) 우리 FA가 다른 구단 제안을 받아들일 상황이면 알린다.
+   * resolveFaWeek와 같은 계산으로 조회만 하고 상태를 바꾸지 않는다.
+   */
+  rivalThreats(meta: GameMeta, date: GameDate): Array<{ playerId: number; name: string; club: string }> {
+    if (meta.mode !== 'stove' || weekday(date) !== 0 || !this.marketOpen(meta, date)) return [];
+    const year = this.contractYear(meta);
+    const weeks = this.weeksSinceOpen(meta, date);
+    const out: Array<{ playerId: number; name: string; club: string }> = [];
+    for (const e of this.repo.getFa(this.offseason(meta))) {
+      if (e.status !== 'approved' || e.originClub !== meta.userClubId) continue;
+      const offers = this.repo.getOffers({ playerId: e.playerId, status: 'pending', kind: 'fa' });
+      if (!offers.some((o) => o.clubId !== meta.userClubId)) continue;
+      const p = this.repo.getPlayer(e.playerId);
+      if (!p || p.retired) continue;
+      const best = offers.map((o) => ({ o, s: offerScore(o.offer, this.offerContext(meta, p, e, o.clubId), year) })).sort((a, b) => b.s - a.s || a.o.id - b.o.id)[0]!;
+      if (best.o.clubId !== meta.userClubId && best.s >= acceptThreshold(meta.seed, p, weeks)) out.push({ playerId: p.id, name: p.name, club: this.club(best.o.clubId).shortName });
+    }
+    return out;
+  }
+
+  /**
+   * D-215 첫 안건: 간판 외야수 잔류 협상 마감(2월 2주 일요일) 다음 날, 미계약이면 시장에 다시 연다.
+   * AI 구단이 같은 규칙으로 한 번 제안하고 선수가 가장 좋은 제안을 고른다. 아무도 제안하지 않으면 국내 무소속 선수가 된다.
+   */
+  private firstAgendaDeadline(meta: GameMeta, date: GameDate, out: MarketDayOutput): void {
+    const a = meta.firstAgenda;
+    if (!a || a.status !== 'open' || diffDays(date, a.deadline) <= 0) return;
+    const e = this.repo.getFa(this.offseason(meta)).find((x) => x.playerId === a.playerId);
+    const p = this.repo.getPlayer(a.playerId);
+    if (!e || !p || e.status !== 'approved') {
+      this.repo.updateMeta({ firstAgenda: { ...a, status: e?.signedClub === meta.userClubId ? 'signed' : 'gone' } });
+      return;
+    }
+    this.repo.updateMeta({ firstAgenda: { ...a, status: 'reopened' } });
+    const now = this.repo.getMeta();
+    this.aiFaOffers(now, date);
+    // 시즌 중이라 40인이 찬 구단의 제안은 받지 않는다(보유 한도 D-016)
+    const room = (id: ClubId) => this.players().filter((x) => x.clubId === id).length < LEAGUE.rosterMax;
+    const offers = this.repo.getOffers({ playerId: p.id, status: 'pending', kind: 'fa' }).filter((o) => o.clubId !== meta.userClubId && room(o.clubId));
+    const year = this.contractYear(meta);
+    const best = offers.map((o) => ({ o, s: offerScore(o.offer, this.offerContext(now, p, e, o.clubId), year) })).sort((x, y) => y.s - x.s || x.o.id - y.o.id)[0];
+    if (best) {
+      this.signFa(now, date, e, p, best.o.clubId, best.o.offer, out);
+      this.repo.updateOffer(best.o.id, { status: 'accepted', response: '계약 합의' });
+      for (const o of offers.filter((x) => x !== best.o)) this.repo.updateOffer(o.id, { status: 'rejected', response: '다른 구단과 계약' });
+    } else {
+      e.status = 'unsigned';
+      this.repo.saveFa([e]);
+      p.clubId = null;
+      p.contractYears = 0;
+      p.career.franchise = false;
+      this.repo.savePlayers([p]);
+      out.inbox.push({ date, kind: 'report', sender: '단장', title: `${p.name} 선수가 무소속이 됐습니다`, body: '잔류 협상 마감까지 계약하지 못했고 다른 구단의 제안도 없었습니다. 국내 무소속 선수로 남아 1년 계약으로 다시 영입할 수 있습니다.' });
+    }
+    // 시즌 중에는 FA 시장이 없으므로 이 선수 외의 AI 제안은 거둔다
+    for (const o of this.repo.getOffers({ status: 'pending', kind: 'fa' }).filter((x) => x.playerId !== p.id)) this.repo.updateOffer(o.id, { status: 'withdrawn', response: '시즌 중 시장 없음' });
   }
 
   /** 일요일: FA 선수가 받은 제안 중 가장 매력적인 제안이 기준을 넘으면 계약한다. */
@@ -267,6 +337,7 @@ export class Market {
     p.clubId = clubId;
     p.salary = offer.salary;
     p.contractYears = offer.years;
+    p.bonusCap = bonusCapOf(offer.bonus, offer.years, clubId, this.contractYear(meta));
     p.career.faEligible = false;
     p.career.lastFaSeason = this.contractYear(meta);
     if (moved) p.career.franchise = false;
@@ -453,7 +524,7 @@ export class Market {
     return validateForeign(
       roster.map((p) => {
         const c = changes.get(p.id);
-        return { origin: p.origin, isPitcher: p.isPitcher, salaryUsd: c?.salaryUsd ?? wonToUsd(p.salary), renewals: c?.renewals ?? p.career.foreignRenewals, isNew: c?.isNew ?? false };
+        return { origin: p.origin, isPitcher: p.isPitcher, salaryUsd: c?.salaryUsd ?? wonToUsd(p.salary), renewals: c?.renewals ?? p.career.foreignRenewals, isNew: c?.isNew ?? false, priorUsd: wonToUsd(p.salary) };
       }),
     );
   }
@@ -493,10 +564,10 @@ export class Market {
   }
 
   /** 빈 외국인·아시아쿼터 자리를 해외 풀에서 채운다(구단 평가 순, 규정 안에서). */
-  private fillForeign(meta: GameMeta, clubId: ClubId, notes: string[]): void {
+  private fillForeign(meta: GameMeta, clubId: ClubId, notes: string[], leaveOpen = 0): void {
     const isUser = clubId === meta.userClubId;
     for (const origin of ['foreign', 'asia'] as const) {
-      const max = origin === 'foreign' ? FOREIGN.maxForeign : FOREIGN.maxAsia;
+      const max = origin === 'foreign' ? FOREIGN.maxForeign - leaveOpen : FOREIGN.maxAsia;
       let guard = 0;
       while (this.foreignOf(clubId).filter((p) => p.origin === origin).length < max && guard++ < 5) {
         // 사용자 구단은 40명을 넘기지 않는 범위에서만 기본 처리한다. AI 구단은 영입 뒤 명단을 다시 정리한다.
@@ -530,7 +601,8 @@ export class Market {
         notes.push(`${p.name} 재계약 불가(규정 초과)로 결별`);
       }
     }
-    this.fillForeign(meta, meta.userClubId, notes);
+    // D-215: 자동 실행에서는 외국인 1자리를 비워 둔다(아시아쿼터는 채운다)
+    this.fillForeign(meta, meta.userClubId, notes, meta.autoRun?.foreignVacancy ? 1 : 0);
     // AI 구단도 빈자리를 채운 뒤, 캠프 명단(40명 이하)에 맞춰 다시 정리한다.
     const filled: string[] = [];
     for (const club of this.clubs.values()) {
@@ -541,7 +613,8 @@ export class Market {
     if (filled.length) out.inbox.push({ date, kind: 'news', sender: 'KBO 소식', title: '포지션 보강 영입', body: filled.join('\n') });
     this.aiPruneRosters(meta, date, out, '캠프 명단 확정');
     const fa = this.repo.getFa(this.offseason(meta));
-    for (const e of fa) if (e.status === 'approved') e.status = 'unsigned';
+    // D-215: 자동 실행의 간판 외야수는 첫 안건(2월 2주 말 마감)으로 협상 가능 상태를 유지한다
+    for (const e of fa) if (e.status === 'approved' && meta.autoRun?.franchiseId !== e.playerId) e.status = 'unsigned';
     this.repo.saveFa(fa);
     if (notes.length) out.inbox.push({ date, kind: 'report', sender: '운영팀', title: '외국인 선수 기본 처리', body: `캠프 명단 확정에 맞춰 운영팀이 처리했습니다.\n${notes.join('\n')}` });
   }
@@ -555,7 +628,10 @@ export class Market {
       if (p.clubId !== null && !p.retired) p.salary = p.nextContract.salary;
       delete p.nextContract;
     }
-    for (const club of this.clubs.values()) assignActiveRoster(all.filter((p) => p.clubId === club.id));
+    // D-233: 첫 안건의 미계약 간판 외야수는 계약 전까지 1군 편성에서 뺀다(떠나도 1군 인원이 비지 않게)
+    const exception = this.repo.getMeta().autoRun?.franchiseId ?? null;
+    for (const p of all) if (p.id === exception) p.level = '2군';
+    for (const club of this.clubs.values()) assignActiveRoster(all.filter((p) => p.clubId === club.id && p.id !== exception));
     this.repo.savePlayers(all);
   }
 
@@ -571,7 +647,8 @@ export class Market {
 
   /** D-130·D-136 계약 세션: 이번 주 이 선수와 열린 세션과 남은 제안 수 */
   contractSession(meta: GameMeta, playerId: number): { open: boolean; offersLeft: number; apCost: number } {
-    const weekId = weekIdFor(meta.currentDate);
+    // D-218: 스토브리그 협상 세션은 턴 단위
+    const weekId = apPeriodId(meta);
     const s = meta.contractSessions?.[String(playerId)];
     const open = !!s && s.weekId === weekId;
     return { open, offersLeft: open ? Math.max(0, CONTRACT.offersPerSession - s!.count) : CONTRACT.offersPerSession, apCost: open ? 0 : 1 };
@@ -593,7 +670,7 @@ export class Market {
       this.chargeWp(source, 'ops', wp);
     }
     const current = this.repo.getMeta();
-    const weekId = weekIdFor(meta.currentDate);
+    const weekId = apPeriodId(meta);
     const kept = Object.fromEntries(Object.entries(current.contractSessions ?? {}).filter(([, v]) => v.weekId === weekId));
     const prev = kept[String(playerId)];
     this.repo.updateMeta({ contractSessions: { ...kept, [String(playerId)]: { weekId, count: (prev?.count ?? 0) + 1 } } });
@@ -782,6 +859,7 @@ export class Market {
       if (res.kind === 'accept') {
         p.contractYears = offer.years;
         p.nextContract = { salary: offer.salary, startSeason: meta.season + 1 };
+        p.bonusCap = bonusCapOf(offer.bonus, offer.years, meta.userClubId, meta.season + 1);
         this.repo.savePlayers([p]);
         if (offer.bonus > 0) this.repo.addLedger([{ clubId: meta.userClubId, date: meta.currentDate, category: 'signingBonus', amount: -offer.bonus, memo: `${p.name} 연장 계약금` }]);
         const message = `${p.name} 선수와 연장 계약에 합의했습니다. ${describe(offer)} (새 연봉은 ${meta.season + 1} 시즌부터)`;
@@ -854,11 +932,9 @@ export class Market {
     });
   }
 
-  /** 우리 구단 국내 선수 연봉 합계 (샐러리캡 산정: 외국인 제외, 계약금 연평균 포함 예정) */
-  payroll(clubId: ClubId): number {
-    return this.players()
-      .filter((p) => p.clubId === clubId && p.origin === 'domestic')
-      .reduce((a, p) => a + p.salary, 0);
+  /** 샐러리캡 산정액(D-227): 국내 선수 연봉 합 + 계약금 연평균. 시즌 기본값은 계약이 적용되는 시즌 */
+  payroll(clubId: ClubId, season: number = this.contractYear(this.repo.getMeta())): number {
+    return capPayroll(this.players(), clubId, season);
   }
 
   cap(meta: GameMeta): number {
@@ -871,8 +947,7 @@ export class Market {
     const d = stoveDates(meta.kDate);
     const t = meta.currentDate;
     if (diffDays(t, d.faNotice) < 0) return { key: 'beforeNotice', label: `FA 공시 전 (${d.faNotice.slice(5).replace('-', '/')} 공시)` };
-    if (diffDays(t, d.faApproval) < 0) return { key: 'applying', label: 'FA 신청 기간' };
-    if (diffDays(t, d.faMarketOpen) < 0) return { key: 'approved', label: `FA 승인 (${d.faMarketOpen.slice(5).replace('-', '/')} 시장 개장)` };
+    if (diffDays(t, d.faMarketOpen) < 0) return { key: 'approved', label: `FA 신청 완료 (${d.faMarketOpen.slice(5).replace('-', '/')} 시장 개장)` };
     if (diffDays(t, d.campRoster) <= 0) return { key: 'open', label: `FA 시장 ${this.weeksSinceOpen(meta) + 1}주 차` };
     return { key: 'closed', label: '스토브리그 마감' };
   }

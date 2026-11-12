@@ -54,7 +54,9 @@ const BUDGET = {
   loadMs: { warn: 2000, fail: 10000 },
   runsPerGame: { min: 6, max: 12 }, // 양 팀 합계 경기당 득점 (가상 리그 밸런스 범위)
   hrPerPa: { min: 0.015, max: 0.035 },
-  stoveWeeksFirst: 12, // 첫 스토브리그 12주 (22 문서)
+  campStart: '2027-02-01', // ①(D-214·D-231): 새 게임은 첫 스토브리그 자동 실행 뒤 2027-02-01 캠프에서 시작(예전 '첫 스토브리그 12주' 대체)
+  newGameMs: { warn: 10000 }, // D-215 새 게임 생성 예산 10초(판정은 9a, 그 전까지 경고만)
+  stoveTurns: 4, // D-216 두 번째 이후 스토브리그 4턴
   stallAdvances: { fail: 10 }, // 0일 진행이 연속 이 횟수면 장기 실행을 즉시 실패로 끝낸다 (D-096 초기안)
   leagueTargetPct: { warn: 0.08 }, // 시즌 리그 목표(득점·홈런, 기준값 × (1 + 시즌 편차)) 대비 차이의 '전체 시즌 평균'이 이 비율을 넘으면 경고 (D-100, 평균 판정은 D-145)
   // Electron 자체 점검
@@ -186,12 +188,13 @@ if (!STAGE.build) {
         if (rep.reloadMatches !== true) st.push('FAIL'), checks.push('저장 후 불러온 상태가 진행 상태와 다름');
         const [gp, gt] = String(rep.gamesPlayed ?? '0/1').split('/').map(Number);
         if (gp !== gt) st.push('FAIL'), checks.push(`정규시즌 미완료 ${rep.gamesPlayed}`);
-        if (rep.stoveWeeks !== BUDGET.stoveWeeksFirst) st.push('FAIL'), checks.push(`첫 스토브리그 ${rep.stoveWeeks}주 ≠ ${BUDGET.stoveWeeksFirst}주`);
+        if (rep.startDate !== BUDGET.campStart || rep.stoveWeeks !== 0) st.push('FAIL'), checks.push(`새 게임 시작일 ${rep.startDate} ≠ ${BUDGET.campStart} (스토브리그 진행 ${rep.stoveWeeks}회)`);
+        if ((rep.newGameMs ?? 0) > BUDGET.newGameMs.warn) st.push('WARN'), checks.push(`새 게임 생성 ${rep.newGameMs}ms > ${BUDGET.newGameMs.warn}ms`);
         const lag = judge(rep.rendererMaxTimerLagMs ?? 0, BUDGET.rendererLagMs);
         if (lag !== 'PASS') st.push(lag), checks.push(`화면 최대 지연 ${rep.rendererMaxTimerLagMs}ms (경고 ${BUDGET.rendererLagMs.warn}ms)`);
         const ml = judge(rep.mainProcessEventLoopMaxDelayMs ?? 0, BUDGET.mainLoopMs);
         if (ml !== 'PASS') st.push(ml), checks.push(`메인 프로세스 최대 지연 ${rep.mainProcessEventLoopMaxDelayMs}ms`);
-        const summary = `스토브리그 ${rep.stoveWeeks}주 ${rep.stoveMs}ms, 시즌 ${rep.gamesPlayed} ${rep.seasonAdvanceMs}ms, 화면 지연 ${rep.rendererMaxTimerLagMs}ms, 저장 ${rep.saveMs}ms·불러오기 ${rep.loadMs}ms, Steam ${rep.steam?.mode ?? '?'}`;
+        const summary = `새 게임(첫 스토브리그 자동 실행) ${rep.newGameMs}ms → ${rep.startDate}, 시즌 ${rep.gamesPlayed} ${rep.seasonAdvanceMs}ms, 화면 지연 ${rep.rendererMaxTimerLagMs}ms, 저장 ${rep.saveMs}ms·불러오기 ${rep.loadMs}ms, Steam ${rep.steam?.mode ?? '?'}`;
         record('selftest', '실제 Electron 자체 점검', worst(...st), s.sec, summary, checks, s.log);
       }
     }
@@ -215,7 +218,9 @@ if (!STAGE.build) {
       const checks = [];
       const runsDev = [];
       const hrDev = [];
-      if (sim.stoveWeeks !== BUDGET.stoveWeeksFirst) st.push('FAIL'), checks.push(`첫 스토브리그 ${sim.stoveWeeks}주`);
+      if (sim.startDate !== BUDGET.campStart || sim.stoveWeeks !== 0) st.push('FAIL'), checks.push(`새 게임 시작일 ${sim.startDate} ≠ ${BUDGET.campStart}`);
+      if ((sim.newGameMs ?? 0) > BUDGET.newGameMs.warn) st.push('WARN'), checks.push(`새 게임 생성 ${sim.newGameMs}ms > ${BUDGET.newGameMs.warn}ms`);
+      for (const [s, n] of Object.entries(sim.stoveTurnsBySeason ?? {})) if (n !== BUDGET.stoveTurns) st.push('FAIL'), checks.push(`${s}시즌 앞 스토브리그 ${n}턴 ≠ ${BUDGET.stoveTurns}턴`);
       if ((sim.rows ?? []).length !== SEASONS) st.push('FAIL'), checks.push(`완료 시즌 ${(sim.rows ?? []).length}/${SEASONS}`);
       for (const r of sim.rows ?? []) {
         const tag = `${r.season}시즌`;

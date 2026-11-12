@@ -3,7 +3,7 @@ import { createSnapshot, currentRatings, snapshotRanges, SCOUTING, type Scouting
 import { addDays, ageOn, diffDays, mondayOf, weekday, type GameDate } from '../engine/calendar';
 import { CLUB_PROFILES, SEASON_2026_STANDINGS } from '../engine/clubs';
 import { STANCE_LABEL } from '../engine/aiClub';
-import { AI_CLUB, ALLSTAR, AWARDS, EVENTS, LIVE, FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, TRADE, TRAINING } from '../engine/config';
+import { AI_CLUB, ALLSTAR, AWARDS, EVENTS, LIVE, FOREIGN, HEALTH, INFLATION, LEAGUE, NEW_GAME, ROSTER_COMPOSITION, ROSTER_MOVE, RULES_VERSION, CONTRACT, STOVE_TURN, TRADE, TRAINING } from '../engine/config';
 import { compensationFor, foreignRenewalDemandUsd, offerTotal, wonToUsd, type ContractOffer } from '../engine/contracts';
 import { CATEGORY_LABEL, FINANCE_BASE, NOT_YET_IMPLEMENTED, scheduledEntries, stadiumFee, type LedgerEntry } from '../engine/finance';
 import { battingSideOf, countModelVersion, createGame, directiveError, mergeOwner, OwnerPause, runGame, simulateGame, type Directive, type GameResult, type GameState, type OffensePlay, type OwnerControl, type OwnerPoint, type OwnerPrePa } from '../engine/gamesim';
@@ -24,7 +24,7 @@ import { generateSchedule, seasonKeyDates, validateSchedule } from '../engine/sc
 import { battingRates, fipConstant, formatInnings, pitchingRates, type BattingTotals, type PitchingTotals } from '../engine/stats';
 import { computeStandings } from '../engine/standings';
 import { ABILITY_LABEL, TASK_WP, teamCapacity, teamDef, TEAMS, type StaffMember, type TeamKey } from '../engine/staff';
-import { seasonModeStart, stoveEvents } from '../engine/stove';
+import { seasonModeStart, stoveEvents, stoveTurnOf, stoveTurns, type StoveTurn } from '../engine/stove';
 import type { ClubId, ClubProfile, Fixture, PlayerTruth, TrainingIntensity } from '../engine/types';
 import { clubHistory } from '../engine/data/history';
 import { generateHistory } from '../engine/history';
@@ -60,9 +60,10 @@ import type { Sku, VendorKind } from '../engine/merch';
 import type { CampaignKind, FacilityKind, TicketPolicy } from '../engine/business';
 import { HealthOps } from './health';
 import { DEV_LABEL, devSnapshot, VELOCITY } from '../engine/development';
-import { Postseason, POSTSEASON_MAX_INNINGS, SERIES_LABEL } from './postseason';
+import { Postseason, postseasonMaxInnings, SERIES_LABEL } from './postseason';
 import { DELEGABLE_TEAMS, directWpCost, ORG_AP, Organization } from './organization';
-import { weekIdFor } from './week';
+import { apPeriodId, weekIdFor } from './week';
+import { beginAutoRun, finishAutoRun } from './firstWinter';
 import {
   GameError,
   type BoxScoreView,
@@ -122,14 +123,21 @@ import {
   type LiveFeedItem,
   type LiveGameGameView,
   type LiveGameView,
+  type StoveTurnView,
 } from '../shared/protocol';
-import type { AllStarSeason, CalendarEvent, DayCommit, GameMeta, GameRepository, InboxMessage, StoredGame } from './ports';
+import type { AllStarSeason, CalendarEvent, DayCommit, GameMeta, GameRepository, InboxMessage, StoredGame, WinterReport } from './ports';
 
 export interface NewGameOptions {
   clubId: number;
   saveName: string;
   seed?: string;
   createdAt: string;
+  /**
+   * camp(기본, D-214): 첫 스토브리그를 화면 없이 자동 실행하고 2027-02-01 캠프에서 시작한다.
+   * stove: 자동 실행 없이 2026-11-08 스토브리그에서 멈춘다(시험·개발용. 같은 세계·같은 엔진, 스토브리그 기능 시험에 쓴다). ASSUMPTION(D-233)
+   */
+  start?: 'camp' | 'stove';
+  onProgress?: (p: AdvanceProgress) => void;
 }
 
 export interface AdvanceProgress {
@@ -212,13 +220,17 @@ function welcomeMessages(club: ClubProfile, players: PlayerTruth[], date: GameDa
       kind: 'task',
       sender: '비서',
       title: '스토브리그 안내',
-      body: '스토브리그는 1주 단위로 진행합니다. 매주 이번 주 할 일과 리그 일정을 정리해 드리겠습니다.\n첫 주는 11월 8일(일)부터 15일(일)까지이고, 13일에 FA 자격 선수가 공시됩니다.\n화면 오른쪽 위의 [다음 주 진행]을 누르면 한 주가 지나갑니다.',
+      body: '스토브리그는 4턴으로 진행합니다(D-216). 턴마다 할 일·결정 카드·협상 상황을 턴 회의로 정리해 드리겠습니다.\n1턴은 보류 명단 확정(11/30) 전날까지이고, 13일에 FA 자격 선수가 공시·신청됩니다.\n지시를 마치면 화면 오른쪽 위의 [다음 턴 진행]을 누르세요.',
     },
   ];
 }
 
-/** 새 게임: 2026 한국시리즈 최종전 날(2026-11-08) 스토브리그에서 시작한다(D-061). */
+/**
+ * 새 게임(D-214·D-215): 세계는 2026 한국시리즈 최종전 날(2026-11-08, D-061)에 만들고, 첫 스토브리그를 같은 엔진으로 자동 실행해
+ * 2027-02-01 스프링캠프에서 구단주가 취임한다. start: 'stove'는 자동 실행 없이 11/8에서 멈춘다(시험·개발용).
+ */
 export function createNewGame(repo: GameRepository, opts: NewGameOptions): void {
+  const camp = (opts.start ?? 'camp') === 'camp';
   const club = CLUB_PROFILES.find((c) => c.id === opts.clubId);
   if (!club) throw new GameError('INVALID_CLUB', '존재하지 않는 구단입니다.');
   const seed = opts.seed ?? `${opts.createdAt}-${opts.clubId}`;
@@ -269,13 +281,15 @@ export function createNewGame(repo: GameRepository, opts: NewGameOptions): void 
     fixtures,
     standings: SEASON_2026_STANDINGS,
     events,
-    inbox: welcomeMessages(club, players, kDate, staff.filter((s) => s.clubId === club.id).reduce((a, s) => a + s.salary, 0)),
+    inbox: camp ? [] : welcomeMessages(club, players, kDate, staff.filter((s) => s.clubId === club.id).reduce((a, s) => a + s.salary, 0)),
     ledger,
-    apGrant: { weekId: weekIdFor(kDate), granted: weeklyAp(1), used: 0 },
+    // D-217: 스토브리그 행동력은 턴 단위. 자동 실행(D-215)은 지급하지 않는다(첫 지급은 2027-02-01 주)
+    apGrant: camp ? { weekId: weekIdFor(kDate), granted: 0, used: 0 } : { weekId: stoveTurnOf(kDate, kDate).start, granted: weeklyAp(1) * STOVE_TURN.apWeeks, used: 0 },
     staff,
     history: generateHistory(seed, players, NEW_GAME.previousSeason),
     amateurs: generateAmateurs(seed, 1, NEW_GAME.firstSeason),
   });
+  if (camp) new GameService(repo).runFirstWinter(club.name, opts.onProgress);
 }
 
 export class GameService {
@@ -410,6 +424,21 @@ export class GameService {
     return this.repo.getMeta();
   }
 
+  /**
+   * D-215: 첫 스토브리그 자동 실행. 우리 구단은 완전 위임 + 현상 유지형 기본 정책, 카드·중대 사건은 위임 기본 선택지,
+   * 업적·경험치·행동력은 없음(D-230). 끝나면 지난겨울 보고서·첫 안건을 만들고 2/1 주 행동력을 지급한다.
+   */
+  runFirstWinter(clubName: string, onProgress?: (p: AdvanceProgress) => void): void {
+    const { baseline, releasedForeign } = this.repo.transaction(() => beginAutoRun(this.repo));
+    for (let guard = 0; this.meta().mode === 'stove' && guard < 12; guard++) this.advance('turn', onProgress, undefined, true);
+    if (this.meta().mode === 'stove') throw new GameError('AUTO_RUN_FAILED', '첫 스토브리그 자동 실행이 캠프에 도착하지 못했습니다.');
+    this.repo.transaction(() => {
+      finishAutoRun(this.repo, baseline, releasedForeign, clubName);
+      const m = this.meta();
+      this.repo.grantAp({ weekId: weekIdFor(m.currentDate), granted: weeklyAp(m.ownerLevel), used: 0 });
+    });
+  }
+
   /** 일정·기록에 쓰는 시즌 연도: 스토브리그에는 다가오는 시즌의 일정을 보여준다. */
   private scheduleSeason(meta: GameMeta): number {
     return meta.mode === 'stove' ? meta.season + 1 : meta.season;
@@ -528,7 +557,8 @@ export class GameService {
       const teamOf = (clubId: ClubId) => ({ ...prepareTeam(clubId, active.filter((p) => p.clubId === clubId), usage, lastStarters.get(clubId) ?? null, clubId === meta.userClubId ? userPlan : null, ROSTER_MOVE.rotationSize, { out, tired }), manager: this.managers.profileOf(clubId) });
       const args = (f: Fixture, owner?: OwnerControl): Parameters<typeof simulateGame> => {
         // 경기 난수는 (시드, 경기 ID)에서 파생한다. 처리 순서와 무관하게 같은 경기는 같은 결과를 낸다.
-        const maxInnings = f.stage && f.stage !== 'regular' ? POSTSEASON_MAX_INNINGS : LEAGUE.regularSeasonMaxInnings;
+        // D-225 (2): 포스트시즌 15회, 시리즈 마지막 예정 경기는 무제한
+        const maxInnings = f.stage && f.stage !== 'regular' ? postseasonMaxInnings(f.stage, f.gameInSeries) : LEAGUE.regularSeasonMaxInnings;
         const postseason = !!f.stage && f.stage !== 'regular';
         return [f.id, teamOf(f.home), teamOf(f.away), Rng.derive(meta.seed, 'game', f.id), maxInnings, env, { forms, postseason, ...(owner ? { owner } : {}), ...(condition.size ? { condition } : {}) }];
       };
@@ -640,7 +670,8 @@ export class GameService {
       inbox.push({ date: next, kind: 'report', sender: '사업본부장', title: `${season} 시즌 물가 상승률 ${(rate / 100).toFixed(2)}%`, body: `올해 비용·가격·시세 기준값이 ${(rate / 100).toFixed(2)}% 올랐습니다. 이미 맺은 계약 금액은 바뀌지 않습니다.` });
     }
     const nextWeek = weekIdFor(next);
-    const apGrant = weekday(next) === 1 && !this.repo.getApWeek(nextWeek) ? { weekId: nextWeek, granted: weeklyAp(meta.ownerLevel), used: 0 } : null;
+    // D-217: 행동력은 하루 처리 끝(시즌 마감·모드 전환 뒤)에 지급한다(grantPeriodAp). 시즌은 매주 월요일, 스토브리그는 턴 첫날.
+    const apGrant = null;
     if (weekday(next) === 1) this.org.ensureWeek(meta, nextWeek, metaUpdate.mode ?? meta.mode);
 
     const commit: DayCommit = { results, ledger, inbox, apGrant, metaUpdate };
@@ -683,7 +714,8 @@ export class GameService {
     }
     // 업적 판정은 같은 트랜잭션 안에서 기록한다(경험치는 그날 처리 뒤 메타에 반영).
     const fresh = this.meta();
-    this.achievements.onDay({ ...meta, ownerLevel: fresh.ownerLevel, ownerXp: fresh.ownerXp, postseason: fresh.postseason }, date, results);
+    // D-230: 첫 스토브리그 자동 실행(구단주 취임 전)에는 업적 판정·경험치 지급을 하지 않는다
+    if (!meta.autoRun) this.achievements.onDay({ ...meta, ownerLevel: fresh.ownerLevel, ownerXp: fresh.ownerXp, postseason: fresh.postseason }, date, results);
     // 한국시리즈가 끝난 날: 시즌 마감 → 스토브리그 (D-085)
     const after = this.meta();
     if (meta.mode === 'season' && after.postseason?.season === meta.season && after.postseason.finishedDate === date) {
@@ -702,8 +734,37 @@ export class GameService {
     this.seasonClose.onDay(this.meta(), date);
     // EV-1(D-203 (7)): 시즌 모드 주 시작(일요일 처리 끝) — 지연 결과·턴 브리핑·결정 카드
     if (weekday(next) === 1) this.events.weekStart(this.meta(), next);
+    // ①(D-217·D-220): 행동력 지급(시즌 주·스토브리그 턴), 스토브리그 턴 첫날의 턴 브리핑·결정 카드 추첨.
+    // 진행 단위(턴·주·일)와 무관하게 날짜로 처리하므로 모두 위임하면 4턴 진행과 주 단위 진행의 결과가 같다(ST ③).
+    this.grantPeriodAp(next);
+    this.stoveTurnStart(next);
     this.ensureScouting();
     return { gamesPlayed: results.length };
+  }
+
+  /** D-217: 시즌은 월요일에 주간 최대치, 스토브리그는 턴 첫날(첫 처리일 포함)에 주간 최대치 × 2. 자동 실행 중에는 지급하지 않는다(D-215) */
+  private grantPeriodAp(next: GameDate): void {
+    const m = this.meta();
+    if (m.autoRun) return;
+    if (m.mode === 'season') {
+      if (weekday(next) === 1) this.repo.grantAp({ weekId: weekIdFor(next), granted: weeklyAp(m.ownerLevel), used: 0 });
+      return;
+    }
+    const t = stoveTurnOf(m.kDate, next);
+    this.repo.grantAp({ weekId: t.start, granted: weeklyAp(m.ownerLevel) * STOVE_TURN.apWeeks, used: 0 });
+  }
+
+  /** 스토브리그 턴 첫날: 턴 진행 상태 초기화, 지난 턴에 답하지 않은 카드 기본 응답, 턴 브리핑·결정 카드(D-220) */
+  private stoveTurnStart(next: GameDate): void {
+    const m = this.meta();
+    if (m.mode !== 'stove') return;
+    const t = stoveTurnOf(m.kDate, next);
+    if (next !== t.start) return;
+    const offseason = Number(m.kDate.slice(0, 4));
+    if (m.stoveTurn?.offseason === offseason && m.stoveTurn.index === t.index) return;
+    const defaulted = m.stoveTurn?.defaulted ?? [];
+    this.repo.updateMeta({ stoveTurn: { offseason, index: t.index, stops: 0, stopKeys: [], defaulted: [] } });
+    this.events.stoveTurnStart(this.meta(), t, defaulted);
   }
 
   private eventBody(e: CalendarEvent, meta: GameMeta): string {
@@ -714,23 +775,74 @@ export class GameService {
     return `${e.body}\n우리 구단 대상: ${mine.map((p) => `${p.name}${p.career.franchise ? '(간판 외야수)' : ''}`).join(', ') || '없음'}\n${lines.join('\n')}\n선수들은 이틀 안에 FA 신청 여부를 정하고, FA 시장이 열리면 [계약·이적] 화면에서 협상할 수 있습니다.`;
   }
 
-  /** 진행. 스토브리그는 1주 단위만(D-062). 시즌은 1일·1주·정규시즌 끝까지. */
-  advance(mode: 'day' | 'week' | 'untilSeasonEnd', onProgress?: (p: AdvanceProgress) => void, shouldStop?: () => boolean, autoCards = false) {
+  /**
+   * D-219 구간 진행 멈춤 후보: ① 경쟁 구단의 최종 제안(우리 FA가 이날 다른 구단과 계약할 상황) ② 협상 지시서 범위 밖 응답(위임 협상이 한도에서 막힘).
+   * ③ 필수 결정 중 중대 사건은 진행 루프가 따로 본다. 조회만 하고 상태를 바꾸지 않는다.
+   */
+  private stoveStopCandidates(meta: GameMeta, date: GameDate, segmentStart: GameDate): Array<{ key: string; reason: string }> {
+    const out: Array<{ key: string; reason: string }> = [];
+    for (const r of this.market.rivalThreats(meta, date)) out.push({ key: `rival:${r.playerId}:${date}`, reason: `경쟁 구단 최종 제안: ${r.name} 선수가 ${r.club}의 제안을 받아들이려 합니다` });
+    for (const t of this.repo.getTasks({ status: ['failed'] })) {
+      if ((t.kind !== 'fa' && t.kind !== 'salary') || t.updated < segmentStart || t.updated >= date || !t.note.includes('한도')) continue;
+      out.push({ key: `directive:${t.id}`, reason: `협상 지시서 범위 밖: ${this.repo.getPlayer(t.targetId)?.name ?? ''} — ${t.note}` });
+    }
+    return out;
+  }
+
+  /** 스토브리그 멈춤 기록(D-219): 구간당 STOVE_TURN.maxStops회까지 멈추고, 넘는 건은 기본 처리로 넘긴다. 멈추면 사유를 돌려준다 */
+  private recordStop(cands: Array<{ key: string; reason: string }>): string | null {
+    const m = this.meta();
+    const st = m.stoveTurn;
+    if (!st || cands.length === 0) return null;
+    const fresh = cands.filter((c) => !st.stopKeys.includes(c.key));
+    if (fresh.length === 0) return null;
+    const next = { ...st, stopKeys: [...st.stopKeys, ...fresh.map((c) => c.key)] };
+    let reason: string | null = null;
+    if (st.stops < STOVE_TURN.maxStops) {
+      next.stops = st.stops + 1;
+      reason = fresh.map((c) => c.reason).join(' / ');
+    } else next.defaulted = [...st.defaulted, ...fresh.map((c) => c.reason)];
+    this.repo.updateMeta({ stoveTurn: next });
+    return reason;
+  }
+
+  /**
+   * 진행. 시즌은 1일·1주·정규시즌 끝까지. 스토브리그는 턴 단위(D-216, 구간 진행 → 다음 턴 첫날에서 멈춤)이고,
+   * 엔진의 날짜 처리는 같아서 주 단위 진행(시험·비교용)도 그대로 받는다.
+   */
+  advance(mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn', onProgress?: (p: AdvanceProgress) => void, shouldStop?: () => boolean, autoCards = false) {
     const start = this.meta();
-    if (start.mode === 'stove' && mode !== 'week') throw new GameError('STOVE_WEEKLY_ONLY', '스토브리그는 1주 단위로 진행합니다.');
+    if (start.mode === 'stove' && mode !== 'week' && mode !== 'turn') throw new GameError('STOVE_TURN_ONLY', '스토브리그는 턴 단위로 진행합니다.');
+    if (start.mode !== 'stove' && mode === 'turn') throw new GameError('INVALID', '턴 진행은 스토브리그에만 합니다.');
     let daysProcessed = 0;
     let gamesPlayed = 0;
     let stoppedReason: string | null = null;
     const startWeek = weekIdFor(start.currentDate);
     const startPhase = this.phase();
+    const turn = start.mode === 'stove' ? stoveTurnOf(start.kDate, start.currentDate) : null;
     while (this.phase() !== 'seasonComplete') {
+      // D-220: 턴 회의에서 답하지 않은 스토브리그 결정 카드는 그 턴 첫날을 처리하기 전에 기본 응답으로 처리한다(진행 단위와 무관)
+      if (this.meta().eventState?.stoveCards?.length) this.events.resolveStoveCards(this.meta());
+      if (mode === 'turn' && turn && !autoCards) {
+        const cur = this.meta();
+        const reason = this.recordStop(this.stoveStopCandidates(cur, cur.currentDate, turn.start));
+        if (reason) {
+          stoppedReason = reason;
+          break;
+        }
+      }
       // EV-3(D-207 (1)): 대기 결정 카드가 있으면 진행하지 않는다(화면 없는 자동 실행은 위임 기본 선택지)
       // EV-4(D-210 (5)): 중대 사건 카드가 먼저(위임 불가)
       const major = this.meta().eventState?.pendingMajor;
       if (major) {
-        if (autoCards) this.events.chooseMajor(this.meta(), this.events.autoMajorChoice(this.meta())!);
-        else if (daysProcessed === 0) throw new GameError('DECISION_PENDING', '중대 사건 카드를 먼저 고르세요.');
+        // D-219: 턴 진행 중 중대 사건은 필수 결정 멈춤. 구간 멈춤 상한을 넘으면 자동 실행 선택지로 기본 처리한다
+        const exhausted = mode === 'turn' && daysProcessed > 0 && (this.meta().stoveTurn?.stops ?? 0) >= STOVE_TURN.maxStops;
+        if (autoCards || exhausted) {
+          if (exhausted) this.recordStop([{ key: `major:${major.caseId}`, reason: '중대 사건(기본 처리)' }]);
+          this.events.chooseMajor(this.meta(), this.events.autoMajorChoice(this.meta())!);
+        } else if (daysProcessed === 0) throw new GameError('DECISION_PENDING', '중대 사건 카드를 먼저 고르세요.');
         else {
+          if (mode === 'turn') this.recordStop([{ key: `major:${major.caseId}`, reason: '중대 사건' }]);
           stoppedReason = '중대 사건이 일어났습니다';
           break;
         }
@@ -765,6 +877,10 @@ export class GameService {
       }
       if (mode === 'day') break;
       if (mode === 'week' && weekday(after.currentDate) === 1 && weekIdFor(after.currentDate) !== startWeek) break;
+      if (mode === 'turn' && turn && after.currentDate > turn.end) {
+        stoppedReason = `${turn.title} 끝 — 구간 보고`;
+        break;
+      }
       if (shouldStop?.()) {
         stoppedReason = '중단 요청';
         break;
@@ -997,7 +1113,7 @@ export class GameService {
     const mine = this.schedule(meta.userClubId);
     const counts = this.repo.countFixtures(season);
     const weekId = weekIdFor(meta.currentDate);
-    const ap = this.repo.getApWeek(weekId);
+    const ap = this.repo.getApWeek(apPeriodId(meta));
     const weekEnd = addDays(weekId, 6);
     const weekStart = meta.currentDate === NEW_GAME.startDate ? meta.currentDate : weekId;
     const inbox = this.repo.getInbox(300);
@@ -1023,15 +1139,18 @@ export class GameService {
       gamesPlayedLeague: counts.played,
       gamesTotalLeague: counts.total,
       lastRegularSeason: this.lastRegularSeason(meta),
-      owner: { level: meta.ownerLevel, xp: meta.ownerXp, xpToNext: xpToNext(meta.ownerLevel), apGranted: ap?.granted ?? 0, apRemaining: ap ? ap.granted - ap.used : 0, weekLabel: `${weekStart.slice(5).replace('-', '/')}~${weekEnd.slice(5).replace('-', '/')}` },
+      owner: { level: meta.ownerLevel, xp: meta.ownerXp, xpToNext: xpToNext(meta.ownerLevel), apGranted: ap?.granted ?? 0, apRemaining: ap ? ap.granted - ap.used : 0, weekLabel: meta.mode === 'stove' ? (() => { const t = stoveTurnOf(meta.kDate, meta.currentDate); return `${t.index}턴 ${t.start.slice(5).replace('-', '/')}~${t.end.slice(5).replace('-', '/')}`; })() : `${weekStart.slice(5).replace('-', '/')}~${weekEnd.slice(5).replace('-', '/')}` },
       cashWon: this.repo.cashBalance(meta.userClubId),
       rosterCount: this.repo.getPlayers().filter((p) => p.clubId === meta.userClubId).length,
       unreadInbox: unread,
       tasks: this.tasks(meta, unread),
       pendingApprovals: this.org.approvals().length,
       approvals: this.approvalViews(),
-      briefing: this.briefingView(weekIdFor(meta.currentDate)),
+      briefing: this.briefingView(meta.mode === 'stove' ? stoveTurnOf(meta.kDate, meta.currentDate).start : weekIdFor(meta.currentDate)),
       card: this.cardView(),
+      stove: this.stoveView(meta),
+      firstAgenda: meta.firstAgenda ? { playerId: meta.firstAgenda.playerId, name: this.repo.getPlayer(meta.firstAgenda.playerId)?.name ?? '', deadline: meta.firstAgenda.deadline, status: meta.firstAgenda.status } : null,
+      hasWinterReport: !!meta.winterReport,
       upcomingEvents: this.calendar(meta.currentDate, addDays(meta.currentDate, 45)),
       keyPlayers,
       canAdvanceDay: meta.mode === 'season' && phase !== 'seasonComplete' && !meta.gameOver,
@@ -1150,10 +1269,9 @@ export class GameService {
     const mineForeign = players.filter((p) => p.clubId === meta.userClubId && p.origin !== 'domestic').map((p) => fv(p, p.contractYears === 0 && meta.mode === 'stove' ? 'expiring' : 'contracted'));
     const pool = players.filter((p) => p.clubId === null && p.origin !== 'domestic').map((p) => fv(p, 'pool')).sort((a, b) => b.scoutGrade - a.scoutGrade);
     const foreignMine = mineForeign.filter((p) => p.origin === 'foreign');
-    const capUsd = FOREIGN.totalCapUsd + foreignMine.reduce((a, p) => a + p.renewals * FOREIGN.totalCapPerRenewalUsd, 0);
     const roster = players.filter((p) => p.clubId === meta.userClubId);
     const weekId = weekIdFor(meta.currentDate);
-    const ap = this.repo.getApWeek(weekId);
+    const ap = this.repo.getApWeek(apPeriodId(meta));
     const obligations = this.repo.getObligations().filter((o) => o.clubId === meta.userClubId);
     const stage = m.stage(meta);
     const ops = this.org.policy('ops');
@@ -1178,13 +1296,12 @@ export class GameService {
         mine: mineForeign,
         pool,
         totalUsd: foreignMine.reduce((a, p) => a + (p.status === 'expiring' ? 0 : p.salaryUsd), 0),
-        capUsd,
         rules: [
-          '외국인 3명 + 아시아쿼터 1명까지 보유, 모두 출전 가능',
+          '외국인 3명 + 아시아쿼터 1명까지 보유(40인 명단 기준), 1군 등록·출전 제한 없음',
           '외국인 3명이 모두 투수이거나 모두 야수일 수 없음',
-          '신규 외국인 1인당 100만 달러 이하 (연봉·계약금·이적료·옵션 포함)',
-          `외국인 3명 총액 400만 달러 + 재계약 연차당 10만 달러 (현재 상한 ${Math.round(capUsd / 10_000)}만 달러)`,
-          '아시아쿼터 신규 20만 달러 이하, 재계약 시 최대 10만 달러 인상',
+          `신규 외국인 1인당 ${Math.round(FOREIGN.newCapUsd / 10_000)}만 달러 이하`,
+          `아시아쿼터 연봉 ${Math.round(FOREIGN.asiaNewCapUsd / 10_000)}만 달러 이하`,
+          '총액·재계약 증액 상한 없음, 시즌 중 교체 없음',
         ],
       },
       releasable: roster
@@ -1286,7 +1403,7 @@ export class GameService {
     const staff = this.org.staff(meta.userClubId);
     const weekId = weekIdFor(meta.currentDate);
     const wp = this.repo.getWp(weekId);
-    const ap = this.repo.getApWeek(weekId);
+    const ap = this.repo.getApWeek(apPeriodId(meta));
     const sv = (s: StaffMember) => this.staffView(meta, s);
     const teams: TeamView[] = TEAMS.map((t) => {
       const cap = teamCapacity(staff, t.key, meta.mode);
@@ -1511,6 +1628,11 @@ export class GameService {
     if (major) return major;
     const pend = meta.eventState?.pendingCard;
     if (!pend) return null;
+    return this.toCardView(meta, pend);
+  }
+
+  /** 카드 화면 응답(시즌 대기 카드·스토브리그 턴 회의 카드 공용). 확률은 위험 등급, 히든 값 없음(D-207) */
+  private toCardView(meta: GameMeta, pend: { cardId: string; playerId: number | null; date: GameDate; text: string }): CardView | null {
     const card = CARDS.find((c) => c.id === pend.cardId);
     if (!card) return null;
     const p = pend.playerId !== null ? this.repo.getPlayer(pend.playerId) : null;
@@ -1530,6 +1652,105 @@ export class GameService {
         isDefault: c.id === card.delegateDefault,
         link: c.link ?? null,
       })),
+    };
+  }
+
+  /** ①(D-220): 턴 회의 결정 카드 선택(행동력 0). 답하지 않은 카드는 구간 진행 때 기본 응답 */
+  chooseStoveCard(cardId: string, choiceId: string): { message: string; link: string | null } {
+    const meta = this.meta();
+    if (meta.mode !== 'stove') throw new GameError('NOT_AVAILABLE', '턴 회의 카드는 스토브리그에만 있습니다.');
+    return this.events.chooseStoveCard(meta, cardId, choiceId);
+  }
+
+  /** D-215 지난겨울 보고서(자동 실행 결과, 2/1에 만든 것) */
+  winterReport(): WinterReport | null {
+    return this.meta().winterReport ?? null;
+  }
+
+  /**
+   * ① 턴 회의 화면(D-216·D-219·D-220): 이번 턴 할 일(필수 → 마감 임박 → 권장 → 선택), 결정 카드, 협상 상황, 턴 타임라인, 멈춤 현황.
+   * 할 일의 완료 여부는 실제 상태에서 읽는다(원천 기능이 없는 할 일은 넣지 않는다).
+   */
+  private stoveView(meta: GameMeta): StoveTurnView | null {
+    if (meta.mode !== 'stove') return null;
+    const turns = stoveTurns(meta.kDate);
+    const t = stoveTurnOf(meta.kDate, meta.currentDate);
+    const off = Number(meta.kDate.slice(0, 4));
+    const next = meta.season + 1;
+    const club = meta.userClubId;
+    const ap = this.repo.getApWeek(t.start);
+    const players = this.repo.getPlayers();
+    const mine = players.filter((p) => p.clubId === club && !p.retired);
+    const name = (id: number) => players.find((p) => p.id === id)?.name ?? '';
+    const fa = this.repo.getFa(off).filter((e) => e.originClub === club && e.status === 'approved');
+    const tasks = this.repo.getTasks({ status: ['queued', 'waiting'] });
+    const talks = this.repo.getSalaryTalks(off).filter((x) => x.clubId === club && x.status === 'open');
+    const sd = this.market.stage(meta);
+    const md = (d: GameDate) => d.slice(5).replace('-', '/');
+    type Item = StoveTurnView['agenda'][number];
+    const items: Item[] = [];
+    const add = (tier: Item['tier'], title: string, done: boolean | null, deadline: GameDate | null, link: string | null) => items.push({ tier, title, done, deadline, link });
+    const reserve = stoveEvents(meta.kDate).find((e) => e.kind === 'reserveList')!.date;
+    const camp = stoveEvents(meta.kDate).find((e) => e.kind === 'campRoster')!.date;
+    const foreignN = mine.filter((p) => p.origin === 'foreign').length;
+    const asiaN = mine.filter((p) => p.origin === 'asia').length;
+    const vacancies = this.orgVacancies(meta).length;
+    if (t.index === 1) {
+      add('필수', `보류 명단 40명 이하로 정리 (현재 ${mine.length}명)`, mine.length <= LEAGUE.rosterMax, reserve, 'roster');
+      if (fa.length) add('권장', `우리 FA 잔류 협상 지시서 (${fa.map((e) => name(e.playerId)).join(', ')})`, fa.every((e) => tasks.some((x) => x.kind === 'fa' && x.targetId === e.playerId)), null, 'market');
+      if ((meta.retirementPending ?? []).length) add('선택', `은퇴 고민 선수 설득 (${(meta.retirementPending ?? []).map((x) => name(x.playerId)).join(', ')})`, null, (meta.retirementPending ?? [])[0]!.deadline, 'org');
+      add('권장', '위임 정책 점검(팀별 직접·승인·완전 위임)', null, null, 'org');
+      add('선택', `외부 FA 영입 (${sd.label})`, null, null, 'market');
+      add('선택', `올스타전 유치 신청(행동력 ${ALLSTAR.applyAp}, 결과는 4턴)`, !!meta.allStarApply?.[String(next)], null, 'allstar');
+    }
+    if (t.index === 2) {
+      add('권장', '메인·서브 스폰서 선정', (meta.sponsors?.[String(club)] ?? []).some((s) => s.season === next), null, 'business');
+      add('권장', '굿즈 제작 업체 선정', !!meta.merch?.[String(club)]?.nextVendor, null, 'business');
+      if (talks.length) add('권장', `연봉 협상 지시서 (${talks.length}명)`, talks.every((x) => tasks.some((k) => k.kind === 'salary' && k.targetId === x.playerId)), null, 'market');
+      add('권장', `외국인·아시아쿼터 계약 (외국인 ${foreignN}/${FOREIGN.maxForeign}, 아시아 ${asiaN}/${FOREIGN.maxAsia})`, foreignN >= FOREIGN.maxForeign && asiaN >= FOREIGN.maxAsia, camp, 'market');
+    }
+    if (t.index === 2 || t.index === 3) add('권장', `직원 채용 (공석 ${vacancies}자리)`, vacancies === 0, null, 'org');
+    if (t.index === 3) {
+      if (talks.length) add('자동', `연봉조정 신청 마감 — 미합의 ${talks.length}명은 중간값`, false, turns[2]!.end, 'market');
+      add('선택', '겨울 시설 공사', null, null, 'business');
+    }
+    if (t.index === 4) {
+      add('필수', `캠프 명단 확정 (현재 ${mine.length}명, 기본안: 감독 추천안)`, mine.length <= LEAGUE.rosterMax, camp, 'roster');
+      add('권장', `${next} 시즌 예산안`, !!meta.budgets?.[String(next)], null, 'finance');
+      add('권장', `외국인·아시아쿼터 계약 (외국인 ${foreignN}/${FOREIGN.maxForeign}, 아시아 ${asiaN}/${FOREIGN.maxAsia})`, foreignN >= FOREIGN.maxForeign && asiaN >= FOREIGN.maxAsia, camp, 'market');
+    }
+    add('선택', '트레이드', null, null, 'trade');
+    const order: Record<Item['tier'], number> = { 필수: 0, 권장: 2, 선택: 3, 자동: 4 };
+    const soon = (i: Item): number => (i.deadline && i.done !== true && diffDays(i.deadline, meta.currentDate) <= 7 ? 1 : order[i.tier]);
+    items.sort((a, b) => (a.tier === '필수' ? 0 : soon(a)) - (b.tier === '필수' ? 0 : soon(b)));
+    const negotiations: StoveTurnView['negotiations'] = [
+      ...fa.map((e) => {
+        const task = tasks.find((x) => x.kind === 'fa' && x.targetId === e.playerId);
+        const rivals = this.repo.getOffers({ playerId: e.playerId, status: 'pending', kind: 'fa' }).filter((o) => o.clubId !== club).length;
+        return { playerId: e.playerId, name: name(e.playerId), kind: 'FA' as const, status: task ? (task.params.directive ? '협상 지시서' : '위임') : '직접', note: `${task?.note ?? '지시 없음'} · 경쟁 제안 ${rivals}곳` };
+      }),
+      ...talks.slice(0, 8).map((x) => {
+        const task = tasks.find((k) => k.kind === 'salary' && k.targetId === x.playerId);
+        return { playerId: x.playerId, name: name(x.playerId), kind: '연봉' as const, status: task ? (task.params.directive ? '협상 지시서' : '위임') : '직접', note: `요구 ${won(x.demand)} · 제시 ${won(x.offer)}` };
+      }),
+    ];
+    const cards = (meta.eventState?.stoveCards ?? []).map((c) => this.toCardView(meta, c)).filter((c): c is CardView => !!c);
+    const st = meta.stoveTurn;
+    return {
+      index: t.index,
+      title: t.title,
+      start: t.start,
+      end: t.end,
+      endLabel: t.endLabel,
+      apGranted: ap?.granted ?? 0,
+      apRemaining: ap ? ap.granted - ap.used : 0,
+      stops: st?.index === t.index ? st.stops : 0,
+      maxStops: STOVE_TURN.maxStops,
+      defaulted: st?.index === t.index ? st.defaulted : [],
+      turns: turns.map((x) => ({ index: x.index, title: x.title, period: `${md(x.start)}~${md(x.end)}`, endLabel: x.endLabel, current: x.index === t.index, done: x.end < meta.currentDate })),
+      agenda: items,
+      cards,
+      negotiations,
     };
   }
 
@@ -1980,12 +2201,12 @@ export class GameService {
     return this.org.setPolicy(this.meta(), { ...p, team: p.team as TeamKey });
   }
 
-  delegateFa(playerId: number, maxTotalWon?: number, maxYears?: number): OfferResultView {
-    return this.org.delegateFa(this.meta(), playerId, maxTotalWon, maxYears);
+  delegateFa(playerId: number, maxTotalWon?: number, maxYears?: number, minTotalWon?: number, deadline?: string): OfferResultView {
+    return this.org.delegateFa(this.meta(), playerId, maxTotalWon, maxYears, minTotalWon || deadline ? { minTotal: minTotalWon, deadline } : undefined);
   }
 
-  delegateSalary(playerId?: number): OfferResultView {
-    return this.org.delegateSalary(this.meta(), playerId);
+  delegateSalary(playerId?: number, maxRatioBp?: number): OfferResultView {
+    return this.org.delegateSalary(this.meta(), playerId, maxRatioBp);
   }
 
   delegateHire(team: string, title: '팀장' | '팀원', maxSalaryWon?: number): OfferResultView {
@@ -2309,7 +2530,7 @@ export class GameService {
         return { item, tradable: reason === null, reason };
       });
     const name = (id: number) => players.get(id)?.name ?? `#${id}`;
-    const week = this.repo.getApWeek(weekIdFor(meta.currentDate));
+    const week = this.repo.getApWeek(apPeriodId(meta));
     return {
       club: this.ref(club.id),
       date: meta.currentDate,
@@ -2330,7 +2551,7 @@ export class GameService {
   tradeOffersView(): TradeOffersView {
     const meta = this.meta();
     const open = (meta.tradeOffers ?? []).filter((o) => o.status === 'open' && diffDays(meta.currentDate, o.expires) <= 0);
-    const week = this.repo.getApWeek(weekIdFor(meta.currentDate));
+    const week = this.repo.getApWeek(apPeriodId(meta));
     const mine = open.length ? this.players({ scope: 'mine', group: 'all', level: 'all', sortKey: 'name', sortDesc: false }) : [];
     return {
       apRemaining: week ? week.granted - week.used : 0,

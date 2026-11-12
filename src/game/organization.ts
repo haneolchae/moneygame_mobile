@@ -26,7 +26,7 @@ import type { ClubId } from '../engine/types';
 import { GameError } from '../shared/protocol';
 import { stoveDates, type ActionSource, type Market } from './market';
 import { scoutingBoost } from '../engine/business';
-import { weekIdFor } from './week';
+import { apPeriodId, weekIdFor } from './week';
 import type { ApprovalRequest, DelegationPolicy, GameMeta, GameRepository, InboxMessage, WorkTask } from './ports';
 
 const won = (n: number) => `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억`;
@@ -312,29 +312,38 @@ export class Organization {
     if (this.activeTask(playerId, 'salary')) throw new GameError('DUPLICATE', '이미 운영팀이 연봉 협상을 진행 중입니다.');
   }
 
-  delegateFa(meta: GameMeta, playerId: number, maxTotal?: number, maxYears?: number) {
+  /**
+   * FA 위임. 스토브리그에서 구단주가 맡기면 협상 지시서(D-218): 금액 상·하한·기간·마감 범위 안의 왕복은 결재 없이 운영팀 처리량만 쓴다.
+   * 범위 밖 응답(한도에서 합의 실패)은 구간 진행 멈춤 사유가 된다(D-219).
+   */
+  delegateFa(meta: GameMeta, playerId: number, maxTotal?: number, maxYears?: number, directive?: { minTotal?: number; deadline?: GameDate }) {
     const pol = this.faDelegationTarget(meta, playerId);
-    const params = { maxTotal: maxTotal ?? pol.faMaxTotal, maxYears: maxYears ?? pol.faMaxYears, round: 0, lastWeek: '', lastRatio: 0, counter: null as ContractOffer | null };
-    if (params.maxTotal <= 0 || params.maxYears < 1) throw new GameError('INVALID', '한도를 확인하세요.');
+    const isDirective = meta.mode === 'stove' || !!directive;
+    const params = { maxTotal: maxTotal ?? pol.faMaxTotal, maxYears: maxYears ?? pol.faMaxYears, round: 0, lastWeek: '', lastRatio: 0, counter: null as ContractOffer | null, directive: isDirective, minTotal: directive?.minTotal ?? 0, deadline: directive?.deadline ?? '' };
+    if (params.maxTotal <= 0 || params.maxYears < 1 || params.minTotal > params.maxTotal) throw new GameError('INVALID', '한도를 확인하세요. (하한 ≤ 상한)');
     // 이미 진행 중인 위임(담당 팀 자체 안건 포함)이 있으면 한도만 바꾼다.
     const existing = this.activeTask(playerId, 'fa');
     if (existing) {
       this.requeue(existing, meta.currentDate);
-      this.repo.updateTask(existing.id, { params: { ...existing.params, maxTotal: params.maxTotal, maxYears: params.maxYears, lastWeek: '' }, note: `한도 변경: 총액 ${won(params.maxTotal)}·${params.maxYears}년 이내`, updated: meta.currentDate });
+      this.repo.updateTask(existing.id, { params: { ...existing.params, maxTotal: params.maxTotal, maxYears: params.maxYears, directive: params.directive, minTotal: params.minTotal, deadline: params.deadline, lastWeek: '' }, note: `${params.directive ? '협상 지시서' : '한도'} 변경: 총액 ${won(params.maxTotal)}·${params.maxYears}년 이내`, updated: meta.currentDate });
       return { result: 'accept' as const, message: `진행 중인 위임의 한도를 총액 ${won(params.maxTotal)}, ${params.maxYears}년으로 바꿨습니다.` };
     }
-    this.repo.insertTask({ team: 'ops', kind: 'fa', targetId: playerId, params, status: 'queued', created: meta.currentDate, updated: meta.currentDate, note: `총액 ${won(params.maxTotal)}·${params.maxYears}년 이내` });
-    return { result: 'accept' as const, message: `운영팀에 맡겼습니다. 총액 ${won(params.maxTotal)}, ${params.maxYears}년 이내에서 매주 한 번 협상합니다.` };
+    this.repo.insertTask({ team: 'ops', kind: 'fa', targetId: playerId, params, status: 'queued', created: meta.currentDate, updated: meta.currentDate, note: `${params.directive ? '협상 지시서 · ' : ''}총액 ${params.minTotal ? `${won(params.minTotal)}~` : ''}${won(params.maxTotal)}·${params.maxYears}년 이내${params.deadline ? ` · 마감 ${params.deadline.slice(5).replace('-', '/')}` : ''}` });
+    return { result: 'accept' as const, message: params.directive ? `협상 지시서를 운영팀에 넘겼습니다. 총액 ${won(params.maxTotal)}, ${params.maxYears}년 안에서는 결재 없이 매주 협상하고, 범위를 넘는 응답이 오면 진행을 멈추고 보고합니다.` : `운영팀에 맡겼습니다. 총액 ${won(params.maxTotal)}, ${params.maxYears}년 이내에서 매주 한 번 협상합니다.` };
   }
 
-  delegateSalary(meta: GameMeta, playerId?: number) {
-    this.requireDelegable('ops');
+  /** 연봉 협상 위임. 스토브리그 구단주 위임은 협상 지시서(D-218): 요구액 대비 maxRatioBp 안에서 결재 없이 제시한다 */
+  delegateSalary(meta: GameMeta, playerId?: number, maxRatioBp?: number) {
+    const pol = this.requireDelegable('ops');
+    const directive = meta.mode === 'stove';
+    const ratio = maxRatioBp ?? pol.salaryMaxRatioBp;
+    if (ratio < 8_000 || ratio > 12_000) throw new GameError('INVALID', '연봉 협상 한도는 요구액의 80~120%입니다.');
     const talks = this.repo.getSalaryTalks(Number(meta.kDate.slice(0, 4))).filter((t) => t.clubId === meta.userClubId && t.status === 'open' && (playerId === undefined || t.playerId === playerId));
     let n = 0;
     this.repo.transaction(() => {
       for (const t of talks) {
         if (this.activeTask(t.playerId, 'salary')) continue;
-        this.repo.insertTask({ team: 'ops', kind: 'salary', targetId: t.playerId, params: { round: 0, lastWeek: '' }, status: 'queued', created: meta.currentDate, updated: meta.currentDate, note: '' });
+        this.repo.insertTask({ team: 'ops', kind: 'salary', targetId: t.playerId, params: { round: 0, lastWeek: '', directive, maxRatioBp: ratio }, status: 'queued', created: meta.currentDate, updated: meta.currentDate, note: directive ? `협상 지시서 · 요구액의 ${ratio / 100}% 이내` : '' });
         n++;
       }
     });
@@ -376,7 +385,8 @@ export class Organization {
     if (date.slice(8, 10) === '01') this.refreshCandidates(meta, date);
     const weekId = weekIdFor(date);
     this.ensureWeek(meta, weekId);
-    if (weekday(date) === 1) this.expireApprovals(date);
+    // D-220: 결재 기한은 시즌은 주, 스토브리그는 턴(턴 회의에서 지난 구간 결재를 처리할 수 있게)
+    this.expireApprovals(date, meta);
     this.expireStaleFaApprovals(meta, date);
     this.fillRosterNeedsIfDelegated(meta, date, inbox);
     this.proposeOwnAgenda(meta, date);
@@ -419,7 +429,8 @@ export class Organization {
     const sd = stoveDates(meta.kDate);
     const note = '담당 팀 자체 안건';
     if (ops.mode !== 'direct' && meta.mode === 'stove' && date === sd.faMarketOpen) {
-      for (const e of this.repo.getFa(off).filter((x) => x.originClub === meta.userClubId && x.status === 'approved')) {
+      // D-215: 자동 실행의 간판 외야수는 첫 안건으로 남긴다(운영팀 자체 안건에서 뺀다)
+      for (const e of this.repo.getFa(off).filter((x) => x.originClub === meta.userClubId && x.status === 'approved' && meta.autoRun?.franchiseId !== x.playerId)) {
         if (this.repo.getTasks({ targetId: e.playerId, kind: 'fa' }).length > 0) continue;
         const maxTotal = Math.min(ops.faMaxTotal, round1m(offerTotal(e.demand) * 1.15));
         this.repo.insertTask({ team: 'ops', kind: 'fa', targetId: e.playerId, params: { maxTotal, maxYears: ops.faMaxYears, round: 0, lastWeek: '', lastRatio: 0, counter: null }, status: 'queued', created: date, updated: date, note: `${note} · 총액 ${won(maxTotal)} 이내` });
@@ -443,14 +454,15 @@ export class Organization {
     }
   }
 
-  /** 주가 바뀌면 지난주 결재 대기는 만료하고 업무를 취소한다(조건 변화 없이 재상정하지 않는다). */
-  expireApprovals(date: GameDate): void {
-    const weekId = weekIdFor(date);
+  /** 기간(시즌 주·스토브리그 턴)이 바뀌면 지난 기간 결재 대기는 만료하고 업무를 취소한다(조건 변화 없이 재상정하지 않는다). */
+  expireApprovals(date: GameDate, meta?: GameMeta): void {
+    const period = (d: GameDate) => (meta && meta.mode === 'stove' && d >= meta.kDate ? apPeriodId(meta, d) : weekIdFor(d));
+    const weekId = period(date);
     for (const a of this.repo.getApprovals('pending')) {
-      if (weekIdFor(a.date) === weekId) continue;
+      if (period(a.date) === weekId) continue;
       this.repo.updateApproval(a.id, 'expired');
-      if (a.kind === 'roster') this.repo.updateTask(a.taskId, { status: 'queued', note: '결재 기한(주) 경과 — 정리안을 다시 상정', updated: date });
-      else this.repo.updateTask(a.taskId, { status: 'cancelled', note: '결재 기한(주) 경과', updated: date });
+      if (a.kind === 'roster') this.repo.updateTask(a.taskId, { status: 'queued', note: '결재 기한(주·턴) 경과 — 정리안을 다시 상정', updated: date });
+      else this.repo.updateTask(a.taskId, { status: 'cancelled', note: '결재 기한(주·턴) 경과', updated: date });
     }
   }
 
@@ -488,7 +500,7 @@ export class Organization {
   }
 
   private runFa(meta: GameMeta, date: GameDate, weekId: string, t: WorkTask, pol: DelegationPolicy, d: { who: StaffMember; quality: number }, inbox: InboxMessage[]) {
-    const params = t.params as { maxTotal: number; maxYears: number; round: number; lastWeek: string; lastRatio: number; counter: ContractOffer | null };
+    const params = t.params as { maxTotal: number; maxYears: number; round: number; lastWeek: string; lastRatio: number; counter: ContractOffer | null; deadline?: string; directive?: boolean; minTotal?: number };
     // 새 제시는 1주 1라운드. 받은 역제안 수용은 다음 날 바로 진행한다.
     if (params.lastWeek === weekId && !params.counter) return;
     const off = Number(meta.kDate.slice(0, 4));
@@ -501,6 +513,10 @@ export class Organization {
       return;
     }
     if (!this.market.marketOpen(meta, date)) return;
+    if (params.deadline && date > String(params.deadline)) {
+      this.repo.updateTask(t.id, { status: 'failed', note: `지시서 마감(${String(params.deadline).slice(5).replace('-', '/')}) 경과`, updated: date });
+      return;
+    }
     // 경쟁 구단 제안이 있으면 요구액 이상에서 시작한다(담당자는 시장 관심도를 안다).
     const interest = this.repo.getOffers({ playerId: p.id, status: 'pending', kind: 'fa' }).filter((o) => o.clubId !== meta.userClubId).length;
     const offer = this.prepareFaOffer(e.demand, params, d.quality, interest);
@@ -514,7 +530,8 @@ export class Organization {
     params.round += 1;
     params.lastWeek = weekId;
     const summary = `${p.name} FA ${offer.years}년 총액 ${won(offerTotal(offer))} (계약금 ${won(offer.bonus)}, 연봉 ${won(offer.salary)})${comp ? ` · 보상금 ${won(comp)}` : ''}`;
-    if (pol.mode === 'approve') {
+    // D-218: 협상 지시서 범위 안의 제시는 결재 없이 실행한다
+    if (pol.mode === 'approve' && !t.params.directive) {
       this.repo.insertApproval({ taskId: t.id, team: 'ops', kind: 'fa', date, summary, payload: { playerId: p.id, offer }, status: 'pending' });
       this.repo.updateTask(t.id, { status: 'waiting', params, note: `${params.round}차 제시안 결재 대기`, updated: date });
       return;
@@ -528,7 +545,10 @@ export class Organization {
     if (params.counter) offer = { ...params.counter };
     else {
       const start = interest > 0 ? 1.0 + 0.03 * Math.min(3, interest) - 0.04 * quality : 0.97 - 0.08 * quality;
-      const ratio = params.round === 0 ? start : Math.max(start, params.lastRatio + 0.05);
+      let ratio = params.round === 0 ? start : Math.max(start, params.lastRatio + 0.05);
+      // 협상 지시서 하한(D-218): 첫 제시부터 하한 이상
+      const min = Number((params as { minTotal?: number }).minTotal ?? 0);
+      if (min > 0 && offerTotal(demand) > 0) ratio = Math.max(ratio, min / offerTotal(demand));
       params.lastRatio = ratio;
       offer = { years: demand.years, salary: round1m(demand.salary * ratio), bonus: round1m(demand.bonus * ratio) };
     }
@@ -554,7 +574,7 @@ export class Organization {
       params.counter = r.counter;
       // 완전 위임: 한도 안의 역제안은 처리량이 남아 있으면 그 자리에서 받아들인다.
       const weekId = weekIdFor(date);
-      if (followUp && this.policy('ops').mode === 'auto' && this.wpLeft(weekId, 'ops') >= TASK_WP.faRound) {
+      if (followUp && (this.policy('ops').mode === 'auto' || params.directive) && this.wpLeft(weekId, 'ops') >= TASK_WP.faRound) {
         this.repo.spendWp(weekId, 'ops', TASK_WP.faRound);
         params.counter = null;
         this.executeFa(meta, date, t, params, playerId, r.counter, who, inbox, false);
@@ -580,14 +600,14 @@ export class Organization {
       this.repo.updateTask(t.id, { status: talk?.status === 'agreed' ? 'done' : 'failed', note: talk ? (talk.status === 'agreed' ? '합의 완료' : '조정으로 결정') : '대상 아님', updated: date });
       return;
     }
-    const maxRatio = pol.salaryMaxRatioBp / 10_000;
+    const maxRatio = Number(t.params.maxRatioBp ?? pol.salaryMaxRatioBp) / 10_000;
     const ratio = Math.min(maxRatio, 0.93 + 0.04 * (1 - d.quality) + 0.02 * params.round);
     const offer = Math.max(30_000_000, round1m(talk.demand * ratio));
     const name = this.repo.getPlayer(t.targetId)?.name ?? '';
     if (!this.spendTaskWp(weekId, 'ops', TASK_WP.salaryTalk, t, date)) return;
     params.round += 1;
     params.lastWeek = weekId;
-    if (pol.mode === 'approve') {
+    if (pol.mode === 'approve' && !t.params.directive) {
       this.repo.insertApproval({ taskId: t.id, team: 'ops', kind: 'salary', date, summary: `${name} 연봉 ${won(offer)} 제시 (요구 ${won(talk.demand)}, 직전 ${won(talk.priorSalary)})`, payload: { playerId: t.targetId, offer }, status: 'pending' });
       this.repo.updateTask(t.id, { status: 'waiting', params, note: `${params.round}차 제시안 결재 대기`, updated: date });
       return;

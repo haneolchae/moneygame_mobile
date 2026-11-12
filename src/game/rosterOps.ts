@@ -44,6 +44,9 @@ export function exhibitionPairs(clubIds: ClubId[], dayIndex: number): Array<[Clu
   return pairs;
 }
 
+/** D-233: 첫 안건 잔류 협상 중인 미계약 간판 외야수(계약 전에는 1군 등록·자동 보충 대상 아님) */
+export const unsignedAgenda = (meta: GameMeta, id: PlayerId): boolean => meta.firstAgenda?.playerId === id && meta.firstAgenda.status === 'open';
+
 export class RosterOps {
   constructor(
     private readonly repo: GameRepository,
@@ -100,6 +103,8 @@ export class RosterOps {
       if (!p) throw new GameError('NOT_AVAILABLE', '우리 구단 선수가 아닙니다.');
       // EV-4(D-210 (6)): 징계 중에는 1군 등록 불가
       if ((p.sanction?.left ?? 0) > 0) throw new GameError('NOT_AVAILABLE', `${p.name}은(는) 출장 정지 중이라 1군에 등록할 수 없습니다(남은 ${p.sanction!.left}경기).`);
+      // D-233: 첫 안건의 미계약 간판 외야수는 계약하기 전까지 1군에 등록할 수 없다
+      if (unsignedAgenda(meta, id)) throw new GameError('NOT_AVAILABLE', `${p.name}은(는) 아직 계약하지 않은 FA라 1군에 등록할 수 없습니다(잔류 협상 마감 ${meta.firstAgenda!.deadline.slice(5).replace('-', '/')}).`);
       if (p.level === '1군') throw new GameError('INVALID', `${p.name}은 이미 1군입니다.`);
       if (p.health?.injury && diffDays(meta.currentDate, p.health.injury.returnDate) < 0) throw new GameError('INJURED', `${p.name}은 부상 중이라 1군에 등록할 수 없습니다(복귀 추정 ${p.health.injury.estimate.from.slice(5).replace('-', '/')}~${p.health.injury.estimate.to.slice(5).replace('-', '/')}).`);
       const until = this.reRegisterDate(meta, id);
@@ -164,7 +169,7 @@ export class RosterOps {
     const c = rosterCounts(active);
     const wantPitcher = c.pitchers < ROSTER_COMPOSITION.activeMinPitchers ? true : c.hitters < ROSTER_COMPOSITION.activeMinHitters ? false : null;
     const pool = mine
-      .filter((p) => p.level === '2군' && !this.reRegisterDate(meta, p.id) && !(p.health?.injury && diffDays(meta.currentDate, p.health.injury.returnDate) < 0) && (wantPitcher === null || p.isPitcher === wantPitcher))
+      .filter((p) => p.level === '2군' && !unsignedAgenda(meta, p.id) && !this.reRegisterDate(meta, p.id) && !(p.health?.injury && diffDays(meta.currentDate, p.health.injury.returnDate) < 0) && (wantPitcher === null || p.isPitcher === wantPitcher))
       .sort((a, b) => overall(b) - overall(a) || a.id - b.id)
       .slice(0, need);
     if (pool.length === 0) return '';
@@ -258,7 +263,7 @@ export class RosterOps {
     const dates = exhibitionDates(meta.season);
     const dayIndex = dates.indexOf(date);
     if (dayIndex < 0) return null;
-    const state: ExhibitionState = this.exhibition(meta) ?? { season: meta.season, games: [], stats: {}, lastStarters: {} };
+    const state: ExhibitionState = structuredClone(this.exhibition(meta) ?? { season: meta.season, games: [], stats: {}, lastStarters: {} });
     if (state.games.some((g) => g.date === date)) return null;
     const clubIds = this.repo.getClubs().map((c) => c.id);
     const active = this.repo.getActivePlayers(clubIds);

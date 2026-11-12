@@ -67,12 +67,16 @@ export function OfferForm({ row, onDone, nav }: { row: FaRowView; onDone: (r: Of
 export function DelegateForm({ row, ops, onDone, nav }: { row: FaRowView; ops: MarketView['ops']; onDone: (r: OfferResultView) => void; nav: Nav }) {
   const [maxTotal, setMaxTotal] = useState(toEok(Math.min(ops.faMaxTotal, Math.round(row.demand.totalWon * 1.15))));
   const [maxYears, setMaxYears] = useState(Math.min(ops.faMaxYears, Math.max(row.demand.years, 1)));
+  // D-218 협상 지시서(스토브리그): 하한·마감. 기본값은 담당 팀 추천 범위(하한 없음, 마감은 턴 끝까지)
+  const [minTotal, setMinTotal] = useState(0);
+  const [deadline, setDeadline] = useState('');
+  const stove = nav.dashboard?.phase === 'stove';
   const [sending, setSending] = useState(false);
   const submit = async () => {
     if (sending) return;
     setSending(true);
     try {
-      onDone(await api('org.delegateFa', { playerId: row.playerId, maxTotalWon: Math.round(maxTotal * EOK), maxYears }));
+      onDone(await api('org.delegateFa', { playerId: row.playerId, maxTotalWon: Math.round(maxTotal * EOK), maxYears, ...(minTotal > 0 ? { minTotalWon: Math.round(minTotal * EOK) } : {}), ...(deadline ? { deadline } : {}) }));
     } catch (e) {
       nav.notify(e instanceof ApiError ? e.message : String(e), 'error');
     } finally {
@@ -81,8 +85,20 @@ export function DelegateForm({ row, ops, onDone, nav }: { row: FaRowView; ops: M
   };
   return (
     <div className="offer-form">
-      <strong>{row.name} 협상을 운영팀에 맡기기</strong>
-      <span className="muted small">{ops.mode === 'approve' ? '운영팀이 제시안을 만들어 결재를 올립니다.' : '한도 안에서 운영팀이 직접 계약합니다.'} 1회 협상에 처리량 10.</span>
+      <strong>{row.name} {stove ? '협상 지시서' : '협상을 운영팀에 맡기기'}</strong>
+      <span className="muted small">
+        {stove ? '범위 안의 왕복은 결재 없이 운영팀이 처리하고, 범위를 넘는 응답이 오면 진행을 멈추고 보고합니다.' : ops.mode === 'approve' ? '운영팀이 제시안을 만들어 결재를 올립니다.' : '한도 안에서 운영팀이 직접 계약합니다.'} 1회 협상에 처리량 10.
+      </span>
+      {stove && (
+        <>
+          <label>
+            총액 하한(억) <input type="number" step="1" min="0" value={minTotal} onChange={(e) => setMinTotal(Number(e.target.value))} style={{ width: 80 }} />
+          </label>
+          <label>
+            마감 <input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+          </label>
+        </>
+      )}
       <label>
         총액 한도(억) <input type="number" step="1" min="1" value={maxTotal} onChange={(e) => setMaxTotal(Number(e.target.value))} style={{ width: 90 }} />
       </label>
@@ -355,7 +371,7 @@ export function Market({ nav }: { nav: Nav }) {
             <div className="panel-head">
               <h2>우리 외국인 선수</h2>
               <span className="meta">
-                외국인 3명 계약 총액 {usd(v.foreign.totalUsd)} / 상한 {usd(v.foreign.capUsd)}
+                외국인 계약 총액 {usd(v.foreign.totalUsd)}
               </span>
             </div>
             <table className="grid dense">

@@ -32,9 +32,10 @@ describe('계약 규칙', () => {
     expect(validateForeign([p(true), p(true), p(false)])).toEqual([]);
     expect(validateForeign([p(true), p(true), p(true)]).join()).toContain('모두 투수');
     expect(validateForeign([p(true, 1_100_000, true)]).join()).toContain('100만 달러');
-    expect(validateForeign([p(true, 1_500_000), p(true, 1_500_000), p(false, 1_500_000)]).join()).toContain('총액');
-    expect(validateForeign([p(true, 1_500_000, false, 3), p(true, 1_400_000, false, 3), p(false, 1_400_000, false, 3)])).toEqual([]); // 430만+30만 상한
+    // D-225 (5): 총액·재계약 증액 상한 없음
+    expect(validateForeign([p(true, 1_500_000), p(true, 1_500_000), p(false, 1_500_000)])).toEqual([]);
     expect(validateForeign([{ origin: 'asia', isPitcher: true, salaryUsd: 250_000, renewals: 0, isNew: true }]).join()).toContain('20만');
+    expect(validateForeign([{ origin: 'asia', isPitcher: true, salaryUsd: 250_000, renewals: 1, isNew: false, priorUsd: 200_000 }]).join()).toContain('20만');
   });
 });
 
@@ -63,7 +64,9 @@ describe('스토브리그 선수 시장', () => {
     v = await call(d, 'market.view');
     expect(v.fa.length).toBeGreaterThan(0);
     const star = v.fa.find((f) => f.franchise)!;
-    expect(star.statusKey).toBe('applied');
+    // D-225 (5): 공시·신청 → 시장 개장 2단계. 공시일에 신청·등급이 함께 정해진다
+    expect(star.statusKey).toBe('approved');
+    expect(star.faGrade).not.toBeNull();
     const early = await d.respond('market.faOffer', { playerId: star.playerId, years: 4, salaryWon: 5e8, bonusWon: 10e8 });
     expect(early.ok).toBe(false);
     await weeks(d, 1); // → 11/23 (승인·개장 지남)
@@ -153,9 +156,13 @@ describe('스토브리그 선수 시장', () => {
     const v = await call(d, 'market.view');
     // 세션 과금(D-130·D-136): 선수별 그 주 첫 제안만 행동력 1이므로, 서로 다른 선수에게 한 번씩 제안해 행동력을 소진한다.
     const targets = v.fa.filter((f) => f.statusKey === 'approved');
-    expect(targets.length).toBeGreaterThan(v.apRemaining);
-    for (let i = 0; i < v.apRemaining; i++) await call(d, 'market.faOffer', { playerId: targets[i]!.playerId, years: 1, salaryWon: 30_000_000, bonusWon: 0 });
-    const r = await d.respond('market.faOffer', { playerId: targets[v.apRemaining]!.playerId, years: 1, salaryWon: 30_000_000, bonusWon: 0 });
+    // D-217: 스토브리그 행동력은 턴마다 주간 최대치 × 2. FA 대상보다 많으면 선수 조사(행동력 1)로 먼저 줄인다
+    const own = (await call(d, 'game.players', { scope: 'mine', group: 'all' })).map((p) => p.id);
+    let left = v.apRemaining;
+    for (let i = 0; left >= targets.length && i < own.length; i++, left--) await call(d, 'player.scout', { playerId: own[i]! });
+    expect(targets.length).toBeGreaterThan(left);
+    for (let i = 0; i < left; i++) await call(d, 'market.faOffer', { playerId: targets[i]!.playerId, years: 1, salaryWon: 30_000_000, bonusWon: 0 });
+    const r = await d.respond('market.faOffer', { playerId: targets[left]!.playerId, years: 1, salaryWon: 30_000_000, bonusWon: 0 });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe('AP_SHORT');
     d.close();

@@ -4,7 +4,7 @@ import type { GameDate } from '../engine/calendar';
 import { weekIdFor as weekOf } from './week';
 import { CLOSE_RULES } from './seasonClose';
 import { FACILITY } from '../engine/config';
-import { salaryCap } from '../engine/contracts';
+import { capPayroll, salaryCap } from '../engine/contracts';
 import { FACILITY_KINDS } from '../engine/business';
 import { clubHistory } from '../engine/data/history';
 import { EOK } from '../engine/money';
@@ -98,6 +98,11 @@ export function judgeOps(c: OpsCtx): void {
     judge('H_fa', external.length, (l) => `${date} 외부 FA 영입 ${l}명`);
     judge('H_stay', stayed.length, (l) => `${date} 내부 FA 잔류 ${l}명`);
     flag('H_franchise', stayed.some((e) => all().find((p) => p.id === e.playerId)?.career.franchise), '간판 선수 잔류 계약');
+    // D-228 포스팅(재임 중 우리 구단 선수만)
+    const posted = (F().postings ?? []).filter((x) => x.clubId === club && x.season >= c.tenureFirst - 1);
+    judge('H_posting', posted.length, (l) => `${date} 포스팅 MLB 진출 ${l}명`);
+    judge('H_postingFee', Math.floor(posted.reduce((a, x) => a + x.feeWon, 0) / 100_000_000), (l) => `${date} 포스팅 이적료 누적 ${l}억`);
+    if (F().mode === 'stove') flag('Q_posting', repo.getEventLog({ season }).some((r) => r.cardId === 'MLB-01' && r.choiceId === 'agree' && !!r.outcome?.includes('무산')), `${date} 포스팅 무산`);
     const foreign = all().filter((p) => p.clubId === club && p.origin !== 'domestic');
     for (const p of foreign) if (memo.foreignBase[String(p.id)] === undefined) memo.foreignBase = { ...memo.foreignBase, [String(p.id)]: p.career.foreignRenewals };
     const renew = Math.max(0, ...foreign.map((p) => p.career.foreignRenewals - (memo.foreignBase[String(p.id)] ?? 0)));
@@ -271,8 +276,9 @@ export function judgeOps(c: OpsCtx): void {
   // ───── 한국시리즈 종료일 ─────
   if (c.ksEnd) {
     const champ = F().postseason?.champion === club;
-    const payroll = all().filter((p) => p.clubId === club && p.origin === 'domestic').reduce((s, p) => s + p.salary, 0);
-    flag('L_capTitle', champ && payroll <= salaryCap(season), `${season} 국내 연봉 ${Math.round(eok(payroll))}억으로 우승`);
+    // D-227: 샐러리캡 산정액(국내 연봉 + 계약금 연평균)
+    const payroll = capPayroll(all(), club, season);
+    flag('L_capTitle', champ && payroll <= salaryCap(season), `${season} 샐러리캡 산정액 ${Math.round(eok(payroll))}억으로 우승`);
     const sp = F().sponsorTotals?.[String(season)]?.[String(club)];
     if (sp !== undefined) judge('K_sponsorRev', eok(sp), (l) => `${season} 스폰서 수입 ${Math.round(eok(sp))}억(${l})`);
     if (champ) {

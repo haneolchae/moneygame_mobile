@@ -20,9 +20,10 @@ describe('스토브리그 달력', () => {
   it('2026-11-08 기준 리그 일정 (D-061)', () => {
     const ev = Object.fromEntries(stoveEvents('2026-11-08').map((e) => [e.kind, e.date]));
     expect(ev.faNotice).toBe('2026-11-13');
-    expect(ev.faApplyDeadline).toBe('2026-11-15');
-    expect(ev.faApproval).toBe('2026-11-16');
+    // D-225 (5): FA 절차는 공시·신청 → 시장 개장 2단계, D-229: 비활동 기간 없음(연봉 협상 12/1 시작)
+    expect(ev.faApplyDeadline).toBeUndefined();
     expect(ev.faMarketOpen).toBe('2026-11-17');
+    expect(ev.salaryTalks).toBe('2026-12-01');
     expect(ev.reserveList).toBe('2026-11-30');
     expect(ev.arbitrationDeadline).toBe('2027-01-10');
     expect(seasonModeStart(2026)).toBe('2027-02-01');
@@ -73,21 +74,21 @@ describe('정기 수입·지출 일정', () => {
 });
 
 describe('스토브리그 진행', () => {
-  it('새 게임은 2026-11-08 스토브리그, 1주 단위로만 진행', async () => {
+  it('스토브리그 시작 저장본(시험용 start: stove)은 2026-11-08, 턴·주 단위로만 진행(D-216·D-217)', async () => {
     const d = makeDispatcher(newDir());
     const dash = await call(d, 'game.new', { clubId: 7, saveName: 't', seed: 'stove' });
     expect(dash.date).toBe('2026-11-08');
     expect(dash.phase).toBe('stove');
     expect(dash.standings[0]?.club.name).toBe('수원 매지션스');
-    expect(dash.owner.apRemaining).toBe(6);
-    expect(dash.owner.weekLabel).toBe('11/08~11/15');
+    expect(dash.owner.apRemaining).toBe(12);
+    expect(dash.owner.weekLabel).toBe('1턴 11/09~11/29');
     const bad = await d.respond('game.advance', { mode: 'day' });
     expect(bad.ok).toBe(false);
     const r = await call(d, 'game.advance', { mode: 'week' });
     expect(r.date).toBe('2026-11-16');
     expect(r.daysProcessed).toBe(8);
     const inbox = await call(d, 'game.inbox');
-    expect(inbox.some((m) => m.title === 'FA 자격 선수 공시')).toBe(true);
+    expect(inbox.some((m) => m.title === 'FA 자격 선수 공시·신청')).toBe(true);
     d.close();
   });
 
@@ -129,8 +130,10 @@ describe('스토브리그 진행', () => {
     const meta = repo.getMeta();
     expect(meta.inflationBp['2027']).toBeGreaterThanOrEqual(150);
     expect(meta.inflationBp['2027']).toBeLessThanOrEqual(350);
-    // 행동력은 주마다 한 번씩 지급: 첫 주 + 이후 12번의 월요일(2/1 포함)
-    for (const w of ['2026-11-09', '2026-11-16', '2027-01-25', '2027-02-01']) expect(repo.getApWeek(w)?.granted).toBe(6);
+    // D-217: 스토브리그 행동력은 턴마다 주간 최대치 × 2(4턴), 시즌 모드는 2/1 주부터 매주
+    for (const w of ['2026-11-09', '2026-11-30', '2026-12-21', '2027-01-11']) expect(repo.getApWeek(w)?.granted).toBe(12);
+    expect(repo.getApWeek('2026-11-16')).toBeNull();
+    expect(repo.getApWeek('2027-02-01')?.granted).toBe(6);
     // 현금 = 기초 현금 + 장부 합계 (장부 외 변경 없음)
     const club = CLUB_PROFILES.find((c) => c.id === 1)!;
     const fin = await call(d, 'game.finance');

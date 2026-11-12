@@ -100,7 +100,8 @@ describe('결정 카드 화면·위임 (EV-3)', () => {
       expect(repo.getNews({ weekId: m2 }).some((n) => n.kind === 'decide')).toBe(true);
       // D-212 추가 카드: 4장 모두 활성, 시즌 상한 기본 2(일부 1), 육성선수 계약
       for (const id of ['AWD-02', 'OPS-01', 'DEV-01', 'CS-04']) expect(CARDS.find((c) => c.id === id) ? CARDS.find((c) => c.id === id)!.inactive : 'missing', id).toBeNull();
-      expect(CARDS.filter((c) => c.seasonCap === 1).map((c) => c.id).sort()).toEqual(['CS-04', 'MGR-04', 'SPN-03', 'SPN-05']);
+      // ①: 스토브리그 'MLB 관심'(D-228)도 시즌에 한 번
+      expect(CARDS.filter((c) => c.seasonCap === 1).map((c) => c.id).sort()).toEqual(['CS-04', 'MGR-04', 'MLB-01', 'SPN-03', 'SPN-05']);
       const fa = repo.getPlayers().find((p) => p.clubId === null && !p.retired && p.origin === 'domestic')!;
       const mt = repo.getMeta();
       svc.events.applyEffects([{ type: 'CONTRACT', kind: 'signTrial' }], { meta: mt, date: mt.currentDate, clubId: 1, playerId: fa.id, rng: new (await import('../src/engine/rng')).Rng((await import('../src/engine/rng')).Rng.derive('x', 'y').state()), week: weekNumber(mt.currentDate), cardId: 'DEV-01', state: mt.eventState! });

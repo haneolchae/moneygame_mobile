@@ -120,6 +120,43 @@ export interface FixtureView {
 /** stove: 스토브리그, preseason: 시즌 모드 개막 전(캠프), regular: 정규시즌, regularComplete: 정규시즌 종료 */
 export type SeasonPhase = 'stove' | 'preseason' | 'regular' | 'postseason' | 'seasonComplete';
 
+/** ① 턴 회의(D-216·D-219·D-220) */
+export interface StoveTurnView {
+  index: number;
+  title: string;
+  start: string;
+  end: string;
+  endLabel: string;
+  apGranted: number;
+  apRemaining: number;
+  stops: number;
+  maxStops: number;
+  /** 멈춤 상한을 넘어 기본 처리한 일 */
+  defaulted: string[];
+  turns: Array<{ index: number; title: string; period: string; endLabel: string; current: boolean; done: boolean }>;
+  agenda: Array<{ tier: '필수' | '권장' | '선택' | '자동'; title: string; done: boolean | null; deadline: string | null; link: string | null }>;
+  cards: CardView[];
+  negotiations: Array<{ playerId: number; name: string; kind: 'FA' | '연봉'; status: string; note: string }>;
+}
+
+/** D-215 지난겨울 보고서(전임 경영진 인수인계서) */
+export interface WinterReportView {
+  from: string;
+  to: string;
+  incoming: Array<{ playerId: number; name: string; how: string }>;
+  outgoing: Array<{ playerId: number; name: string; how: string }>;
+  contracts: Array<{ playerId: number; name: string; text: string }>;
+  sponsors: string[];
+  hires: string[];
+  facilities: string[];
+  cashStart: number;
+  cashEnd: number;
+  ledger: Array<{ category: string; amount: number }>;
+  rosterCount: number;
+  foreignCount: number;
+  notes: string[];
+}
+
 export interface DashboardView {
   saveName: string;
   season: number;
@@ -164,6 +201,11 @@ export interface DashboardView {
   briefing: BriefingView | null;
   /** EV-3 고를 결정 카드(선택 전 진행 불가) */
   card: CardView | null;
+  /** ① 스토브리그 턴 회의(시즌 모드에는 null) */
+  stove: StoveTurnView | null;
+  /** D-215 첫 안건(간판 외야수 잔류 협상) */
+  firstAgenda: { playerId: number; name: string; deadline: string; status: string } | null;
+  hasWinterReport: boolean;
   upcomingEvents: CalendarEventView[];
   keyPlayers: PlayerListItem[];
   canAdvanceDay: boolean;
@@ -566,7 +608,7 @@ export interface MarketView {
   obligationsWon: number;
   fa: FaRowView[];
   salaryTalks: SalaryTalkView[];
-  foreign: { mine: ForeignPlayerView[]; pool: ForeignPlayerView[]; totalUsd: number; capUsd: number; rules: string[] };
+  foreign: { mine: ForeignPlayerView[]; pool: ForeignPlayerView[]; totalUsd: number; rules: string[] };
   releasable: Array<{ playerId: number; name: string; position: string; age: number; level: string; scoutGrade: number; salaryWon: number; contractYears: number; origin: string }>;
 }
 
@@ -1224,9 +1266,9 @@ export interface OrganizationView {
 export interface RequestMap {
   'app.status': { payload: void; result: AppStatus };
   'game.clubOptions': { payload: void; result: ClubOption[] };
-  'game.new': { payload: { clubId: number; saveName: string; seed?: string }; result: DashboardView };
+  'game.new': { payload: { clubId: number; saveName: string; seed?: string; start?: 'camp' | 'stove' }; result: DashboardView };
   'game.dashboard': { payload: void; result: DashboardView };
-  'game.advance': { payload: { mode: 'day' | 'week' | 'untilSeasonEnd'; autoCards?: boolean }; result: AdvanceResult };
+  'game.advance': { payload: { mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn'; autoCards?: boolean }; result: AdvanceResult };
   'game.players': { payload: PlayerQuery; result: PlayerListItem[] };
   'game.player': { payload: { playerId: number }; result: PlayerDetailView };
   'player.note': { payload: { playerId: number; text: string; watched: boolean }; result: PlayerNoteView };
@@ -1295,8 +1337,11 @@ export interface RequestMap {
   'org.hire': { payload: { staffId: number }; result: OfferResultView };
   'org.fire': { payload: { staffId: number }; result: OfferResultView };
   'org.setPolicy': { payload: DelegationPolicyView; result: OfferResultView };
-  'org.delegateFa': { payload: { playerId: number; maxTotalWon?: number; maxYears?: number }; result: OfferResultView };
-  'org.delegateSalary': { payload: { playerId?: number }; result: OfferResultView };
+  /** 스토브리그에서는 협상 지시서(D-218): 상·하한·기간·마감 */
+  'org.delegateFa': { payload: { playerId: number; maxTotalWon?: number; maxYears?: number; minTotalWon?: number; deadline?: string }; result: OfferResultView };
+  'org.delegateSalary': { payload: { playerId?: number; maxRatioBp?: number }; result: OfferResultView };
+  'stove.chooseCard': { payload: { cardId: string; choiceId: string }; result: { message: string; link: string | null } };
+  'game.winterReport': { payload: void; result: WinterReportView | null };
   'org.delegateHire': { payload: { team: string; title: '팀장' | '팀원'; maxSalaryWon?: number }; result: OfferResultView };
   'org.cancelTask': { payload: { taskId: number }; result: OfferResultView };
   'org.approve': { payload: { approvalId: number }; result: OfferResultView };
@@ -1392,6 +1437,8 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'org.setPolicy',
   'org.delegateFa',
   'org.delegateSalary',
+  'stove.chooseCard',
+  'game.winterReport',
   'org.delegateHire',
   'org.cancelTask',
   'org.approve',

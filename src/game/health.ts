@@ -11,7 +11,7 @@ import { overall } from '../engine/worldgen';
 import type { PlayerId, PlayerTruth } from '../engine/types';
 import { GameError } from '../shared/protocol';
 import type { GameMeta, GameRepository, InboxMessage } from './ports';
-import type { RosterOps } from './rosterOps';
+import { unsignedAgenda, type RosterOps } from './rosterOps';
 
 const md = (d: GameDate) => d.slice(5).replace('-', '/');
 
@@ -96,7 +96,7 @@ export class HealthOps {
     }
     if (demote.size === 0) return [];
     const isUser = clubId === meta.userClubId;
-    const pool = mine.filter((p) => p.level !== '1군' && !sick(p) && !(isUser && this.roster.reRegisterDate(meta, p.id)));
+    const pool = mine.filter((p) => p.level !== '1군' && !sick(p) && !unsignedAgenda(meta, p.id) && !(isUser && this.roster.reRegisterDate(meta, p.id)));
     const promote: PlayerTruth[] = [];
     const take = (pred: (p: PlayerTruth) => boolean) => {
       const pick = pool.filter((p) => !promote.includes(p) && pred(p)).sort((a, b) => overall(b) - overall(a) || a.id - b.id)[0];
@@ -171,9 +171,14 @@ export class HealthOps {
     const who = players.filter((p) => appeared.has(p.id) && p.clubId !== null && !this.hurt(p, date));
     const fatigue = this.fatigueMap(date, who, true);
     const injured: PlayerTruth[] = [];
+    // 성능(① 후속): 메디컬 역량·감독 컨디션 관리 배율은 그날 구단마다 한 번만 계산한다(판정 중에는 바뀌지 않는다)
+    const quality = new Map<number, number>();
+    const cond = new Map<number, number>();
+    const qOf = (c: number) => quality.get(c) ?? quality.set(c, this.medicalQuality(c)).get(c)!;
+    const cOf = (c: number) => cond.get(c) ?? cond.set(c, this.condition(c)).get(c)!;
     for (const p of who) {
       // EV-2(D-205 (3)): 카드 부상 위험 배율
-      const inj = rollInjury(meta.seed, date, p, (fatigue.get(p.id) ?? 0) * this.condition(p.clubId!), ageOn(p.birthDate, date), this.medicalQuality(p.clubId!), p.level === '1군', injuryMultiplier(meta.eventState, weekNumber(date), p.id));
+      const inj = rollInjury(meta.seed, date, p, (fatigue.get(p.id) ?? 0) * cOf(p.clubId!), ageOn(p.birthDate, date), qOf(p.clubId!), p.level === '1군', injuryMultiplier(meta.eventState, weekNumber(date), p.id));
       if (!inj) continue;
       p.health = { injury: inj, history: p.health?.history ?? [], ...(p.health?.lastCheck ? { lastCheck: p.health.lastCheck } : {}) };
       injured.push(p);

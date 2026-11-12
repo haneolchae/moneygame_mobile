@@ -53,11 +53,14 @@ const codeFiles = [...walk(join(ROOT, 'src'), /\.(ts|tsx)$/), ...walk(join(ROOT,
 const srcFiles = codeFiles.filter((f) => rel(f).startsWith('src/'));
 
 // ── 1. 결정 ID: 코드가 참조하는 D-### 가 결정 로그에 있는가 ──────────────────────
+// D-226: 04_decisions.md는 현재 유효 결정(글머리표), 결정 표 원문은 04_decisions_log.md. 두 문서의 표 행을 모두 읽는다.
 const decisionsPath = docPath('04_decisions.md');
+const decisionsLogPath = docPath('04_decisions_log.md');
 const decisions = new Map(); // id -> 상태 문자열
 if (!decisionsPath) errors.push('04_decisions.md가 없습니다.');
 else {
-  for (const line of read(decisionsPath).split('\n')) {
+  const decisionText = [decisionsPath, decisionsLogPath].filter(Boolean).map(read).join('\n');
+  for (const line of decisionText.split('\n')) {
     const m = line.match(/^\|\s*(D-\d{3})\s*\|/);
     if (m) {
       const cells = line.split('|').map((c) => c.trim());
@@ -183,7 +186,7 @@ else {
     if (m && /[a-z]/.test(m[1])) progress.push({ order: m[1], name: m[3], done: Boolean(m[2]) });
   }
   if (!progress.length) errors.push('06_progress.md에서 진행 상황 표를 찾지 못함');
-  // 오래된 결과 섹션은 06_progress_archive.md로 옮긴다(최근 10개만 06에 둔다). 결과 섹션은 두 문서 중 어디에 있어도 된다.
+  // 오래된 결과 섹션은 06_progress_archive.md로 옮긴다(최근 3개만 06에 둔다, D-226). 결과 섹션은 두 문서 중 어디에 있어도 된다.
   const archivePath = docPath('06_progress_archive.md');
   const results = t + (archivePath ? `\n${read(archivePath)}` : '');
   for (const p of progress.filter((p) => p.done)) {

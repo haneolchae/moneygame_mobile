@@ -1,6 +1,6 @@
 // 규칙 위반 검사. 장기 실행·테스트·자체 점검에서 같은 검사를 쓴다.
 import { seasonKeyDates } from '../engine/schedule';
-import { AI_CLUB, CLUTCH, DEVELOPMENT, FACILITY, LEAGUE, ROSTER_MOVE, SPONSOR, TRADE, TRAINING } from '../engine/config';
+import { AI_CLUB, CLUTCH, DEVELOPMENT, FACILITY, FOREIGN, LEAGUE, ROSTER_MOVE, SPONSOR, TRADE, TRAINING } from '../engine/config';
 import { STANCES } from '../engine/aiClub';
 import { weekIdFor } from '../game/week';
 import { FACILITY_KINDS } from '../engine/business';
@@ -202,6 +202,17 @@ export function checkRosterLimits(repo: GameRepository): string[] {
     .map((c) => ({ c, n: players.filter((p) => p.clubId === c.id).length }))
     .filter((x) => x.n > LEAGUE.rosterMax)
     .map((x) => `${x.c.name} 보유 ${x.n}명 > ${LEAGUE.rosterMax}`);
+}
+
+/** 외국인 보유 기준(D-228): 40인 명단에 외국인 3명·아시아쿼터 1명 이하(1군 등록·출전 인원은 제한 없음) */
+export function checkForeignQuota(repo: GameRepository): string[] {
+  const players = repo.getPlayers().filter((p) => p.clubId !== null && !p.retired);
+  return repo.getClubs().flatMap((c) => {
+    const mine = players.filter((p) => p.clubId === c.id);
+    const f = mine.filter((p) => p.origin === 'foreign').length;
+    const a = mine.filter((p) => p.origin === 'asia').length;
+    return [...(f > FOREIGN.maxForeign ? [`${c.name} 외국인 ${f}명 > ${FOREIGN.maxForeign}`] : []), ...(a > FOREIGN.maxAsia ? [`${c.name} 아시아쿼터 ${a}명 > ${FOREIGN.maxAsia}`] : [])];
+  });
 }
 
 /** 포지션 최소 인원(D-098): 40인 투수·야수·포수, 1군 투수·야수. 1군 편성이 임시로 채운 경우도 여기서 미달로 드러난다. */

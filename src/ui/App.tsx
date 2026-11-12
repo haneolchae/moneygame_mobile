@@ -4,6 +4,10 @@ import type { AppStatus, DashboardView, ProgressEvent } from '../shared/protocol
 import { api, ApiError, onProgress } from './api';
 import { ApprovalPopup } from './ApprovalPopup';
 import { BriefingPopup } from './BriefingPopup';
+import { WinterReportPopup } from './WinterReport';
+
+/** D-214: 새 게임 캠프 시작일 */
+const CAMP_START = '2027-02-01';
 import { CardPopup } from './CardPopup';
 import { NewsLog } from './screens/NewsLog';
 import { GameOverPanel } from './Career';
@@ -113,6 +117,8 @@ export function App() {
   const [popupOpen, setPopupOpen] = useState(false);
   // EV-1: 이번 주 브리핑을 본 주(결재 팝업보다 먼저 띄운다)
   const [briefWeek, setBriefWeek] = useState<string | null>(null);
+  // D-215: 지난겨울 보고서는 캠프 첫날 한 번 띄운다(다시 보기는 구단 현황 첫 안건 패널)
+  const [winterSeen, setWinterSeen] = useState<string | null>(null);
 
   const notify = useCallback((msg: string, kind: 'info' | 'error' = 'info') => {
     setToast({ msg, kind });
@@ -152,9 +158,9 @@ export function App() {
     notify,
   };
 
-  const advance = async (mode: 'day' | 'week' | 'untilSeasonEnd'): Promise<boolean> => {
+  const advance = async (mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn'): Promise<boolean> => {
     if (!(await canLeave())) return false;
-    setBusy(mode === 'day' ? '하루 진행 중' : mode === 'week' ? '한 주 진행 중' : '시즌 진행 중');
+    setBusy(mode === 'day' ? '하루 진행 중' : mode === 'week' ? '한 주 진행 중' : mode === 'turn' ? '구간 진행 중' : '시즌 진행 중');
     setProgress(null);
     try {
       const r = await api('game.advance', { mode });
@@ -258,8 +264,9 @@ export function App() {
                   <button disabled={!!busy} onClick={() => advance('day')}>하루 진행</button>
                 </>
               )}
-              <button disabled={!!busy} className="primary" onClick={() => advance('week')}>
-                다음 주 진행 <Icon name="play" size={16} />
+              {/* ①(D-216): 스토브리그는 턴 단위 진행(턴 회의 → 지시 → 구간 진행 → 구간 보고) */}
+              <button disabled={!!busy} className="primary" onClick={() => advance(d.phase === 'stove' ? 'turn' : 'week')}>
+                {d.phase === 'stove' ? '다음 턴 진행' : '다음 주 진행'} <Icon name="play" size={16} />
               </button>
             </>
           )}
@@ -322,7 +329,8 @@ export function App() {
           </div>
         </div>
       )}
-      {d.briefing && d.briefing.weekId !== briefWeek && !busy && <BriefingPopup briefing={d.briefing} onClose={() => setBriefWeek(d.briefing!.weekId)} />}
+      {d.hasWinterReport && winterSeen !== d.saveName && d.date === CAMP_START && !busy && <WinterReportPopup onClose={() => setWinterSeen(d.saveName)} />}
+      {(!d.hasWinterReport || winterSeen === d.saveName || d.date !== CAMP_START) && d.briefing && d.briefing.weekId !== briefWeek && !busy && <BriefingPopup briefing={d.briefing} onClose={() => setBriefWeek(d.briefing!.weekId)} />}
       {d.card && !busy && (!d.briefing || d.briefing.weekId === briefWeek) && route.name !== 'player' && <CardPopup card={d.card} nav={nav} />}
       {popupOpen && !busy && !d.card && (!d.briefing || d.briefing.weekId === briefWeek) && <ApprovalPopup approvals={d.approvals} nav={nav} onClose={() => setPopupOpen(false)} />}
       {toast && <div className={`toast ${toast.kind}`}>{toast.msg}</div>}

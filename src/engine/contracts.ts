@@ -151,15 +151,15 @@ export function salaryAccepts(seed: string, p: PlayerTruth, offer: number, deman
   return offer >= demand * (FA_RULES.salaryAcceptRatio + stableNormal(seed, 'salary-accept', p.id) * 0.01);
 }
 
-/** 외국인 재계약 요구: 직전 연봉의 112%(1만 달러 단위). 아시아쿼터는 직전 + 10만 달러 이하. */
+/** 외국인 재계약 요구: 직전 연봉의 112%(1만 달러 단위). 아시아쿼터는 아시아쿼터 상한 이하(D-225 (5)). */
 export function foreignRenewalDemandUsd(p: PlayerTruth): number {
   const prev = wonToUsd(p.salary);
   const raised = Math.round((prev * 1.12) / 10_000) * 10_000;
-  return p.origin === 'asia' ? Math.min(raised, prev + FOREIGN.asiaRenewalStepUsd) : raised;
+  return p.origin === 'asia' ? Math.min(raised, Math.max(prev, FOREIGN.asiaNewCapUsd)) : raised;
 }
 
 /** 외국인 구성 검증 (D-046·D-048). 위반 사유 목록을 돌려준다. */
-export function validateForeign(players: Array<{ origin: PlayerTruth['origin']; isPitcher: boolean; salaryUsd: number; renewals: number; isNew: boolean }>): string[] {
+export function validateForeign(players: Array<{ origin: PlayerTruth['origin']; isPitcher: boolean; salaryUsd: number; renewals: number; isNew: boolean; priorUsd?: number }>): string[] {
   const errors: string[] = [];
   const foreign = players.filter((p) => p.origin === 'foreign');
   const asia = players.filter((p) => p.origin === 'asia');
@@ -167,11 +167,30 @@ export function validateForeign(players: Array<{ origin: PlayerTruth['origin']; 
   if (asia.length > FOREIGN.maxAsia) errors.push('아시아쿼터는 1명까지 보유할 수 있습니다.');
   if (foreign.length === 3 && (foreign.every((p) => p.isPitcher) || foreign.every((p) => !p.isPitcher))) errors.push('외국인 3명이 모두 투수이거나 모두 야수일 수 없습니다.');
   for (const p of foreign) if (p.isNew && p.salaryUsd > FOREIGN.newCapUsd) errors.push('신규 외국인은 1인당 100만 달러를 넘을 수 없습니다.');
-  const totalCap = FOREIGN.totalCapUsd + foreign.reduce((a, p) => a + p.renewals * FOREIGN.totalCapPerRenewalUsd, 0);
-  const total = foreign.reduce((a, p) => a + p.salaryUsd, 0);
-  if (total > totalCap) errors.push(`외국인 3명 총액(${(total / 10_000).toFixed(0)}만 달러)이 상한(${(totalCap / 10_000).toFixed(0)}만 달러)을 넘습니다.`);
-  for (const p of asia) if (p.isNew && p.salaryUsd > FOREIGN.asiaNewCapUsd) errors.push('신규 아시아쿼터는 20만 달러를 넘을 수 없습니다.');
+  // D-225 (5): 외국인 총액·재계약 증액 상한은 없다. 아시아쿼터 상한은 신규·재계약 모두(재계약 전 연봉이 이미 넘으면 그대로 둔다)
+  for (const p of asia) if ((p.isNew || p.salaryUsd > (p.priorUsd ?? 0)) && p.salaryUsd > FOREIGN.asiaNewCapUsd) errors.push('아시아쿼터 연봉은 20만 달러를 넘을 수 없습니다.');
   return errors;
+}
+
+/** D-227 계약금 연평균 기록: 계약 연수로 나눠 그 계약이 적용되는 시즌마다 샐러리캡에 넣는다 */
+export function bonusCapOf(bonus: number, years: number, clubId: number, firstSeason: number): PlayerTruth['bonusCap'] {
+  if (bonus <= 0 || years < 1) return undefined;
+  return { perYear: Math.round(bonus / years), clubId, from: firstSeason, to: firstSeason + years - 1 };
+}
+
+/**
+ * D-227 샐러리캡 산정액: 외국인·아시아쿼터를 뺀 국내 선수 연봉 합 + 계약금 연평균액.
+ * 연평균액은 계약한 구단에 선수가 남아 있는 시즌만 넣는다(트레이드·방출 뒤에는 어느 구단에도 넣지 않는다).
+ */
+export function capPayroll(players: readonly PlayerTruth[], clubId: number, season: number): number {
+  let total = 0;
+  for (const p of players) {
+    if (p.clubId !== clubId || p.retired) continue;
+    if (p.origin === 'domestic') total += p.salary;
+    const b = p.bonusCap;
+    if (b && b.clubId === clubId && season >= b.from && season <= b.to) total += b.perYear;
+  }
+  return total;
 }
 
 /** 샐러리캡 (D-040): 2026 143억 9,723만 원, 매년 5%. 외국인 제외 국내 선수 연봉 + 계약금 연평균. */

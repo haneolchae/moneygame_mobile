@@ -30,25 +30,44 @@ export const SCHEDULE = {
   twoGameMeetingsPerPair: 2,
 } as const;
 
-/** CONFIRMED (D-061): 실제 2026 한국시리즈 최종전 날 스토브리그에서 시작한다. 첫 시즌은 2027. */
+/**
+ * CONFIRMED (D-214·D-215): 세계는 실제 2026 한국시리즈 최종전 날(startDate = K, D-061)에 만들고,
+ * 첫 스토브리그를 화면 없이 자동 실행한 뒤 2027-02-01(월) 스프링캠프에서 구단주가 취임한다. 첫 시즌은 2027.
+ */
 export const NEW_GAME = {
   startDate: '2026-11-08',
   previousSeason: 2026,
   firstSeason: 2027,
+  /** D-215: 첫 안건(간판 외야수 잔류 협상) 마감 — 2월 2주 일요일. 미계약이면 다음 날 시장에 다시 열린다 */
+  franchiseDeadline: '2027-02-14',
 } as const;
 export const FIRST_SEASON = NEW_GAME.firstSeason;
 
-/** CONFIRMED (D-061·01 문서): 스토브리그 리그 일정. K = 한국시리즈 최종전 날짜. */
+/** CONFIRMED (D-061·D-225 (5)·01 문서): 스토브리그 리그 일정. K = 한국시리즈 최종전 날짜. FA 절차는 공시·신청 → 시장 개장 2단계. */
 export const STOVE = {
   faNoticeAfterK: 5,
-  faApplyDeadlineAfterK: 7,
-  faApprovalAfterK: 8,
   faMarketAfterK: 9,
   reserveListMonthDay: '11-30',
-  inactivePeriodStart: '12-01',
+  /** D-229: 비활동 기간 규칙은 없다. 보류 선수 연봉 협상 시작일 */
+  salaryTalksStart: '12-01',
   arbitrationDeadline: '01-10',
   campRosterDeadline: '01-31',
   seasonModeStartMonthDay: '02-01', // 2월 1일이 속한 주의 월요일에 시즌 모드 시작
+} as const;
+
+/**
+ * 스토브리그 4턴(D-216·D-217·D-219·D-220·D-229).
+ * 턴 끝: 1턴 보류 명단 확정 전날 / 2턴 1턴 끝 다음 날부터 turn2Weeks주 / 3턴 연봉조정 신청 마감 / 4턴 시즌 모드 시작 전날.
+ */
+export const STOVE_TURN = {
+  turns: 4,
+  turn2Weeks: 3,
+  /** D-217: 턴마다 주간 최대치 × apWeeks, 이월 없음 */
+  apWeeks: 2,
+  /** D-219: 구간 진행 멈춤 상한(넘는 건은 기본 처리) */
+  maxStops: 2,
+  /** D-220: 턴당 결정 카드 상한(중대 사건 별도) */
+  maxCards: 3,
 } as const;
 
 /** CONFIRMED (02 문서): 레벨별 주간 행동력, 레벨업 필요 경험치 100 + 25 × (L−1) */
@@ -127,14 +146,15 @@ export const SAVE = {
   autosaveBackupsKept: 3,
 } as const;
 
-/** 외국인 계약 규정 (사용자 제공 KBO 규정, D-048). 달러 금액은 고정 환율로 원화 장부에 기록한다. */
+/**
+ * 외국인 계약 규정(D-048·D-225 (5)·D-228). 금액 상한은 신규 외국인 상한·아시아쿼터 상한 하나씩(총액·재계약 증액 규정 없음).
+ * 보유는 40인 명단 기준 외국인 3명·아시아쿼터 1명 이하. 달러 금액은 고정 환율로 원화 장부에 기록한다.
+ */
 export const FOREIGN = {
   usdKrw: 1_400,
   newCapUsd: 1_000_000,
-  totalCapUsd: 4_000_000,
-  totalCapPerRenewalUsd: 100_000,
+  /** 아시아쿼터 연봉 상한(신규·재계약 모두) */
   asiaNewCapUsd: 200_000,
-  asiaRenewalStepUsd: 100_000,
   maxForeign: 3,
   maxAsia: 1,
 } as const;
@@ -856,7 +876,6 @@ export const EVENTS = {
   /** 후보가 있어도 카드가 없는 주 비율(사용자 확정 25%) */
   emptyShare: 0.25,
   cooldownWeeks: 8,
-  seasonCapDefault: 1,
   playerCooldownWeeks: 4,
   /** 직전 주와 같은 분류 가중치 배수 */
   sameCategoryWeight: 0.3,
@@ -911,6 +930,8 @@ export const EVENTS = {
   sanctionMin: 5,
   sanctionMax: 30,
   payCut: 0.1,
+  /** ASSUMPTION(D-234): 'MLB 관심' 카드 포스팅 이적료 = 연봉 × salaryMultiple(min~max, 1,000만 원 단위) */
+  postingFee: { salaryMultiple: 4, minWon: 1_000_000_000, maxWon: 8_000_000_000 },
   sponsorCut: 0.5,
   /** AI 구단 방출 기준(사실·리그 징계 이상) */
   aiReleaseGames: 20,

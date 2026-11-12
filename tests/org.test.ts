@@ -193,7 +193,7 @@ describe('위임 (03 문서 위임 모드)', () => {
     await call(d, 'org.setPolicy', { ...pol, mode: 'approve', cashFloor: 0, faMaxTotal: 300e8 });
     const fas = (await call(d, 'market.view')).fa.filter((f) => f.originClub.id === 5 && f.statusKey === 'approved');
     expect(fas.length).toBeGreaterThan(0);
-    for (const f of fas) await call(d, 'org.delegateFa', { playerId: f.playerId });
+    // ①(D-218): 스토브리그에서 구단주가 맡기면 협상 지시서(결재 없음)가 되므로, 결재 흐름은 운영팀 자체 안건(시장 개장일)으로 본다
     await call(d, 'game.advance', { mode: 'week' }); // 운영팀이 제시안을 준비해 결재를 올린다(그 주 안에 결재)
     let v = await call(d, 'org.view');
     expect(v.approvals.length).toBeGreaterThan(0);
@@ -208,8 +208,8 @@ describe('위임 (03 문서 위임 모드)', () => {
       await call(d, 'org.reject', { approvalId: rejected.id });
       await weeks(d, 1);
       v = await call(d, 'org.view');
-      const t = v.tasks.find((x) => x.statusKey === 'cancelled');
-      expect(t?.note).toBe('구단주 반려');
+      // D-220: 스토브리그 결재는 턴이 바뀔 때 만료되므로 다른 취소 업무(기한 경과)와 함께 있을 수 있다
+      expect(v.tasks.some((x) => x.statusKey === 'cancelled' && x.note === '구단주 반려')).toBe(true);
     }
     d.close();
   });

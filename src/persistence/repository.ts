@@ -9,17 +9,41 @@ import type { ClubId, ClubProfile, Fixture, FixtureId, PlayerId, PlayerTruth, Se
 import type { Amateur } from '../engine/amateur';
 import type { HistoryLine } from '../engine/history';
 import type { StaffMember, TeamKey } from '../engine/staff';
+import { apPeriodId } from '../game/week';
 import type { AchievementRow, TeamSeasonTotals, ApprovalRequest, DelegationPolicy, WorkKind, WorkStatus, WorkTask, WpWeek, ApWeek, CalendarEvent, DayCommit, FaEntry, GameMeta, GameRepository, InboxMessage, InitialWorld, Obligation, OfferRow, SalaryTalk, StoredGame, StoredFielding, StoredPa, StoredPlay, StoredRun } from '../game/ports';
 
 type Row = Record<string, unknown>;
 
 const num = (v: unknown) => Number(v ?? 0);
 
+/** 해석한 JSON 값을 깊게 언다(meta 캐시용) */
+function deepFreeze<T>(v: T): T {
+  if (v && typeof v === 'object' && !Object.isFrozen(v)) {
+    Object.freeze(v);
+    for (const x of Object.values(v as Record<string, unknown>)) deepFreeze(x);
+  }
+  return v;
+}
+
 export class SqliteGameRepository implements GameRepository {
   private stmts = new Map<string, StatementSync>();
   private playerCache: PlayerTruth[] | null = null;
+  /**
+   * 성능(① 후속): meta 키별 해석 결과 캐시. 쓸 때 그 키만 바꾸고, 트랜잭션 롤백·초기화 때 비운다.
+   * 값은 깊게 얼려 둔다: 읽은 meta를 제자리에서 고치면 바로 오류가 나서 캐시와 저장본이 어긋나지 않는다(고칠 때는 복사 후 updateMeta).
+   */
+  private metaCache: Map<string, unknown> | null = null;
 
   constructor(private readonly db: DatabaseSync) {}
+
+  private loadMeta(): Map<string, unknown> {
+    if (!this.metaCache) {
+      const m = new Map<string, unknown>();
+      for (const r of this.stmt('SELECT key, value FROM meta').all() as Row[]) m.set(String(r.key), deepFreeze(JSON.parse(String(r.value))));
+      this.metaCache = m;
+    }
+    return this.metaCache;
+  }
 
   private stmt(sql: string): StatementSync {
     let s = this.stmts.get(sql);
@@ -67,6 +91,7 @@ export class SqliteGameRepository implements GameRepository {
     } catch (e) {
       this.db.exec('ROLLBACK');
       this.playerCache = null;
+      this.metaCache = null;
       throw e;
     } finally {
       this.txDepth = 0;
@@ -201,9 +226,16 @@ export class SqliteGameRepository implements GameRepository {
   }
 
   spendAp(weekId: string, amount: number): void {
-    const week = this.getApWeek(weekId);
+    // D-217: 스토브리그 행동력은 턴 단위다. 호출자는 주 ID를 넘기므로 지금 턴의 기간 ID로 바꿔 차감한다.
+    const meta = this.getMeta();
+    const key = meta.mode === 'stove' ? apPeriodId(meta) : weekId;
+    const week = this.getApWeek(key);
     if (!week || week.granted - week.used < amount) throw new Error(`AP_SHORT:${week ? week.granted - week.used : 0}`);
-    this.stmt('UPDATE ap_ledger SET used = used + ? WHERE week_id = ?').run(amount, weekId);
+    this.stmt('UPDATE ap_ledger SET used = used + ? WHERE week_id = ?').run(amount, key);
+  }
+
+  grantAp(row: ApWeek): void {
+    this.stmt('INSERT OR IGNORE INTO ap_ledger (week_id, granted, used) VALUES (?, ?, ?)').run(row.weekId, row.granted, row.used);
   }
 
   addLedger(entries: LedgerEntry[]): void {
@@ -217,16 +249,22 @@ export class SqliteGameRepository implements GameRepository {
 
   private writeMeta(partial: Partial<GameMeta>): void {
     const put = this.stmt('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
-    for (const [k, v] of Object.entries(partial)) put.run(k, JSON.stringify(v));
+    for (const [k, v] of Object.entries(partial)) {
+      const json = JSON.stringify(v);
+      put.run(k, json);
+      // 저장한 문자열에서 다시 만든 값을 캐시에 둔다(넘겨준 객체를 나중에 고쳐도 캐시는 그대로)
+      this.metaCache?.set(k, deepFreeze(JSON.parse(String(json ?? null))));
+    }
   }
 
   setMetaValue(key: string, value: unknown): void {
     this.writeMeta({ [key]: value } as Partial<GameMeta>);
   }
 
+  /** 한 키만 읽는다. 호출자가 고쳐 쓰는 값(업적 상태 등)이라 복사본을 돌려준다 */
   getMetaValue<T>(key: string): T | undefined {
-    const row = this.stmt('SELECT value FROM meta WHERE key = ?').get(key) as Row | undefined;
-    return row ? (JSON.parse(String(row.value)) as T) : undefined;
+    const m = this.loadMeta();
+    return m.has(key) ? (structuredClone(m.get(key)) as T) : undefined;
   }
 
   private insertFixtures(fixtures: Fixture[]): void {
@@ -375,17 +413,19 @@ export class SqliteGameRepository implements GameRepository {
   }
 
   /** 시상용 정규시즌 원시 기록(압축 전 시즌): 타자·투수 합계(홀드·블론·QS 포함). range가 있으면 그 기간만 */
-  awardLines(season: number, range?: { from: GameDate; to: GameDate }): { batting: Map<PlayerId, BattingTotals>; pitching: Map<PlayerId, PitchingTotals & { HLD: number; BS: number; QS: number }> } {
+  awardLines(season: number, range?: { from: GameDate; to: GameDate }, ids?: readonly PlayerId[]): { batting: Map<PlayerId, BattingTotals>; pitching: Map<PlayerId, PitchingTotals & { HLD: number; BS: number; QS: number }> } {
     const dr = this.dateRange(range);
+    // 대상 선수만 집계(인덱스 (season, 선수 ID)를 탄다). 빈 목록이면 아무도 없다
+    const only = (col: string) => (ids ? ` AND ${col} IN (${ids.map((x) => Math.trunc(Number(x))).join(',') || 'NULL'})` : '');
     const hit = "outcome IN ('1B','2B','3B','HR')";
     const bat = this.db.prepare(
       `SELECT batter_id AS id, COUNT(DISTINCT game_id) AS G, COUNT(*) AS PA, SUM(outcome NOT IN ('BB','HBP','SF','SH')) AS AB, SUM(${hit}) AS H,
               SUM(outcome = '2B') AS D, SUM(outcome = '3B') AS T, SUM(outcome = 'HR') AS HR, SUM(rbi) AS RBI, SUM(outcome = 'BB') AS BB, SUM(outcome = 'HBP') AS HBP,
               SUM(outcome = 'K') AS SO, SUM(outcome = 'SF') AS SF
-         FROM plate_appearances WHERE stage = 'regular' AND season = ?${dr} GROUP BY batter_id`,
+         FROM plate_appearances WHERE stage = 'regular' AND season = ?${dr}${only('batter_id')} GROUP BY batter_id`,
     ).all(season) as Row[];
-    const runs = new Map((this.db.prepare(`SELECT runner_id AS id, COUNT(*) AS R FROM runs WHERE stage = 'regular' AND season = ?${dr ? ` AND game_id IN (SELECT fixture_id FROM games WHERE season = ${Math.trunc(season)}${dr})` : ''} GROUP BY runner_id`).all(season) as Row[]).map((r) => [num(r.id), num(r.R)]));
-    const steals = new Map((this.db.prepare(`SELECT runner_id AS id, SUM(kind = 'SB') AS SB, SUM(kind = 'CS') AS CS FROM plays WHERE stage = 'regular' AND season = ? AND kind IN ('SB','CS')${dr} GROUP BY runner_id`).all(season) as Row[]).map((r) => [num(r.id), r]));
+    const runs = new Map((this.db.prepare(`SELECT runner_id AS id, COUNT(*) AS R FROM runs WHERE stage = 'regular' AND season = ?${only('runner_id')}${dr ? ` AND game_id IN (SELECT fixture_id FROM games WHERE season = ${Math.trunc(season)}${dr})` : ''} GROUP BY runner_id`).all(season) as Row[]).map((r) => [num(r.id), num(r.R)]));
+    const steals = new Map((this.db.prepare(`SELECT runner_id AS id, SUM(kind = 'SB') AS SB, SUM(kind = 'CS') AS CS FROM plays WHERE stage = 'regular' AND season = ? AND kind IN ('SB','CS')${dr}${only('runner_id')} GROUP BY runner_id`).all(season) as Row[]).map((r) => [num(r.id), r]));
     const batting = new Map<PlayerId, BattingTotals>();
     for (const r of bat) {
       const id = num(r.id);
@@ -394,11 +434,11 @@ export class SqliteGameRepository implements GameRepository {
     const pit = this.db.prepare(
       `SELECT pitcher_id AS id, COUNT(DISTINCT game_id) AS G, SUM(outs_on_play) AS OUTS, COUNT(*) AS BF, SUM(${hit}) AS H, SUM(outcome = 'BB') AS BB, SUM(outcome = 'HBP') AS HBP,
               SUM(outcome = 'K') AS K, SUM(outcome = 'HR') AS HR, SUM(pitches) AS P
-         FROM plate_appearances WHERE stage = 'regular' AND season = ?${dr} GROUP BY pitcher_id`,
+         FROM plate_appearances WHERE stage = 'regular' AND season = ?${dr}${only('pitcher_id')} GROUP BY pitcher_id`,
     ).all(season) as Row[];
     const gameIn = dr ? ` AND game_id IN (SELECT fixture_id FROM games WHERE season = ${Math.trunc(season)}${dr})` : '';
-    const pruns = new Map((this.db.prepare(`SELECT pitcher_id AS id, COUNT(*) AS R, SUM(earned) AS ER FROM runs WHERE stage = 'regular' AND season = ?${gameIn} GROUP BY pitcher_id`).all(season) as Row[]).map((r) => [num(r.id), r]));
-    const pouts = new Map((this.db.prepare(`SELECT pitcher_id AS id, SUM(outs_on_play) AS OUTS FROM plays WHERE stage = 'regular' AND season = ?${dr} GROUP BY pitcher_id`).all(season) as Row[]).map((r) => [num(r.id), num(r.OUTS)]));
+    const pruns = new Map((this.db.prepare(`SELECT pitcher_id AS id, COUNT(*) AS R, SUM(earned) AS ER FROM runs WHERE stage = 'regular' AND season = ?${only('pitcher_id')}${gameIn} GROUP BY pitcher_id`).all(season) as Row[]).map((r) => [num(r.id), r]));
+    const pouts = new Map((this.db.prepare(`SELECT pitcher_id AS id, SUM(outs_on_play) AS OUTS FROM plays WHERE stage = 'regular' AND season = ?${dr}${only('pitcher_id')} GROUP BY pitcher_id`).all(season) as Row[]).map((r) => [num(r.id), num(r.OUTS)]));
     const dec = new Map((this.db.prepare(
       `SELECT id, SUM(gs) AS GS, SUM(w) AS W, SUM(l) AS L, SUM(s) AS SV FROM (
          SELECT home_sp AS id, 1 AS gs, 0 AS w, 0 AS l, 0 AS s FROM games WHERE stage = 'regular' AND season = ?1${dr}
@@ -408,7 +448,7 @@ export class SqliteGameRepository implements GameRepository {
          UNION ALL SELECT sv, 0, 0, 0, 1 FROM games WHERE stage = 'regular' AND season = ?1${dr} AND sv IS NOT NULL
        ) GROUP BY id`,
     ).all(season) as Row[]).map((r) => [num(r.id), r]));
-    const flags = new Map((this.db.prepare(`SELECT pitcher_id AS id, SUM(hld) AS HLD, SUM(bs) AS BS, SUM(qs) AS QS FROM pitcher_flags WHERE stage = 'regular' AND season = ?${dr} GROUP BY pitcher_id`).all(season) as Row[]).map((r) => [num(r.id), r]));
+    const flags = new Map((this.db.prepare(`SELECT pitcher_id AS id, SUM(hld) AS HLD, SUM(bs) AS BS, SUM(qs) AS QS FROM pitcher_flags WHERE stage = 'regular' AND season = ?${dr}${only('pitcher_id')} GROUP BY pitcher_id`).all(season) as Row[]).map((r) => [num(r.id), r]));
     const pitching = new Map<PlayerId, PitchingTotals & { HLD: number; BS: number; QS: number }>();
     for (const r of pit) {
       const id = num(r.id);
@@ -831,12 +871,12 @@ export class SqliteGameRepository implements GameRepository {
       this.saveAmateurs(world.amateurs);
     });
     this.playerCache = null;
+    this.metaCache = null;
   }
 
   getMeta(): GameMeta {
-    const rows = this.stmt('SELECT key, value FROM meta').all() as Row[];
     const out: Record<string, unknown> = {};
-    for (const r of rows) out[String(r.key)] = JSON.parse(String(r.value));
+    for (const [k, v] of this.loadMeta()) out[k] = v;
     return out as unknown as GameMeta;
   }
 

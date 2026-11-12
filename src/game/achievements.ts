@@ -166,8 +166,9 @@ export const SERIES: readonly SeriesDef[] = [
   s('H_foreign', 'H', '외국인 연속 재계약', 'once', [2, 3, 5], '같은 외국인 선수 재계약 연차'),
   one('H_f15', 'H', '외국인 투수 15승', 'once', 2, '외국인 투수 한 시즌 15승(우리 구단 소속)'),
   one('H_f30', 'H', '외국인 타자 30홈런', 'once', 2, '외국인 타자 한 시즌 30홈런(우리 구단 소속)'),
-  s('H_posting', 'H', '포스팅 MLB 진출', 'cumulative', [1, 3], '포스팅으로 MLB 진출(명)', { inactive: '포스팅 기능 없음' }),
-  s('H_postingFee', 'H', '포스팅 이적료 누적', 'cumulative', [100, 300], '포스팅 이적료 누적(억)', { inactive: '포스팅 기능 없음' }),
+  // D-228: 'MLB 관심' 스토브리그 결정 카드의 포스팅 성사·무산 기록으로 판정
+  s('H_posting', 'H', '포스팅 MLB 진출', 'cumulative', [1, 3], '포스팅으로 MLB 진출(명)'),
+  s('H_postingFee', 'H', '포스팅 이적료 누적', 'cumulative', [100, 300], '포스팅 이적료 누적(억)'),
   s('H_multi', 'H', '다년 계약 완주', 'cumulative', [1, 5], '3년 이상 계약 완주(명)', { inactive: '계약 이력 기록 없음' }),
   s('H_persuade', 'H', '은퇴 설득 성공', 'cumulative', [1, 3, 5], '은퇴를 설득해 한 시즌 더 뛴 선수(명)'),
   s('H_oneclubRetire', 'H', '원클럽맨 은퇴', 'cumulative', [1, 3], '모든 경력을 우리 구단에서 보내고 은퇴(명)'),
@@ -243,7 +244,7 @@ export const SERIES: readonly SeriesDef[] = [
   one('M2_allHire', 'M', '팀장 전원 직접 채용', 'once', 3, '팀장 전원을 직접 채용', { inactive: '채용 이력 기록 없음' }),
   one('M2_policy', 'M', '일관된 정책', 'once', 3, '팀 정책 변경 없이 3시즌', { inactive: '정책 변경 이력 없음' }),
   s('M2_budget', 'M', '예산 안에서 시즌 완주', 'cumulative', [1, 3, 5], '정규시즌 마지막 날 재량 지출·연봉 총액이 예산 한도 안인 시즌'),
-  s('M2_capRaise', 'M', '샐러리캡 증액 승인', 'cumulative', [1, 3], '샐러리캡 증액 승인(회)', { inactive: '샐러리캡 증액 기능 없음' }),
+
   s('M2_allstarHost', 'M', '올스타전 유치', 'cumulative', [1, 3], '올스타전 유치 성공(회)'),
   s('M2_allstarVote', 'M', '투표 캠페인 베스트 12', 'cumulative', [1, 5], '올스타 투표 캠페인으로 베스트 12(명)'),
   s('M2_loyal', 'M', '의리', 'cumulative', [1, 3], '다른 구단 영입 제안 거절(회)', { inactive: '재임 중 영입 제안 기능 없음(해임 뒤 제안만)' }),
@@ -443,9 +444,9 @@ export const SERIES: readonly SeriesDef[] = [
   one('Q_tradeStar', 'Q', '트레이드 후회', 'once', 1, '트레이드로 내준 선수가 다음 시즌 타이틀·MVP'),
   one('Q_tradeBust', 'Q', '받은 선수 미출전', 'once', 1, '트레이드로 받은 선수가 그 시즌 1군 미출전'),
   one('Q_faBust', 'Q', 'FA 먹튀', 'once', 1, '3년 이상 FA 영입 첫 시즌 규정 미달·타율 .230 이하·평균자책 6.00 이상'),
-  one('Q_fSwap', 'Q', '외국인 연쇄 교체', 'once', 1, '외국인 선수 같은 시즌 2명 이상 교체', { inactive: '외국인 중도 교체 기록 없음' }),
+
   one('Q_draftRel', 'Q', '1라운드 지명 방출', 'once', 1, '1라운드 지명 선수 1군 데뷔 없이 방출'),
-  one('Q_posting', 'Q', '포스팅 무응찰', 'once', 1, '포스팅 무응찰', { inactive: '포스팅 기능 없음' }),
+  one('Q_posting', 'Q', '포스팅 무응찰', 'once', 1, '포스팅에 동의했지만 무산'),
   s('Q_capPenalty', 'Q', '샐러리캡 제재', 'once', [1, 2], '샐러리캡 초과 제재', { inactive: '샐러리캡 제재 기능 없음' }),
   s('Q_emergency', 'Q', '긴급 지원 요청', 'once', [1, 3], '모기업 긴급 지원'),
   one('Q_crisis', 'Q', '자금 위기', 'once', 1, '현금 0 미만 위기 상태'),
@@ -766,7 +767,8 @@ export class Achievements {
 
   private state(meta: GameMeta): AchState {
     const cur = meta.achState as AchState | undefined;
-    return cur && cur.season === meta.season ? { ...newState(meta.season), ...cur, cg: { ...cur.cg }, sho: { ...cur.sho }, zero: { ...cur.zero }, swin: { ...cur.swin }, cur: cur.cur ? { ...cur.cur } : null } : newState(meta.season);
+    // 저장본 meta는 읽기 전용(캐시)이라 고칠 상태는 깊게 복사한다
+    return cur && cur.season === meta.season ? { ...newState(meta.season), ...structuredClone(cur) } : newState(meta.season);
   }
 
   /** 우리 구단 소속 통산(시즌 시작 전까지: 생성 기록의 우리 구단 줄 + 지난 원시 기록 시즌의 우리 구단 합계) */

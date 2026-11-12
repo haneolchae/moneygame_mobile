@@ -20,6 +20,8 @@ import { seasonKeyDates } from '../engine/schedule';
 import type { ClubId, ClubProfile, PlayerId, PlayerTruth } from '../engine/types';
 import { overall } from '../engine/worldgen';
 import type { CaseRow, EventLogRow, EventState, GameMeta, GameRepository, InboxMessage, NewsRow } from './ports';
+import { STOVE_TURN } from '../engine/config';
+import { stoveTurnOf, turnWeeks, type StoveTurn } from '../engine/stove';
 import { weekIdFor } from './week';
 
 const md = (d: GameDate) => d.slice(5).replace('-', '/');
@@ -27,6 +29,8 @@ const eok = (n: number) => `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억`;
 const round1m = (n: number) => Math.round(n / 1_000_000) * 1_000_000;
 /** 절대 주 번호(쿨다운 계산용) */
 export const weekNumber = (date: GameDate) => Math.floor(diffDays(date, '2000-01-03') / 7);
+/** 스토브리그 결정 카드 기록: 그 시즌 정규시즌 종료 40일 뒤(한국시리즈 이후)에 기록된 행. 첫 스토브리그(2026)는 모두 */
+export const isStoveRow = (r: { season: number; date: GameDate }) => r.date > addDays(seasonKeyDates(r.season).regularSeasonEnd, 40);
 export const newEventState = (): EventState => ({ flags: {}, queue: [], spawns: [], effects: [], pendingLines: [], lastCategory: null, last: { rank: null, fan: null, sellouts: 0, cash: null } });
 
 // ───────── EV-2 기간 효과 조회(다른 모델이 읽는다, D-205) ─────────
@@ -193,6 +197,8 @@ export class EventOps {
         if (g !== 0) out.push(g > 0 ? `출장 정지 ${g}경기` : `징계 ${-g}경기 감경`);
       } else if (e.type === 'CONTRACT') {
         out.push(this.contract(c, e.kind!));
+      } else if (e.type === 'DIRECTIVE') {
+        out.push(this.directive(c, e.value ?? 0));
       } else if (e.type === 'SPONSOR_CUT') {
         // 품위 조항(D-210 (8)): 그 시즌 스폰서 계약 1건의 인센티브 절반
         const meta = this.repo.getMeta();
@@ -264,6 +270,117 @@ export class EventOps {
     if (changed.length) this.repo.savePlayers(changed);
   }
 
+  /** ①: 협상 지시서 한도 조정(진행 중 FA·연봉 위임 업무). -100이면 협상 중단 */
+  private directive(c: ApplyCtx, pct: number): string {
+    if (c.playerId === null) return '';
+    const t = this.repo.getTasks({ status: ['queued', 'waiting'], targetId: c.playerId }).find((x) => x.kind === 'fa' || x.kind === 'salary');
+    if (!t) return '진행 중인 협상 지시서 없음';
+    if (pct <= -100) {
+      this.repo.updateTask(t.id, { status: 'cancelled', note: '결정 카드: 협상 중단', updated: c.date });
+      return '협상 중단';
+    }
+    if (t.kind === 'fa') {
+      const maxTotal = Math.round((Number(t.params.maxTotal ?? 0) * (100 + pct)) / 100 / 1_000_000) * 1_000_000;
+      this.repo.updateTask(t.id, { status: 'queued', params: { ...t.params, maxTotal, lastWeek: '' }, note: `결정 카드: 한도 ${eok(maxTotal)}`, updated: c.date });
+      return `지시서 한도 ${pct > 0 ? '+' : ''}${pct}% (${eok(maxTotal)})`;
+    }
+    const ratioBp = Math.round((Number(t.params.maxRatioBp ?? 10_000) * (100 + pct)) / 100);
+    this.repo.updateTask(t.id, { status: 'queued', params: { ...t.params, maxRatioBp: ratioBp, lastWeek: '' }, note: `결정 카드: 한도 요구액의 ${ratioBp / 100}%`, updated: c.date });
+    return `지시서 한도 ${pct > 0 ? '+' : ''}${pct}%`;
+  }
+
+  // ───────── ① 스토브리그 턴 회의 카드(D-220) ─────────
+
+  /**
+   * 턴 첫날: 만료·지연 결과 → 결정 카드 추첨(주 확률 × 턴 주수: 턴 주 수만큼(최대 3) 카드 없음 25%로 추첨, 같은 카드 중복 없음)
+   * → 턴 브리핑(지난 구간 요약) → 맡긴 분류는 담당 팀이 처리, 나머지는 턴 회의 카드로 둔다.
+   */
+  stoveTurnStart(meta: GameMeta, turn: StoveTurn, defaulted: readonly string[] = []): void {
+    const weekId = turn.start;
+    if (this.repo.getNews({ weekId }).length) return;
+    const club = meta.userClubId;
+    const week = weekNumber(turn.start);
+    const state: EventState = structuredClone(meta.eventState ?? newEventState());
+    // 스토브리그 카드는 별도 난수 스트림(event-stove): 시즌 결정 카드·사건 추첨이 스토브리그 카드에 밀리지 않게 한다
+    const rng = new Rng((meta.rngStreams.eventStove as RngState | undefined) ?? Rng.derive(meta.seed, 'event-stove').state());
+    for (const [k, f] of Object.entries(state.flags)) if (f.expiresWeek !== null && f.expiresWeek <= week) delete state.flags[k];
+    const results = [...state.pendingLines];
+    state.pendingLines = [];
+    const due = state.queue.filter((q) => q.week <= week);
+    state.queue = state.queue.filter((q) => q.week > week);
+    for (const q of due) {
+      const parts = this.applyEffects(q.effects, { meta, date: turn.start, clubId: club, playerId: q.playerId, rng, week, cardId: q.cardId, state });
+      results.push(`${q.text}${parts.length ? ` (${parts.join(', ')})` : ''}`);
+    }
+    const fresh = this.repo.getMeta();
+    const drawn: Array<{ card: LoadedCard; playerId: PlayerId | null; text: string }> = [];
+    const exclude = new Set<string>();
+    for (let i = 0; i < Math.min(STOVE_TURN.maxCards, turnWeeks(turn)); i++) {
+      const c = this.drawCard(fresh, turn.start, week, state, rng, exclude);
+      if (!c) continue;
+      exclude.add(c.card.id);
+      drawn.push({ ...c, text: this.cardText(fresh, c.card, c.playerId, rng) });
+    }
+    // 턴 브리핑: 지난 구간(직전 턴 첫날 ~ 어제) 돈·선수단·결과 회수·기본 처리한 멈춤
+    const from = fresh.stoveTurnFrom && fresh.stoveTurnFrom < turn.start ? fresh.stoveTurnFrom : addDays(turn.start, -7);
+    const money = this.repo.ledgerRange(club, from, addDays(turn.start, -1));
+    const cash = this.repo.cashBalance(club);
+    const mine = this.repo.getPlayers().filter((p) => p.clubId === club && !p.retired);
+    const lines: Array<{ kind: string; text: string }> = [
+      ...defaulted.map((t) => ({ kind: 'warn', text: `기본 처리: ${t}` })),
+      { kind: 'game', text: `${turn.title} 시작 (${md(turn.start)}~${md(turn.end)}, 끝: ${turn.endLabel}) · 선수단 ${mine.length}명` },
+      { kind: 'money', text: `지난 구간 수입 ${eok(money.income)} · 지출 ${eok(-money.expense)} · 잔액 ${eok(cash)}` },
+      ...results.map((t) => ({ kind: 'result', text: t })),
+    ];
+    const delegatedNow: typeof drawn = [];
+    const pending: NonNullable<EventState['stoveCards']> = [];
+    for (const d of drawn) {
+      const team = CATEGORY_TEAM[d.card.category];
+      const delegated = !!team && !!fresh.cardDelegation?.[d.card.category] && this.deps.spendWp(weekIdFor(turn.start), TEAM_KEY[team]!, E.delegateWp);
+      if (delegated) delegatedNow.push(d);
+      else pending.push({ cardId: d.card.id, playerId: d.playerId, week, weekId, date: turn.start, text: d.text });
+    }
+    if (pending.length) lines.push({ kind: 'decide', text: `턴 회의 결정 카드 ${pending.length}장 (답하지 않으면 기본 응답)` });
+    this.repo.addNews(lines.map((l, i) => ({ weekId, season: meta.season, date: turn.start, seq: i, kind: l.kind, text: l.text })));
+    for (const d of delegatedNow) this.resolve(fresh, turn.start, week, weekId, d.card, d.playerId, d.text, d.card.delegateDefault, 'delegate', state, rng);
+    state.stoveCards = pending;
+    state.last = { ...state.last, cash };
+    this.repo.updateMeta({ eventState: state, stoveTurnFrom: turn.start, rngStreams: { ...this.repo.getMeta().rngStreams, eventStove: rng.state() } });
+  }
+
+  /** 턴 회의 카드 중 답하지 않은 카드를 위임 기본 선택지로 처리한다(D-220 미응답 = 기본 응답) */
+  resolveStoveCards(meta: GameMeta): void {
+    const state: EventState = structuredClone(meta.eventState ?? newEventState());
+    const list = state.stoveCards ?? [];
+    if (!list.length) return;
+    const rng = new Rng((meta.rngStreams.eventStove as RngState | undefined) ?? Rng.derive(meta.seed, 'event-stove').state());
+    this.repo.transaction(() => {
+      for (const pend of list) {
+        const card = CARDS.find((c) => c.id === pend.cardId);
+        if (card) this.resolve(meta, meta.currentDate, pend.week, pend.weekId, card, pend.playerId, pend.text, card.delegateDefault, 'delegate', state, rng);
+      }
+      state.stoveCards = [];
+      this.repo.updateMeta({ eventState: state, rngStreams: { ...this.repo.getMeta().rngStreams, eventStove: rng.state() } });
+    });
+  }
+
+  /** 턴 회의 카드 선택(구단주, 행동력 0) */
+  chooseStoveCard(meta: GameMeta, cardId: string, choiceId: string): { message: string; link: string | null } {
+    const state: EventState = structuredClone(meta.eventState ?? newEventState());
+    const pend = (state.stoveCards ?? []).find((c) => c.cardId === cardId);
+    if (!pend) throw new GameError('NOT_AVAILABLE', '고를 턴 회의 카드가 없습니다.');
+    const card = CARDS.find((c) => c.id === pend.cardId);
+    const choice = card?.choices.find((c) => c.id === choiceId);
+    if (!card || !choice) throw new GameError('INVALID', '없는 선택지입니다.');
+    const rng = new Rng((meta.rngStreams.eventStove as RngState | undefined) ?? Rng.derive(meta.seed, 'event-stove').state());
+    return this.repo.transaction(() => {
+      state.stoveCards = (state.stoveCards ?? []).filter((c) => c !== pend);
+      this.resolve(meta, meta.currentDate, pend.week, pend.weekId, card, pend.playerId, pend.text, choiceId, 'owner', state, rng);
+      this.repo.updateMeta({ eventState: state, rngStreams: { ...this.repo.getMeta().rngStreams, eventStove: rng.state() } });
+      return { message: choice.text, link: choice.link ?? null };
+    });
+  }
+
   /** 계약 조치(D-210 (7)) */
   private contract(c: ApplyCtx, kind: string): string {
     if (kind === 'fireManager') return this.deps.fireManager(c.meta, c.clubId, c.date) ?? '감독 공석';
@@ -290,6 +407,22 @@ export class EventOps {
       p.career.franchise = false;
       this.repo.savePlayers([p]);
       return `${p.name} 지명 철회`;
+    }
+    if (kind === 'posting') {
+      // D-228: MLB 진출 — 소속 해제, 국내 리그에서 빠진다(은퇴 기록과 같은 방식으로 'MLB 진출' 사유를 남긴다)
+      const from = p.clubId;
+      p.clubId = null;
+      p.level = '2군';
+      p.contractYears = 0;
+      p.career.faEligible = false;
+      p.career.franchise = false;
+      p.retired = { season: c.meta.season, reason: 'MLB 진출' };
+      const fee = Math.round(Math.max(E.postingFee.minWon, Math.min(E.postingFee.maxWon, p.salary * E.postingFee.salaryMultiple)) / 10_000_000) * 10_000_000;
+      this.repo.savePlayers([p]);
+      if (from !== null) this.repo.addLedger([{ clubId: from, date: c.date, category: 'postingFee', amount: fee, memo: `${p.name} 포스팅 이적료` }]);
+      const meta = this.repo.getMeta();
+      this.repo.updateMeta({ postings: [...(meta.postings ?? []), { playerId: p.id, clubId: from, season: c.meta.season, date: c.date, feeWon: fee }] });
+      return `${p.name} MLB 진출, 이적료 ${eok(fee)}`;
     }
     if (kind === 'payCut') {
       p.salary = Math.max(30_000_000, round1m(p.salary * (1 - E.payCut)));
@@ -645,10 +778,11 @@ export class EventOps {
     return v < E.riskLow ? '낮음' : v < E.riskMid ? '보통' : '높음';
   }
 
-  private drawCard(meta: GameMeta, date: GameDate, week: number, state: EventState, rng: Rng): { card: LoadedCard; playerId: PlayerId | null } | null {
+  private drawCard(meta: GameMeta, date: GameDate, week: number, state: EventState, rng: Rng, exclude: ReadonlySet<string> = new Set()): { card: LoadedCard; playerId: PlayerId | null } | null {
     const season = meta.season;
     const club = meta.userClubId;
-    const phase = this.phaseOf(season, date);
+    // ①(D-220): 스토브리그는 턴 회의 카드(stove 단계)
+    const phase: CardPhase = meta.mode === 'stove' ? 'stove' : this.phaseOf(season, date);
     const history = this.repo.getEventLog().map((h) => ({ cardId: h.cardId, playerId: h.playerId, week: h.week, season: h.season }));
     const players = this.repo.getPlayers().filter((p) => p.clubId === club && !p.retired);
     let fatigue: Map<PlayerId, number> | null = null;
@@ -669,15 +803,25 @@ export class EventOps {
       'club.stadiumLevel': meta.facilities?.[String(club)]?.levels.stadium ?? 1,
       'club.rosterRoom': Math.max(0, 40 - players.length),
       'club.tradeRecent': (meta.tradeHistory ?? []).some((t) => !t.ai && (t.clubA === club || t.clubB === club) && t.date >= addDays(date, -14) && t.date < date) ? 1 : 0,
+      'club.turn': meta.mode === 'stove' ? stoveTurnOf(meta.kDate, date).index : 0,
     };
+    // ①: 스토브리그 카드 변수 — 프로 연차·구단 내 능력 순위(국내 선수), FA 협상 상황
+    const offseason = Number(meta.kDate.slice(0, 4));
+    const fa = meta.mode === 'stove' ? new Map(this.repo.getFa(offseason).map((e) => [e.playerId, e])) : new Map<PlayerId, never>();
+    const domesticRank = new Map([...players].filter((p) => p.origin === 'domestic').sort((a, b) => overall(b) - overall(a) || a.id - b.id).map((p, i) => [p.id, i + 1]));
     let recent: Map<PlayerId, import('../engine/stats').BattingTotals> | null = null;
     let near: Set<PlayerId> | null = null;
     const awarded = new Set(this.repo.getAwards({ clubId: club, season }).filter((a) => a.playerId !== null && a.date >= addDays(date, -7) && a.date < date).map((a) => a.playerId!));
     const flagVar = (n: string) => (n.startsWith('flag.') ? (state.flags[n.slice(5)]?.value ?? 0) : undefined);
+    // 성능(① 후속): 무거운 변수(최근 성적·이정표·협상 상황)는 조건식이 실제로 읽을 때만 계산한다(값은 같다).
+    // 기록 집계는 리그 전체가 아니라 우리 선수만 한다.
+    const ourIds = players.map((x) => x.id);
     const playerVars = (p: PlayerTruth): Record<string, ExprValue> => {
       fatigue ??= this.deps.fatigue(date, players);
       starters ??= this.starters(players);
       const inj = p.health?.injury;
+      const repo = this.repo;
+      const deps = this.deps;
       return {
         'player.injuryDays': inj && diffDays(date, inj.returnDate) < 0 ? diffDays(inj.returnDate, date) : 0,
         'player.starter': starters.has(p.id) ? 1 : 0,
@@ -685,14 +829,25 @@ export class EventOps {
         'player.fatigue': fatigue.get(p.id) ?? 0,
         'player.pitcher': p.isPitcher ? 1 : 0,
         'player.active': p.level === '1군' && !(inj && diffDays(date, inj.returnDate) < 0) ? 1 : 0,
-        'player.slump': (() => {
+        get 'player.slump'(): ExprValue {
           if (p.isPitcher) return 0;
-          recent ??= this.repo.awardLines(season, { from: addDays(date, -28), to: addDays(date, -1) }).batting;
+          recent ??= repo.awardLines(season, { from: addDays(date, -28), to: addDays(date, -1) }, ourIds).batting;
           const b = recent.get(p.id);
           return b && b.PA >= E.slumpMinPa && (opsOf(b) || 0) < E.slumpOps ? 1 : 0;
-        })(),
+        },
         'player.awardRecent': awarded.has(p.id) ? 1 : 0,
-        'player.milestoneNear': p.clubId === club && (near ??= this.deps.nearMilestone(season, players.filter((x) => x.level === '1군').map((x) => x.id))).has(p.id) ? 1 : 0,
+        get 'player.milestoneNear'(): ExprValue {
+          return p.clubId === club && (near ??= deps.nearMilestone(season, players.filter((x) => x.level === '1군').map((x) => x.id))).has(p.id) ? 1 : 0;
+        },
+        'player.proSeasons': p.career.proSeasons,
+        'player.clubRank': domesticRank.get(p.id) ?? 99,
+        'player.faOpen': fa.get(p.id)?.status === 'approved' && fa.get(p.id)?.originClub === club ? 1 : 0,
+        get 'player.faRivals'(): ExprValue {
+          return fa.get(p.id)?.status === 'approved' ? repo.getOffers({ playerId: p.id, status: 'pending', kind: 'fa' }).filter((o) => o.clubId !== club).length : 0;
+        },
+        get 'player.talkRounds'(): ExprValue {
+          return Number(repo.getTasks({ status: ['queued', 'waiting', 'failed'], targetId: p.id }).find((t) => t.kind === 'fa' || t.kind === 'salary')?.params.round ?? 0);
+        },
         ...this.lifeVars(meta, p),
       };
     };
@@ -704,7 +859,7 @@ export class EventOps {
       if (c) cands.push({ card: c, playerId: s.playerId, spawned: true, loaded: c });
     }
     for (const c of CARDS) {
-      if (c.inactive || !c.phases.includes(phase)) continue;
+      if (c.inactive || !c.phases.includes(phase) || exclude.has(c.id)) continue;
       if (c.target === 'club') {
         const vars = (n: string) => clubVars[n] ?? flagVar(n);
         const cand = { card: c, playerId: null };
@@ -840,7 +995,8 @@ export class EventOps {
 
   /** D2 시즌 이벤트 리포트(26a D2, 참고 수치) */
   report(season: number, clubId: ClubId): { cards: number; byCategory: Record<string, number>; byChoice: Record<string, number>; briefings: number; eventCashWon: number; expenseWon: number } {
-    const rows = this.repo.getEventLog({ season });
+    // ①: 시즌 결정 카드 수는 시즌 모드만 센다(그 오프시즌 스토브리그 카드는 같은 시즌 번호로 기록된다)
+    const rows = this.repo.getEventLog({ season }).filter((r) => !isStoveRow(r));
     const byCategory: Record<string, number> = {};
     const byChoice: Record<string, number> = {};
     for (const r of rows) {
