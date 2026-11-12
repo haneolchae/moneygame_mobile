@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { addDays, weekday } from '../src/engine/calendar';
 import { EVENTS } from '../src/engine/config';
 import { CARD_ERRORS, CARDS, parseCards, passesLimits, pickCandidate, type Candidate, type CardHistory } from '../src/engine/events/cards';
+import { findCard } from '../src/engine/events/story';
 import { evalExpr, parseExpr } from '../src/engine/events/expr';
 import { Rng } from '../src/engine/rng';
 import { seasonKeyDates } from '../src/engine/schedule';
@@ -110,19 +111,20 @@ describe('이벤트 엔진·턴 브리핑 (EV-1)', () => {
       expect(new Set(news.map((n) => `${n.weekId}|${n.seq}`)).size).toBe(news.length);
       // ③ 비활성 카드 발생 0건, ② 불러와 이어 진행해도 같은 기록
       const log = r2.getEventLog({ season: 2027 });
-      expect(log.every((e) => !CARDS.find((c) => c.id === e.cardId)!.inactive)).toBe(true);
+      // ②: 구단 스토리 장도 결정 카드 기록에 들어간다(findCard = 결정 카드 + 스토리 장)
+      expect(log.every((e) => !findCard(e.cardId)!.inactive)).toBe(true);
       expect(snap(r2)).toBe(first);
       // 위임 처리 결과는 다음 브리핑 결과 회수 줄에 나온다
       for (const e of log) {
         const nextWeek = addDays(e.weekId, 7);
         if (nextWeek > k.regularSeasonEnd) continue;
-        const choiceText = CARDS.find((c) => c.id === e.cardId)!.choices.find((c) => c.id === e.choiceId)!.text;
+        const choiceText = findCard(e.cardId)!.choices.find((c) => c.id === e.choiceId)!.text;
         expect(news.some((n) => n.weekId === nextWeek && n.kind === 'result' && n.text.includes(choiceText)), e.cardId).toBe(true);
       }
 
       // EV-2(D-206 ⑧): 켜진 카드가 한 시즌에 실제로 나온다(위임 기본 선택지)
       expect(log.length).toBeGreaterThan(0);
-      expect(log.every((e) => e.choiceId === CARDS.find((c) => c.id === e.cardId)!.delegateDefault)).toBe(true);
+      expect(log.every((e) => e.choiceId === findCard(e.cardId)!.delegateDefault)).toBe(true);
       // ⑤ 효과
       const svc2 = svcOf(d);
       const meta = r2.getMeta();

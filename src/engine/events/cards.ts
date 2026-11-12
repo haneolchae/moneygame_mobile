@@ -5,9 +5,10 @@ import { EVENTS as E } from '../config';
 import type { Rng } from '../rng';
 import { exprVars, parseExpr, type ExprNode } from './expr';
 
-export const CARD_CATEGORIES = ['injury', 'award', 'sponsor', 'coach', 'transfer', 'ops', 'personal', 'positive'] as const;
+/** story: ② 구단 스토리 카드(27, D-224). 위임 불가 */
+export const CARD_CATEGORIES = ['injury', 'award', 'sponsor', 'coach', 'transfer', 'ops', 'personal', 'positive', 'story'] as const;
 export type CardCategory = (typeof CARD_CATEGORIES)[number];
-export const CATEGORY_LABEL: Record<CardCategory, string> = { injury: '부상·건강', award: '시상·기록', sponsor: '스폰서·사업', coach: '감독·코치', transfer: '이적·육성', ops: '운영·팬', personal: '일상 개인사', positive: '긍정 개인사' };
+export const CATEGORY_LABEL: Record<CardCategory, string> = { injury: '부상·건강', award: '시상·기록', sponsor: '스폰서·사업', coach: '감독·코치', transfer: '이적·육성', ops: '운영·팬', personal: '일상 개인사', positive: '긍정 개인사', story: '구단 스토리' };
 /** stove: 스토브리그 턴 회의 카드(①, D-220) */
 export const PHASES = ['preseason', 'regular', 'postseason', 'stove'] as const;
 export type CardPhase = (typeof PHASES)[number];
@@ -18,10 +19,10 @@ export const TEAM_LABEL: Record<string, string> = { medical: '컨디셔닝·메�
 
 /** 26 4장 효과 전체 */
 /** DIRECTIVE(①): 대상 선수의 진행 중 협상 지시서 한도 ±value%(-100이면 협상 중단) */
-export const EFFECT_TYPES = ['CASH', 'RECUR', 'DEMAND', 'MERCH', 'FAN_NOW', 'FAN_TARGET', 'PRESS', 'MOOD', 'COND', 'INJ_RISK', 'REST', 'SUSPEND', 'GROWTH', 'TRUST', 'CLUBHOUSE', 'FLAG', 'SPAWN', 'CONTRACT', 'HEAL', 'SPONSOR_CUT', 'DIRECTIVE'] as const;
+export const EFFECT_TYPES = ['CASH', 'RECUR', 'DEMAND', 'MERCH', 'FAN_NOW', 'FAN_TARGET', 'PRESS', 'MOOD', 'COND', 'INJ_RISK', 'REST', 'SUSPEND', 'GROWTH', 'TRUST', 'CLUBHOUSE', 'FLAG', 'SPAWN', 'CONTRACT', 'HEAL', 'SPONSOR_CUT', 'DIRECTIVE', 'CHAIRMAN'] as const;
 export type EffectType = (typeof EFFECT_TYPES)[number];
-/** 실제 모델에 연결한 효과(EV-1 6종 + EV-2 10종 + EV-3 HEAL + EV-4 징계·계약·품위 조항) */
-export const CONNECTED: ReadonlySet<EffectType> = new Set<EffectType>(['CASH', 'FAN_NOW', 'REST', 'TRUST', 'FLAG', 'SPAWN', 'MOOD', 'CLUBHOUSE', 'COND', 'INJ_RISK', 'DEMAND', 'MERCH', 'RECUR', 'FAN_TARGET', 'PRESS', 'GROWTH', 'HEAL', 'SUSPEND', 'CONTRACT', 'SPONSOR_CUT', 'DIRECTIVE']);
+/** 실제 모델에 연결한 효과(EV-1 6종 + EV-2 10종 + EV-3 HEAL + EV-4 징계·계약·품위 조항 + ② CHAIRMAN 모기업 신뢰) */
+export const CONNECTED: ReadonlySet<EffectType> = new Set<EffectType>(['CASH', 'FAN_NOW', 'REST', 'TRUST', 'FLAG', 'SPAWN', 'MOOD', 'CLUBHOUSE', 'COND', 'INJ_RISK', 'DEMAND', 'MERCH', 'RECUR', 'FAN_TARGET', 'PRESS', 'GROWTH', 'HEAL', 'SUSPEND', 'CONTRACT', 'SPONSOR_CUT', 'DIRECTIVE', 'CHAIRMAN']);
 /** EV-4 계약 조치 종류 */
 /** posting(①, D-228): MLB 진출(포스팅 성사) — 소속 해제·해외 진출 기록 */
 export const CONTRACT_KINDS = ['release', 'withdrawPick', 'payCut', 'fireManager', 'signTrial', 'signElsewhere', 'posting'] as const;
@@ -34,7 +35,7 @@ export const CLUB_VARS = ['club.rank', 'club.streak', 'club.fan', 'club.cashEok'
 export const PLAYER_VARS = ['player.injuryDays', 'player.starter', 'player.age', 'player.fatigue', 'player.pitcher', 'player.active', 'player.slump', 'player.awardRecent', 'player.selfControl', 'player.publicAwareness', 'player.warmth', 'player.humility', 'player.milestoneNear', 'player.pressureSensitivity', 'player.proSeasons', 'player.clubRank', 'player.faOpen', 'player.faRivals', 'player.talkRounds'] as const;
 
 /** EV-3(D-207 (2)): 분류별 담당 팀(D-199). 시상·기록과 감독·코치는 담당 팀이 없어 위임할 수 없다 */
-export const CATEGORY_TEAM: Record<CardCategory, (typeof TEAMS)[number] | null> = { injury: 'medical', personal: 'pr', positive: 'pr', sponsor: 'partnership', transfer: 'operations', ops: 'marketing', award: null, coach: null };
+export const CATEGORY_TEAM: Record<CardCategory, (typeof TEAMS)[number] | null> = { injury: 'medical', personal: 'pr', positive: 'pr', sponsor: 'partnership', transfer: 'operations', ops: 'marketing', award: null, coach: null, story: null };
 export const LINKS = ['market', 'trade', 'org'] as const;
 
 export interface CardEffect {
@@ -57,6 +58,8 @@ export interface CardEffect {
   /** SUSPEND 경기 수(음수면 감경), CONTRACT 종류 */
   games?: number;
   kind?: (typeof CONTRACT_KINDS)[number];
+  /** ② 스토리 카드: 이 효과의 대상 배역(카드 대상 대신 그 구단의 배역 선수) */
+  role?: string;
 }
 
 export interface CardOutcome {
@@ -80,6 +83,8 @@ export interface CardChoice {
   text: string;
   /** 선택 뒤 열 화면 */
   link?: (typeof LINKS)[number];
+  /** ② 스토리 카드: 이 선택이 남기는 스토리 플래그(구단별 스토리 상태) */
+  flags?: Record<string, number>;
 }
 
 export interface EventCard {
@@ -108,12 +113,12 @@ export interface LoadedCard extends EventCard {
 const isText = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 const within = <T extends string>(list: readonly T[], v: unknown): v is T => typeof v === 'string' && (list as readonly string[]).includes(v);
 
-function effectErrors(e: unknown, where: string, cardIds: Set<string>): string[] {
+export function effectErrors(e: unknown, where: string, cardIds: ReadonlySet<string>): string[] {
   const x = e as CardEffect;
   if (!x || typeof x !== 'object' || !within(EFFECT_TYPES, x.type)) return [`${where}: 효과 종류 오류`];
   const bad: string[] = [];
   if (x.type === 'CASH' && !(Number.isInteger(x.won) || within(COST_GRADES, x.grade))) bad.push(`${where}: CASH는 won(정수) 또는 grade`);
-  if (['FAN_NOW', 'TRUST', 'MOOD', 'PRESS', 'CLUBHOUSE', 'COND', 'FAN_TARGET'].includes(x.type) && typeof x.value !== 'number') bad.push(`${where}: ${x.type} value 필요`);
+  if (['FAN_NOW', 'TRUST', 'MOOD', 'PRESS', 'CLUBHOUSE', 'COND', 'FAN_TARGET', 'CHAIRMAN'].includes(x.type) && typeof x.value !== 'number') bad.push(`${where}: ${x.type} value 필요`);
   if (x.type === 'REST' && !(Number.isInteger(x.days) && x.days! > 0)) bad.push(`${where}: REST days 필요`);
   if (TIMED.has(x.type) && !(Number.isInteger(x.weeks) && x.weeks! >= 1)) bad.push(`${where}: ${x.type} weeks 필요`);
   if (['INJ_RISK', 'DEMAND', 'MERCH', 'GROWTH'].includes(x.type) && !(typeof x.value === 'number' && x.value > 0)) bad.push(`${where}: ${x.type} 배율 value 필요`);
@@ -129,11 +134,12 @@ function effectErrors(e: unknown, where: string, cardIds: Set<string>): string[]
 }
 
 /** 카드 정의를 규격대로 검사해 쓸 수 있는 카드와 오류를 나눈다 */
-export function parseCards(input: unknown): { cards: LoadedCard[]; errors: string[] } {
+export function parseCards(input: unknown, opts: { minTexts?: number; extraIds?: ReadonlySet<string> } = {}): { cards: LoadedCard[]; errors: string[] } {
+  const minTexts = opts.minTexts ?? 3;
   const cards: LoadedCard[] = [];
   const errors: string[] = [];
   if (!Array.isArray(input)) return { cards, errors: ['카드 정의는 배열이어야 합니다.'] };
-  const ids = new Set(input.map((c) => (c as EventCard)?.id).filter(isText));
+  const ids = new Set([...input.map((c) => (c as EventCard)?.id).filter(isText), ...(opts.extraIds ?? [])]);
   const seen = new Set<string>();
   for (const [i, rawCard] of input.entries()) {
     const c = rawCard as EventCard;
@@ -151,11 +157,12 @@ export function parseCards(input: unknown): { cards: LoadedCard[]; errors: strin
     if (!(Number.isInteger(c?.seasonCap) && c.seasonCap >= 1)) bad.push('seasonCap');
     if (!(c?.delegateTeam === null || within(TEAMS, c?.delegateTeam))) bad.push('delegateTeam');
     else if (within(CARD_CATEGORIES, c?.category) && c.delegateTeam !== CATEGORY_TEAM[c.category]) bad.push('delegateTeam(분류 담당 팀과 다름)');
-    if (!Array.isArray(c?.texts) || c.texts.length < 3 || !c.texts.every(isText)) bad.push('texts(변형 3종 이상)');
+    if (!Array.isArray(c?.texts) || c.texts.length < minTexts || !c.texts.every(isText)) bad.push(`texts(변형 ${minTexts}종 이상)`);
     if (!Array.isArray(c?.choices) || c.choices.length < 2 || c.choices.length > 3) bad.push('choices(2~3개)');
     else {
       for (const ch of c.choices) {
         if (ch?.link !== undefined && !within(LINKS, ch.link)) bad.push(`choice ${ch?.id ?? '?'} link`);
+        if (ch?.flags !== undefined && (typeof ch.flags !== 'object' || !Object.values(ch.flags).every((v) => typeof v === 'number'))) bad.push(`choice ${ch?.id ?? '?'} flags`);
         if (!isText(ch?.id) || !isText(ch?.label) || !isText(ch?.text) || !Array.isArray(ch?.effects)) {
           bad.push(`choice ${ch?.id ?? '?'} 필드`);
           continue;

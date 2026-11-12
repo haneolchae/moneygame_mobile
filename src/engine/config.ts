@@ -936,3 +936,22 @@ export const EVENTS = {
   /** AI 구단 방출 기준(사실·리그 징계 이상) */
   aiReleaseGames: 20,
 } as const;
+
+/** ② 구단 스토리(27·27a, D-222·D-224·D-237, 초기안) */
+export const STORY = {
+  /** 시즌 중 스토리 카드 간격(주). '월 1장 이하'(D-224)를 주 단위로 둔다 */
+  seasonGapWeeks: 4,
+  /** 스토브리그 턴당 스토리 카드 상한(턴 카드 3장 안에 들어간다) */
+  stovePerTurn: 1,
+  /** 결말 판정 스토리 시즌(1막 = 1시즌, 2막 = 첫 실제 스토브리그~3시즌) */
+  endingSeason: 3,
+  /** 모기업 신뢰(0~100, 시작 50): 이후 모기업 지원금 지급분 배수 = 1 + (신뢰 − 50) × bpPerPoint / 10,000 (신뢰 0~100 → 0.9~1.1배) */
+  chairmanStart: 50,
+  chairmanBpPerPoint: 20,
+  /** 하위권 = 정규시즌 순위 이 값 이상 */
+  lowRank: 8,
+  /** 자체 육성: 스토리 시작 때 이 나이 이하로 그 구단에 있던 선수 또는 그 구단 지명 선수 */
+  homegrownAge: 24,
+  /** 유망주 배역 나이 상한 */
+  prospectAge: 23,
+} as const;

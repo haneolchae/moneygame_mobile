@@ -224,6 +224,9 @@ export const SERIES: readonly SeriesDef[] = [
   one('M_rebuildPs', 'M', '리빌딩 완성', 'once', 3, '리빌딩 선언 뒤 3시즌 안에 가을야구'),
   one('M_hardTitle', 'M', '어려운 구단 우승', 'once', 5, '어려움 이상 난이도 구단으로 한국시리즈 우승'),
   one('M_otherTitle', 'M', '두 번째 구단 우승', 'once', 4, '해임 뒤 다른 구단에서 한국시리즈 우승'),
+  // ②(27 1.1, D-237): 구단 서사 — 구단주로 맞은 구단 스토리 결말 수, 성공 결말 수
+  s('M_story', 'M', '구단 서사', 'cumulative', [1, 2, 3], '구단주로 맞은 구단 스토리 결말(결말마다)'),
+  one('M_storyGood', 'M', '해피 엔딩', 'once', 3, '구단주로 구단 스토리 성공 결말'),
   s('M_interview', 'M', '인터뷰·면담 응대', 'cumulative', [10, 50, 100], '언론 인터뷰·면담(건)', { inactive: '인터뷰·면담 기능 없음' }),
   // M-2 구단주 행동·메타
   s('M2_ap', 'M', '행동력 누적 사용', 'cumulative', [100, 500, 1000, 5000], '재임 중 쓴 행동력'),
@@ -744,6 +747,15 @@ export class Achievements {
       // 수상 계열 P·Q는 그날 시상이 있었을 때만
       if (when.awardDay && this.repo.getAwards({ season }).some((a) => a.date === date)) judgePQAwards(pq, allPlayers());
       if (when.sunday) judgePQOps(pq, allPlayers(), this.repo.getMeta());
+      // ②(D-237): 구단 서사 — 결말은 한국시리즈 종료일 시즌 마감 뒤 정해지므로 다음 월요일에 판정한다
+      if (weekday(date) === 1) {
+        const endings = Object.values(this.repo.getMetaValue<Record<string, { ending: { owner: boolean; kind: string; title: string; season: number } | null }>>('stories') ?? {}).flatMap((x) => (x.ending?.owner ? [x.ending] : []));
+        if (endings.length) {
+          judge('M_story', endings.length, (l) => `${date} 구단 스토리 결말 ${l}개(${endings.map((e) => e.title).join(', ')})`);
+          const good = endings.find((e) => e.kind === 'success');
+          flag('M_storyGood', !!good, `${good?.season ?? ''} 구단 스토리 성공 결말 '${good?.title ?? ''}'`);
+        }
+      }
       // M-2 메타: 올라운더·달성률·황금 시즌(오늘 판정 포함)
       const doneKeys = new Set([...have.map((a) => a.key), ...hits.map((h) => h.key)]);
       // 올라운더·달성률은 A~O만(P·Q 제외, D-186)

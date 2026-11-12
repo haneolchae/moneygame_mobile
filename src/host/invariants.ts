@@ -16,6 +16,8 @@ import { ACHIEVEMENT_XP, AWARDS } from '../engine/config';
 import { ACHIEVEMENTS } from '../game/achievements';
 import { FINANCE_BASE, inflate } from '../engine/finance';
 import { EOK, splitEvenly } from '../engine/money';
+import { arcOf } from '../engine/events/story';
+import { STORY } from '../engine/config';
 
 export function checkInvariants(repo: GameRepository, season: number): string[] {
   const errors: string[] = [];
@@ -50,6 +52,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   errors.push(...checkBudget(repo));
   errors.push(...checkAwards(repo));
   errors.push(...checkAchievements(repo));
+  errors.push(...checkStories(repo));
   errors.push(...checkBusiness(repo));
   errors.push(...checkAiClubs(repo));
   errors.push(...checkManagers(repo));
@@ -578,5 +581,37 @@ export function checkAchievements(repo: GameRepository): string[] {
     if (d?.cat === 'Q' && a.xp !== 0) errors.push(`Q 경험치 지급: ${a.key} ${a.xp}`);
     if (d?.inactive) errors.push(`비활성 계열 기록: ${a.key}`);
   }
+  return errors;
+}
+
+/**
+ * ②(D-237 SR ⑥): 구단 스토리 상태 — 처리한 장은 그 구단 스토리의 장, 갈래가 있는 장은 정해진 갈래에서만 처리,
+ * 2막 갈래는 1시즌 마감 뒤에만, 결말은 결말 판정 시즌 마감 이후(조기 결말 예외)이고 한 번, 시즌 요약은 시즌마다 한 번, 모기업 신뢰 0~100.
+ */
+export function checkStories(repo: GameRepository): string[] {
+  const errors: string[] = [];
+  const meta = repo.getMeta();
+  for (const [key, st] of Object.entries(meta.stories ?? {})) {
+    const arc = arcOf(Number(key));
+    if (!arc || arc.arc !== st.arc) {
+      errors.push(`스토리 구단 불일치: ${key} ${st.arc}`);
+      continue;
+    }
+    for (const [id, d] of Object.entries(st.done)) {
+      const ch = arc.chapters.find((c) => c.id === id);
+      if (!ch) errors.push(`스토리 없는 장 처리: ${key} ${id}`);
+      else if (d.by !== 'skip' && ch.branch && ch.branch !== st.branch) errors.push(`스토리 다른 갈래 장 처리: ${key} ${id}`);
+      else if (d.by !== 'skip' && (!d.choice || !ch.choices.some((c) => c.id === d.choice))) errors.push(`스토리 없는 선택지: ${key} ${id} ${d.choice}`);
+    }
+    if ((st.branch === null) !== (st.seasons.length === 0)) errors.push(`스토리 2막 갈래 시점 오류: ${key} 갈래 ${st.branch} 시즌 ${st.seasons.length}`);
+    const seasons = st.seasons.map((r) => r.season);
+    if (seasons.some((y, i) => i > 0 && y <= seasons[i - 1]!)) errors.push(`스토리 시즌 요약 중복·역순: ${key}`);
+    if (st.ending) {
+      const def = arc.endings.find((e) => e.id === st.ending!.id);
+      if (!def) errors.push(`스토리 없는 결말: ${key} ${st.ending.id}`);
+      else if (!def.early && st.seasons.length < STORY.endingSeason) errors.push(`스토리 결말 시점 오류: ${key} ${st.ending.id} ${st.seasons.length}시즌`);
+    }
+  }
+  for (const [key, v] of Object.entries(meta.chairman ?? {})) if (!(v >= 0 && v <= 100)) errors.push(`모기업 신뢰 범위 밖: ${key} ${v}`);
   return errors;
 }

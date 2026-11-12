@@ -1,0 +1,5869 @@
+[
+  {
+    "clubId": 7,
+    "arc": "LEO",
+    "title": "왕조의 계승",
+    "task": "2연패와 '두 번째 왕조'. 연봉 상승과 샐러리캡을 버티면서",
+    "synopsis": "우승 직후 취임한 구단주. 우승 주역들의 연봉 청구서와 샐러리캡이 첫 번째 적이다. 영광을 지키려면 누군가를 떠나보내야 한다.",
+    "transition": [
+      {
+        "branch": "A",
+        "cond": "story.lastKs == 1",
+        "text": "디펜딩 챔피언이 다시 한국시리즈에 섰다. 2막 「두 번째 반지의 무게」: 샐러리캡이 다시 넘치고, 우승 감독이 재계약을 기다린다."
+      },
+      {
+        "branch": "B",
+        "cond": "1",
+        "text": "왕조의 첫해가 한국시리즈 전에 끝났다. 2막 「노장의 겨울」: 캡틴의 성적이 떨어지고, 유망주 포수가 마스크를 노린다."
+      }
+    ],
+    "chapters": [
+      {
+        "id": "LEO-1-1",
+        "act": 1,
+        "title": "캠프 출정식의 계산서",
+        "phase": "season",
+        "season": 1,
+        "from": "02-01",
+        "to": "02-21",
+        "role": "ace",
+        "default": "captain",
+        "ai": {
+          "contend": "ace",
+          "middle": "captain",
+          "rebuild": "youth",
+          "austerity": "youth"
+        },
+        "texts": [
+          "오성민 단장: \"출정식 끝나고 드릴 게 있습니다. 올해 연봉 총액이 샐러리캡 턱밑이고, 내년엔 넘습니다.\" 강태호 회장: \"왕조는 돈으로 지키는 게 아니라 사람으로 지키는 겁니다. 누굴 지킬지는 구단주가 정하세요.\" 에이스 {player}는 FA를 1년 앞뒀고, 캡틴은 30대 중반, 유망주 포수는 아직 2군입니다.",
+          "캠프 첫날 단장이 서류 한 장을 내밀었다. \"우승 보너스까지 반영하면 샐러리캡을 넘습니다.\" 회장은 짧게 말했다. \"누굴 지킬지는 구단주가 정하세요.\" 에이스 {player}, 캡틴, 유망주 포수 — 셋을 다 안을 수는 없다."
+        ],
+        "choices": [
+          {
+            "id": "ace",
+            "label": "에이스 조기 다년계약을 추진한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 15
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              }
+            ],
+            "flags": {
+              "aceDeal": 1
+            },
+            "link": "market",
+            "text": "운영팀에 에이스 연장 계약을 준비시켰다. 조건은 [계약·이적]에서 정한다. 샐러리캡 압박이 시작된다."
+          },
+          {
+            "id": "captain",
+            "label": "캡틴에게 주전을 보장한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 3
+              },
+              {
+                "type": "CLUBHOUSE",
+                "value": 4
+              },
+              {
+                "type": "MOOD",
+                "value": 10,
+                "role": "captain"
+              }
+            ],
+            "flags": {
+              "captainKept": 1
+            },
+            "text": "캡틴의 자리를 지켜 주기로 했다. 선수단이 반겼지만 노쇠 위험은 남는다."
+          },
+          {
+            "id": "youth",
+            "label": "시장가만 제시하고 유망주 포수 육성에 집중한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -4
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": -5
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.1,
+                "role": "prospectC"
+              }
+            ],
+            "flags": {
+              "youthFocus": 1
+            },
+            "text": "베테랑들에게는 시장가만 제시하고 유망주 포수 육성에 힘을 싣기로 했다. 회장은 못마땅해했다."
+          }
+        ]
+      },
+      {
+        "id": "LEO-1-2",
+        "act": 1,
+        "title": "영구결번식",
+        "phase": "season",
+        "season": 1,
+        "from": "03-01",
+        "to": "04-18",
+        "role": "club",
+        "default": "ambassador",
+        "ai": {
+          "contend": "coach",
+          "middle": "ambassador",
+          "rebuild": "coach",
+          "austerity": "ambassador"
+        },
+        "texts": [
+          "개막전 영구결번식. 왕조 시대 레전드 포수가 마이크를 잡았다. \"후배들 가르치고 싶습니다. 자리 있으면요.\" 관중석이 술렁인다.",
+          "개막전에 앞서 왕조 시대 레전드 포수의 등번호가 영구결번됐다. 행사가 끝난 뒤 그가 조용히 말했다. \"구단주님, 코치 자리 하나 있으면 불러 주십시오.\""
+        ],
+        "choices": [
+          {
+            "id": "coach",
+            "label": "배터리 코치로 영입한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium"
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.1,
+                "role": "prospectC"
+              }
+            ],
+            "outcomes": [
+              {
+                "p": 0.3,
+                "hint": "기존 코치진 마찰",
+                "effects": [
+                  {
+                    "type": "TRUST",
+                    "value": -3
+                  }
+                ],
+                "text": "새 배터리 코치와 기존 코치진 사이에 마찰이 생겼다."
+              }
+            ],
+            "elseText": "코치진이 레전드를 반갑게 맞았다.",
+            "text": "레전드 포수를 배터리 코치로 영입했다."
+          },
+          {
+            "id": "ambassador",
+            "label": "정중히 사양하고 명예 홍보대사로 위촉한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 2
+              },
+              {
+                "type": "PRESS",
+                "value": 4
+              }
+            ],
+            "text": "레전드를 명예 홍보대사로 모셨다. 언론 반응이 좋다."
+          }
+        ]
+      },
+      {
+        "id": "LEO-1-3",
+        "act": 1,
+        "title": "디펜딩 챔피언",
+        "phase": "season",
+        "season": 1,
+        "from": "05-24",
+        "to": "07-26",
+        "role": "prospectC",
+        "default": "refuse",
+        "ai": {
+          "contend": "trade",
+          "middle": "refuse",
+          "rebuild": "refuse",
+          "austerity": "refuse"
+        },
+        "texts": [
+          "오성민 단장: \"트레이드 마감 전에 결정해야 합니다. 상대가 {player}를 원합니다. 대신 주전 3루수를 준답니다.\" 민지후 기자가 'V2냐, 우승 후유증이냐'를 묻는 칼럼을 썼다.",
+          "트레이드 문의가 왔다. 상대 구단이 원하는 건 유망주 포수 {player}. 즉시 전력이 될 주전 3루수와 바꾸자는 제안이다. 민지후 기자: \"레오즈는 오늘을 살까, 내일을 살까.\""
+        ],
+        "choices": [
+          {
+            "id": "trade",
+            "label": "유망주를 내주고 즉시 전력을 얻는다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": -10
+              },
+              {
+                "type": "TRUST",
+                "value": 2
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "flags": {
+              "soldProspect": 1
+            },
+            "link": "trade",
+            "text": "즉시 전력 보강을 택했다. 트레이드 협상은 구단 화면에서 연다. 세대교체의 문은 닫혔다."
+          },
+          {
+            "id": "refuse",
+            "label": "거절한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 10
+              },
+              {
+                "type": "TRUST",
+                "value": -2
+              }
+            ],
+            "flags": {
+              "keptProspect": 1
+            },
+            "text": "유망주 포수를 지켰다. 감독은 아쉬워했다."
+          }
+        ]
+      },
+      {
+        "id": "LEO-2A-1",
+        "act": 2,
+        "branch": "A",
+        "title": "다시 넘치는 샐러리캡",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "club",
+        "default": "absorb",
+        "ai": {
+          "contend": "absorb",
+          "middle": "trade",
+          "rebuild": "trade",
+          "austerity": "trade"
+        },
+        "texts": [
+          "오성민 단장: \"두 번째 반지 값입니다. 연봉 요구를 다 받으면 샐러리캡을 다시 넘습니다.\" 강태호 회장은 \"왕조는 계속되어야 한다\"는 말만 남겼다.",
+          "우승 보너스와 재계약 요구가 겹쳤다. 단장이 표를 펼쳤다. \"주축 하나를 정리하든지, 초과 제재를 감수하든지입니다.\""
+        ],
+        "choices": [
+          {
+            "id": "trade",
+            "label": "주축 1명을 트레이드로 정리한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -3
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              }
+            ],
+            "link": "trade",
+            "text": "주축 한 명을 정리하기로 했다. 상대 구단은 구단 화면에서 고른다."
+          },
+          {
+            "id": "absorb",
+            "label": "초과를 감수하고 전력을 지킨다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -5
+              },
+              {
+                "type": "CLUBHOUSE",
+                "value": 4
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 2
+              }
+            ],
+            "text": "샐러리캡 초과 제재를 감수하고 우승 전력을 지키기로 했다."
+          }
+        ]
+      },
+      {
+        "id": "LEO-2A-2",
+        "act": 2,
+        "branch": "A",
+        "title": "우승 감독의 재계약",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          3,
+          4
+        ],
+        "role": "club",
+        "default": "short",
+        "ai": {
+          "contend": "long",
+          "middle": "short",
+          "rebuild": "short",
+          "austerity": "short"
+        },
+        "texts": [
+          "{manager} 감독: \"3년 더 주시면 왕조를 만들어 드리겠습니다.\" 회장은 1년씩 평가하자는 쪽이다.",
+          "{manager} 감독이 재계약 조건을 들고 왔다. \"한 해씩 평가받는 감독으로는 왕조를 못 만듭니다.\""
+        ],
+        "choices": [
+          {
+            "id": "long",
+            "label": "3년 재계약",
+            "effects": [
+              {
+                "type": "TRUST",
+                "value": 8
+              },
+              {
+                "type": "CASH",
+                "grade": "small"
+              }
+            ],
+            "text": "감독과 3년 재계약했다. 더그아웃에 힘이 실렸다."
+          },
+          {
+            "id": "short",
+            "label": "1년씩 평가한다",
+            "effects": [
+              {
+                "type": "TRUST",
+                "value": -3
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              }
+            ],
+            "text": "1년 계약을 이어 가기로 했다. 회장은 만족했다."
+          }
+        ]
+      },
+      {
+        "id": "LEO-2B-1",
+        "act": 2,
+        "branch": "B",
+        "title": "노장의 겨울",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          3
+        ],
+        "role": "captain",
+        "default": "tour",
+        "ai": {
+          "contend": "oneMore",
+          "middle": "tour",
+          "rebuild": "tour",
+          "austerity": "release"
+        },
+        "texts": [
+          "캡틴 {player}의 성적이 떨어졌다. {player}: \"한 시즌만 더 뛰고 싶습니다. 이대로는 못 끝냅니다.\"",
+          "{player}가 구단주실 문을 두드렸다. \"마지막 시즌은 제 발로 걸어 나가고 싶습니다.\" 숫자는 냉정하게 내리막을 가리킨다."
+        ],
+        "choices": [
+          {
+            "id": "oneMore",
+            "label": "1년 더 주전으로 뛰게 한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 10
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 2
+              }
+            ],
+            "text": "캡틴에게 한 시즌을 더 주었다."
+          },
+          {
+            "id": "tour",
+            "label": "은퇴 투어를 제안한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 5
+              },
+              {
+                "type": "DEMAND",
+                "value": 1.06,
+                "weeks": 40
+              },
+              {
+                "type": "MERCH",
+                "value": 1.1,
+                "weeks": 40
+              }
+            ],
+            "flags": {
+              "farewell": 1
+            },
+            "text": "다음 시즌을 캡틴의 은퇴 투어로 꾸미기로 했다. 원정 구장에서도 기념 행사가 열린다."
+          },
+          {
+            "id": "release",
+            "label": "방출한다",
+            "effects": [
+              {
+                "type": "CONTRACT",
+                "kind": "release"
+              },
+              {
+                "type": "FAN_NOW",
+                "value": -8
+              }
+            ],
+            "text": "캡틴과 결별했다. 팬들의 반발이 거세다."
+          }
+        ]
+      },
+      {
+        "id": "LEO-2B-2",
+        "act": 2,
+        "branch": "B",
+        "title": "마스크의 주인",
+        "phase": "season",
+        "season": 2,
+        "from": "03-01",
+        "to": "05-31",
+        "role": "prospectC",
+        "cond": "story.flag.keptProspect == 1 || story.flag.youthFocus == 1",
+        "default": "manager",
+        "ai": {
+          "contend": "manager",
+          "middle": "starter",
+          "rebuild": "starter",
+          "austerity": "starter"
+        },
+        "texts": [
+          "유망주 포수 {player}가 주전 경쟁에 나섰다. {manager} 감독: \"아직 이릅니다. 그래도 구단주님 뜻이라면 쓰겠습니다.\"",
+          "{player}의 2루 송구가 캠프 화제다. 주전으로 밀어줄지, 감독에게 맡길지 정해야 한다."
+        ],
+        "choices": [
+          {
+            "id": "starter",
+            "label": "주전으로 쓰라고 한다",
+            "effects": [
+              {
+                "type": "GROWTH",
+                "value": 1.1
+              },
+              {
+                "type": "MOOD",
+                "value": 8
+              },
+              {
+                "type": "TRUST",
+                "value": -3
+              }
+            ],
+            "text": "유망주 포수를 주전으로 밀어주기로 했다. 1군 명단은 [선수단]에서 정한다."
+          },
+          {
+            "id": "manager",
+            "label": "감독에게 맡긴다",
+            "effects": [
+              {
+                "type": "TRUST",
+                "value": 2
+              }
+            ],
+            "text": "포수 기용은 감독에게 맡겼다."
+          }
+        ]
+      },
+      {
+        "id": "LEO-2-3",
+        "act": 2,
+        "title": "왕조는 계속되어야 한다",
+        "phase": "season",
+        "season": 3,
+        "from": "04-01",
+        "to": "07-26",
+        "role": "club",
+        "default": "invest",
+        "ai": {
+          "contend": "invest",
+          "middle": "invest",
+          "rebuild": "rebuild",
+          "austerity": "rebuild"
+        },
+        "texts": [
+          "강태호 회장이 구단주실을 찾았다. \"올해가 3년째입니다. 왕조는 계속되어야 합니다. 필요한 게 있으면 말하세요.\"",
+          "회장 면담. \"우승 두 번이면 왕조라고 부를 수 있겠지요. 그 길로 갈 겁니까, 다음 세대를 준비할 겁니까?\""
+        ],
+        "choices": [
+          {
+            "id": "invest",
+            "label": "우승 전력 보강을 약속한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              },
+              {
+                "type": "CLUBHOUSE",
+                "value": 2
+              }
+            ],
+            "link": "market",
+            "text": "올해도 우승을 노린다고 답했다. 보강은 [계약·이적]에서 한다."
+          },
+          {
+            "id": "rebuild",
+            "label": "세대교체를 공식화한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -5
+              },
+              {
+                "type": "FAN_NOW",
+                "value": -3
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              }
+            ],
+            "flags": {
+              "nextGen": 1
+            },
+            "text": "다음 왕조를 위한 세대교체를 공식화했다."
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "id": "dynasty",
+        "title": "왕조 재건",
+        "kind": "success",
+        "cond": "story.titles >= 2",
+        "early": true,
+        "effects": [
+          {
+            "type": "DEMAND",
+            "value": 1.08,
+            "weeks": 52
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 5
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": 10
+          }
+        ],
+        "epilogue": "대구 시내에 퍼레이드가 열렸다. 강태호 회장: \"사람으로 지켰군요.\" 두 번째 왕조의 깃발이 올랐다.",
+        "next": "왕조의 수성"
+      },
+      {
+        "id": "succession",
+        "title": "세대교체",
+        "kind": "variant",
+        "cond": "cast.prospectC.starter == 1 && story.lastPs == 1 && story.flag.soldProspect == 0",
+        "effects": [
+          {
+            "type": "GROWTH",
+            "value": 1.05,
+            "who": "club"
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 4
+          }
+        ],
+        "epilogue": "{manager} 감독이 포수 미트를 가리켰다. \"다음 왕조는 저 아이 몫입니다.\"",
+        "next": "다음 왕조"
+      },
+      {
+        "id": "pride",
+        "title": "명가의 자존심",
+        "kind": "neutral",
+        "cond": "story.titles == 1",
+        "effects": [
+          {
+            "type": "PRESS",
+            "value": 5
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 2
+          }
+        ],
+        "epilogue": "민지후 기자: \"왕조는 아니어도 명가는 명가다.\"",
+        "next": "두 번째 반지"
+      },
+      {
+        "id": "dusk",
+        "title": "왕조의 황혼",
+        "kind": "fail",
+        "cond": "story.lastRank >= 6",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": -10
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": -5
+          }
+        ],
+        "epilogue": "빈자리가 늘어난 대구 구장. 왕조의 깃발은 박물관으로 옮겨졌다.",
+        "next": "처음부터 다시"
+      },
+      {
+        "id": "hill",
+        "title": "다시 오르는 언덕",
+        "kind": "neutral",
+        "cond": "1",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": -3
+          }
+        ],
+        "epilogue": "반지는 없었지만 팀은 가을 언저리를 지켰다. 회장: \"왕조는 하루아침에 서지 않습니다.\"",
+        "next": "두 번째 반지"
+      }
+    ]
+  },
+  {
+    "clubId": 5,
+    "arc": "MAG",
+    "title": "준우승의 한",
+    "task": "한국시리즈 설욕. 회장 기대 최고, 성적 목표가 가장 높다",
+    "synopsis": "정규시즌 1위, 그러나 한국시리즈 7차전 끝내기 패배. 회장은 \"마지막 경기를 이기라\"고 말한다. 이 팀의 적은 상대가 아니라 가을이다.",
+    "transition": [
+      {
+        "branch": "A",
+        "cond": "story.lastKs == 1",
+        "text": "또 한국시리즈에서 졌다. 2막 「저주 프레임」: 언론이 '가을 저주'를 기정사실화하고, 회장의 인내가 바닥난다."
+      },
+      {
+        "branch": "B",
+        "cond": "1",
+        "text": "한국시리즈 무대조차 밟지 못했다. 2막 「기대의 붕괴」: 간판 타자가 '우승할 수 있는 팀'을 말하기 시작했다."
+      }
+    ],
+    "chapters": [
+      {
+        "id": "MAG-1-1",
+        "act": 1,
+        "title": "석 달이 지나도",
+        "phase": "season",
+        "season": 1,
+        "from": "02-01",
+        "to": "02-21",
+        "role": "closer",
+        "default": "keep",
+        "ai": {
+          "contend": "keep",
+          "middle": "keep",
+          "rebuild": "market",
+          "austerity": "market"
+        },
+        "texts": [
+          "문태진 단장: \"{player} 선수가 캠프에 왔지만 아직 7차전에서 못 나왔습니다. 불펜 피칭에서도 공이 뜹니다.\" 윤재경 회장: \"1위 하라고 돈 쓰는 거 아닙니다. 마지막 경기 이기라고 쓰는 겁니다.\"",
+          "석 달이 지났지만 마무리 {player}는 SNS를 닫은 채 말이 없다. 캠프 불펜에서 그는 끝내기 장면을 지우지 못하고 있다."
+        ],
+        "choices": [
+          {
+            "id": "keep",
+            "label": "마무리를 맡기고 멘탈 코칭을 지원한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              }
+            ],
+            "flags": {
+              "keepCloser": 1
+            },
+            "outcomes": [
+              {
+                "p": 0.65,
+                "hint": "회복 가능성",
+                "effects": [
+                  {
+                    "type": "MOOD",
+                    "value": 20
+                  }
+                ],
+                "text": "{player}가 마운드에서 다시 웃었다."
+              },
+              {
+                "p": 0.35,
+                "hint": "시즌 초 부진",
+                "effects": [
+                  {
+                    "type": "COND",
+                    "value": -3,
+                    "weeks": 6
+                  },
+                  {
+                    "type": "MOOD",
+                    "value": -5
+                  }
+                ],
+                "text": "{player}는 시즌 초까지 흔들렸다."
+              }
+            ],
+            "text": "마무리 자리를 지켜 주고 멘탈 코칭을 붙였다."
+          },
+          {
+            "id": "setup",
+            "label": "감독에게 셋업 전환을 권한다",
+            "effects": [
+              {
+                "type": "TRUST",
+                "value": -3
+              },
+              {
+                "type": "MOOD",
+                "value": -5
+              }
+            ],
+            "text": "마무리를 셋업으로 돌리자고 권했다. 뒷문이 비었다."
+          },
+          {
+            "id": "market",
+            "label": "트레이드 시장에 내놓는다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -3
+              },
+              {
+                "type": "MOOD",
+                "value": -10
+              }
+            ],
+            "link": "trade",
+            "text": "마무리를 트레이드 시장에 내놓았다. 상대는 구단 화면에서 고른다."
+          }
+        ]
+      },
+      {
+        "id": "MAG-1-2",
+        "act": 1,
+        "title": "우승 청부사",
+        "phase": "season",
+        "season": 1,
+        "from": "03-01",
+        "to": "03-28",
+        "role": "club",
+        "default": "pass",
+        "ai": {
+          "contend": "sign",
+          "middle": "pass",
+          "rebuild": "pass",
+          "austerity": "pass"
+        },
+        "texts": [
+          "가을 경험이 많은 베테랑 투수가 아직 시장에 남아 있다. 에이전트: \"우승 반지 끼워 드리러 왔습니다.\" 회장은 '청부사'라는 말을 좋아한다.",
+          "문태진 단장: \"한국시리즈 경험 많은 베테랑이 아직 미계약입니다. 비쌉니다. 그래도 가을엔 그런 선수가 필요하다는 게 회장님 생각입니다.\""
+        ],
+        "choices": [
+          {
+            "id": "sign",
+            "label": "베테랑 영입을 추진한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              }
+            ],
+            "flags": {
+              "veteranHired": 1
+            },
+            "link": "market",
+            "text": "가을 청부사 영입을 지시했다. 계약 조건은 [계약·이적]에서 정한다."
+          },
+          {
+            "id": "pass",
+            "label": "지나치고 내부 육성에 건다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -5
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              }
+            ],
+            "text": "외부 영입 대신 내부 육성을 택했다. 회장은 고개를 저었다."
+          }
+        ]
+      },
+      {
+        "id": "MAG-1-3",
+        "act": 1,
+        "title": "디지털 야구 TF",
+        "phase": "season",
+        "season": 1,
+        "from": "03-29",
+        "to": "05-16",
+        "role": "club",
+        "default": "accept",
+        "ai": {
+          "contend": "accept",
+          "middle": "accept",
+          "rebuild": "accept",
+          "austerity": "decline"
+        },
+        "texts": [
+          "윤재경 회장: \"우리 그룹 AI 연구소가 분석을 돕겠다고 합니다. 비용은 그룹이 반 냅니다.\" {manager} 감독은 \"야구는 화면으로 하는 게 아닙니다\"라며 떨떠름하다.",
+          "그룹 AI 연구소에서 '디지털 야구 TF' 제안서가 왔다. 회장은 적극적이고, 현장은 반발한다."
+        ],
+        "choices": [
+          {
+            "id": "accept",
+            "label": "TF를 받아들인다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              },
+              {
+                "type": "TRUST",
+                "value": -3
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              }
+            ],
+            "text": "디지털 야구 TF를 출범했다. 현장은 반발했지만 훈련 데이터가 쌓인다."
+          },
+          {
+            "id": "decline",
+            "label": "현장을 믿고 거절한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -5
+              },
+              {
+                "type": "TRUST",
+                "value": 2
+              }
+            ],
+            "text": "TF 제안을 거절했다. 감독은 고마워했고 회장은 서운해했다."
+          }
+        ]
+      },
+      {
+        "id": "MAG-1-4",
+        "act": 1,
+        "title": "가을 징크스",
+        "phase": "season",
+        "season": 1,
+        "from": "09-20",
+        "to": "10-31",
+        "role": "club",
+        "cond": "story.inPs == 1",
+        "default": "silent",
+        "ai": {
+          "contend": "pledge",
+          "middle": "silent",
+          "rebuild": "silent",
+          "austerity": "silent"
+        },
+        "texts": [
+          "민지후 기자: \"매지션스, 또 가을에 약할까?\" 포스트시즌 미디어데이를 앞두고 질문이 쏟아진다.",
+          "가을야구가 시작된다. 기사 제목마다 '징크스'라는 단어가 붙었다. 선수들은 기사를 안 읽는다고 하지만, 다 읽는다."
+        ],
+        "choices": [
+          {
+            "id": "pledge",
+            "label": "\"결과는 내가 책임진다\" 공식 메시지",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 8,
+                "who": "club"
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": -3
+              }
+            ],
+            "flags": {
+              "pledge": 1
+            },
+            "text": "구단주가 책임을 지겠다고 공식 발표했다. 선수단이 한결 가벼워졌다."
+          },
+          {
+            "id": "silent",
+            "label": "침묵한다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": -3
+              }
+            ],
+            "text": "아무 말도 하지 않았다. 기사는 더 늘었다."
+          }
+        ]
+      },
+      {
+        "id": "MAG-2A-1",
+        "act": 2,
+        "branch": "A",
+        "title": "저주 프레임",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "club",
+        "default": "ignore",
+        "ai": {
+          "contend": "coach",
+          "middle": "coach",
+          "rebuild": "ignore",
+          "austerity": "ignore"
+        },
+        "texts": [
+          "2년 연속 준우승. 언론이 '가을 저주'를 기정사실화했다. 선수들 사이에서도 \"우리는 원래 가을에 약하다\"는 말이 나온다.",
+          "민지후 기자의 연말 칼럼 제목은 '매지션스의 저주'. 선수단 단톡방이 조용해졌다."
+        ],
+        "choices": [
+          {
+            "id": "coach",
+            "label": "멘탈 코치를 영입한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium"
+              },
+              {
+                "type": "MOOD",
+                "value": 6,
+                "who": "club"
+              }
+            ],
+            "text": "전담 멘탈 코치를 영입했다."
+          },
+          {
+            "id": "ignore",
+            "label": "프레임을 무시한다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": -3
+              },
+              {
+                "type": "MOOD",
+                "value": -5,
+                "who": "club"
+              }
+            ],
+            "text": "저주 이야기는 대응하지 않기로 했다. 선수들은 여전히 기사를 읽는다."
+          }
+        ]
+      },
+      {
+        "id": "MAG-2A-2",
+        "act": 2,
+        "branch": "A",
+        "title": "회장의 최후통첩",
+        "phase": "season",
+        "season": 2,
+        "from": "06-01",
+        "to": "08-15",
+        "role": "club",
+        "default": "protect",
+        "ai": {
+          "contend": "protect",
+          "middle": "obey",
+          "rebuild": "obey",
+          "austerity": "obey"
+        },
+        "texts": [
+          "윤재경 회장: \"감독 바꾸세요. 같은 방법으로 다른 결과는 안 나옵니다.\" {manager} 감독은 아무것도 모른 채 훈련을 지휘하고 있다.",
+          "회장 비서실에서 전화가 왔다. \"회장님이 감독 교체 건으로 답을 기다리십니다.\""
+        ],
+        "choices": [
+          {
+            "id": "obey",
+            "label": "회장 뜻에 따라 감독을 바꾼다",
+            "effects": [
+              {
+                "type": "CONTRACT",
+                "kind": "fireManager"
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 10
+              }
+            ],
+            "link": "org",
+            "text": "감독을 경질했다. 새 감독은 조직 화면에서 선임한다."
+          },
+          {
+            "id": "protect",
+            "label": "감독을 지킨다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -10
+              },
+              {
+                "type": "TRUST",
+                "value": 10
+              }
+            ],
+            "text": "감독을 지키겠다고 회장에게 답했다. 더그아웃은 단단해졌고 회장은 차가워졌다."
+          }
+        ]
+      },
+      {
+        "id": "MAG-2B-1",
+        "act": 2,
+        "branch": "B",
+        "title": "우승할 수 있는 팀",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          3
+        ],
+        "role": "star",
+        "default": "wait",
+        "ai": {
+          "contend": "extend",
+          "middle": "wait",
+          "rebuild": "trade",
+          "austerity": "trade"
+        },
+        "texts": [
+          "간판 타자 {player}가 인터뷰에서 말했다. \"우승할 수 있는 팀에서 뛰고 싶습니다.\" FA까지는 아직 시간이 있지만 시장은 벌써 술렁인다.",
+          "{player}의 에이전트가 찾아왔다. \"선수는 이 팀을 좋아합니다. 다만 이기는 팀이길 원합니다.\""
+        ],
+        "choices": [
+          {
+            "id": "extend",
+            "label": "다년계약을 제안한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 10
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "link": "market",
+            "text": "간판 타자 연장 계약을 추진한다. 조건은 [계약·이적]에서 정한다."
+          },
+          {
+            "id": "trade",
+            "label": "트레이드로 유망주를 확보한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -4
+              },
+              {
+                "type": "MOOD",
+                "value": -5
+              }
+            ],
+            "link": "trade",
+            "text": "간판 타자를 트레이드 카드로 쓰기로 했다. 상대는 구단 화면에서 고른다."
+          },
+          {
+            "id": "wait",
+            "label": "FA까지 지켜본다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": -5
+              }
+            ],
+            "text": "결정을 미뤘다. 선수는 서운해했다."
+          }
+        ]
+      },
+      {
+        "id": "MAG-2B-2",
+        "act": 2,
+        "branch": "B",
+        "title": "다시 막내처럼",
+        "phase": "season",
+        "season": 2,
+        "from": "06-15",
+        "to": "08-31",
+        "role": "club",
+        "cond": "club.rank >= 6",
+        "default": "fight",
+        "ai": {
+          "contend": "fight",
+          "middle": "fight",
+          "rebuild": "rebuild",
+          "austerity": "rebuild"
+        },
+        "texts": [
+          "문태진 단장: \"올해도 가을이 멀어 보입니다. 막내 시절처럼 다시 키워서 올라가는 길도 있습니다.\" 회장은 듣고 싶어 하지 않는다.",
+          "순위표 아래쪽에 매지션스가 있다. 단장이 리빌딩안을 조심스럽게 꺼냈다."
+        ],
+        "choices": [
+          {
+            "id": "rebuild",
+            "label": "리빌딩 노선으로 간다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -5
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.08,
+                "who": "club"
+              }
+            ],
+            "flags": {
+              "rebuildPath": 1
+            },
+            "text": "다시 키워서 올라가는 길을 택했다."
+          },
+          {
+            "id": "fight",
+            "label": "끝까지 싸운다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              },
+              {
+                "type": "MOOD",
+                "value": -3,
+                "who": "club"
+              }
+            ],
+            "text": "올해도 가을을 포기하지 않는다고 선언했다."
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "id": "magicCloser",
+        "title": "마법의 완성 — 7차전의 마무리",
+        "kind": "variant",
+        "cond": "story.lastChampion == 1 && story.flag.keepCloser == 1 && cast.closer == 1",
+        "early": true,
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": 8
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": 10
+          },
+          {
+            "type": "MERCH",
+            "value": 1.15,
+            "weeks": 26
+          }
+        ],
+        "epilogue": "우승 확정구를 던진 건 7차전 끝내기를 맞았던 그 마무리였다. 그는 마운드에서 한참을 울었다.",
+        "next": "왕좌 지키기"
+      },
+      {
+        "id": "magic",
+        "title": "마법의 완성",
+        "kind": "success",
+        "cond": "story.lastChampion == 1",
+        "early": true,
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": 6
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": 10
+          }
+        ],
+        "epilogue": "윤재경 회장이 처음으로 웃었다. \"마지막 경기를 이겼군요.\"",
+        "next": "왕좌 지키기"
+      },
+      {
+        "id": "curse",
+        "title": "저주",
+        "kind": "fail",
+        "cond": "story.ksLossStreak >= 3",
+        "effects": [
+          {
+            "type": "CHAIRMAN",
+            "value": -20
+          },
+          {
+            "type": "FAN_NOW",
+            "value": -5
+          }
+        ],
+        "epilogue": "세 번째 준우승. 회장 신뢰는 바닥이다. 민지후 기자: \"저주는 실재하는가.\"",
+        "next": "저주를 깨다"
+      },
+      {
+        "id": "youngAgain",
+        "title": "다시 막내처럼",
+        "kind": "variant",
+        "cond": "story.missStreak >= 2 && story.flag.rebuildPath == 1",
+        "effects": [
+          {
+            "type": "GROWTH",
+            "value": 1.08,
+            "who": "club"
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": 3
+          }
+        ],
+        "epilogue": "막내 구단 시절처럼 다시 키운다. 2군 구장에 회장이 처음 왔다.",
+        "next": "두 번째 성장기"
+      },
+      {
+        "id": "waiting",
+        "title": "다음 가을을 기다리며",
+        "kind": "neutral",
+        "cond": "1",
+        "effects": [
+          {
+            "type": "PRESS",
+            "value": 2
+          }
+        ],
+        "epilogue": "반지는 없었다. 그래도 매지션스는 매년 가을 문턱에 선다.",
+        "next": "준우승의 한"
+      }
+    ]
+  },
+  {
+    "clubId": 2,
+    "arc": "GRZ",
+    "title": "화수분",
+    "task": "예산 안에서 육성으로 가을야구를 지킨다",
+    "synopsis": "스타가 떠나도 2군에서 새 얼굴이 올라오는 팀. 예산은 늘 빠듯하다. 화수분이 마르지 않게 하는 것이 구단주의 일이다.",
+    "transition": [
+      {
+        "branch": "A",
+        "cond": "1",
+        "text": "첫 시즌이 끝났다. 2막 「화수분 출신의 귀환」: 떠난 사람과 남은 사람, 그리고 2군에서 올라온 얼굴들의 이야기가 이어진다."
+      }
+    ],
+    "chapters": [
+      {
+        "id": "GRZ-1-1",
+        "act": 1,
+        "title": "떠나는 사람",
+        "phase": "season",
+        "season": 1,
+        "from": "02-01",
+        "to": "02-14",
+        "role": "franchise",
+        "default": "budget",
+        "ai": {
+          "contend": "over",
+          "middle": "budget",
+          "rebuild": "letGo",
+          "austerity": "letGo"
+        },
+        "texts": [
+          "민병철 회장: \"예산 안에서만 하세요. 그 이상은 승인 못 합니다.\" 김세라 단장: \"{player}을 잡으면 2군 투자가 0원이 됩니다.\" 간판 외야수 {player}는 아직 미계약이다.",
+          "전임 경영진이 끝내 못 잡은 간판 외야수 {player}. 김세라 단장이 예산표를 펼쳤다. \"잡을지, 보낼지. 2월 14일까지입니다.\""
+        ],
+        "choices": [
+          {
+            "id": "budget",
+            "label": "예산 안에서 제시한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "flags": {
+              "budgetOffer": 1
+            },
+            "link": "market",
+            "text": "예산 안의 조건으로 협상한다. 제안은 [계약·이적]에서 낸다."
+          },
+          {
+            "id": "over",
+            "label": "예산을 넘겨서라도 잡는다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -10
+              },
+              {
+                "type": "MOOD",
+                "value": 10
+              }
+            ],
+            "flags": {
+              "overBudget": 1
+            },
+            "link": "market",
+            "text": "예산을 넘겨서라도 잡기로 했다. 회장은 크게 실망했다."
+          },
+          {
+            "id": "letGo",
+            "label": "보내고 보상금을 받는다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -5
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              }
+            ],
+            "flags": {
+              "letGo": 1
+            },
+            "text": "간판 외야수를 보내기로 했다. 그 자리는 2군에서 올라온 얼굴들이 채운다."
+          }
+        ]
+      },
+      {
+        "id": "GRZ-1-2",
+        "act": 1,
+        "title": "2군의 소문",
+        "phase": "season",
+        "season": 1,
+        "from": "04-26",
+        "to": "06-14",
+        "role": "prospect",
+        "default": "wait",
+        "ai": {
+          "contend": "callUp",
+          "middle": "wait",
+          "rebuild": "callUp",
+          "austerity": "wait"
+        },
+        "texts": [
+          "2군 감독 고명수: \"{player}이 2군 투수들을 때려 부수고 있습니다. 올릴 때가 됐습니다.\"",
+          "2군 경기 기록지에 {player}의 이름이 매일 굵게 적힌다. 2군 감독이 1군 콜업을 건의했다."
+        ],
+        "choices": [
+          {
+            "id": "callUp",
+            "label": "1군 기회를 주라고 감독에게 권한다",
+            "effects": [
+              {
+                "type": "TRUST",
+                "value": -2
+              }
+            ],
+            "outcomes": [
+              {
+                "p": 0.5,
+                "hint": "1군 적응",
+                "effects": [
+                  {
+                    "type": "FAN_NOW",
+                    "value": 4
+                  },
+                  {
+                    "type": "MOOD",
+                    "value": 5
+                  }
+                ],
+                "text": "{player}이 1군 첫 주부터 장타를 터뜨렸다."
+              },
+              {
+                "p": 0.5,
+                "hint": "1군 벽",
+                "effects": [
+                  {
+                    "type": "MOOD",
+                    "value": -10
+                  }
+                ],
+                "text": "{player}은 1군 투수들에게 막혀 고개를 숙였다."
+              }
+            ],
+            "text": "1군 기회를 주자고 감독에게 권했다. 1군 명단은 [선수단]에서 정한다."
+          },
+          {
+            "id": "wait",
+            "label": "시즌 끝까지 2군에서 키운다",
+            "effects": [
+              {
+                "type": "GROWTH",
+                "value": 1.1
+              },
+              {
+                "type": "MOOD",
+                "value": -3
+              }
+            ],
+            "text": "올해는 2군에서 더 다듬기로 했다."
+          }
+        ]
+      },
+      {
+        "id": "GRZ-1-3",
+        "act": 1,
+        "title": "빼앗기는 사람들",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          1
+        ],
+        "role": "club",
+        "default": "farewell",
+        "ai": {
+          "contend": "keep",
+          "middle": "farewell",
+          "rebuild": "keep",
+          "austerity": "farewell"
+        },
+        "texts": [
+          "타 구단이 2군 감독 고명수를 1군 감독으로 데려가려 한다. 김세라 단장: \"화수분의 수도꼭지를 빼 가겠다는 겁니다.\"",
+          "고명수 2군 감독에게 다른 구단 1군 감독 제의가 왔다. 그는 \"구단주님 뜻에 따르겠습니다\"라고만 했다."
+        ],
+        "choices": [
+          {
+            "id": "keep",
+            "label": "연봉을 올려 붙잡는다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium"
+              }
+            ],
+            "outcomes": [
+              {
+                "p": 0.45,
+                "hint": "이직 가능성",
+                "effects": [
+                  {
+                    "type": "GROWTH",
+                    "value": 0.95,
+                    "who": "club"
+                  }
+                ],
+                "text": "붙잡으려 했지만 고명수는 결국 떠났다."
+              }
+            ],
+            "elseText": "고명수가 남기로 했다. 2군은 그대로 돌아간다.",
+            "text": "연봉 인상으로 2군 감독을 설득했다."
+          },
+          {
+            "id": "farewell",
+            "label": "축하하며 보낸다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": 5
+              },
+              {
+                "type": "GROWTH",
+                "value": 0.95,
+                "who": "club"
+              }
+            ],
+            "text": "2군 감독의 새 출발을 축하하며 보냈다. 육성 체계가 잠시 흔들린다."
+          }
+        ]
+      },
+      {
+        "id": "GRZ-2-1",
+        "act": 2,
+        "branch": "A",
+        "title": "코치진을 지켜라",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          2,
+          4
+        ],
+        "role": "club",
+        "default": "hold",
+        "ai": {
+          "contend": "hire",
+          "middle": "hire",
+          "rebuild": "hire",
+          "austerity": "hold"
+        },
+        "texts": [
+          "김세라 단장: \"올겨울에만 우리 코치 둘과 스카우트 하나가 다른 구단으로 갔습니다. 육성 코치진을 새로 꾸려야 합니다.\"",
+          "육성 코치진이 비었다. 단장이 영입 후보 명단을 들고 왔다. 회장은 '예산'이라는 말만 반복한다."
+        ],
+        "choices": [
+          {
+            "id": "hire",
+            "label": "육성 코치진을 새로 영입한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium"
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              }
+            ],
+            "text": "육성 코치진을 새로 꾸렸다. 다음 시즌 훈련 효과가 오른다."
+          },
+          {
+            "id": "hold",
+            "label": "현 체제로 버틴다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "text": "예산을 지키며 현 코치진으로 버티기로 했다."
+          }
+        ]
+      },
+      {
+        "id": "GRZ-2-2",
+        "act": 2,
+        "branch": "A",
+        "title": "쏟아지는 문의",
+        "phase": "season",
+        "season": 2,
+        "from": "05-01",
+        "to": "08-31",
+        "role": "prospect",
+        "cond": "cast.prospect.starter == 1",
+        "default": "keep",
+        "ai": {
+          "contend": "keep",
+          "middle": "keep",
+          "rebuild": "listen",
+          "austerity": "listen"
+        },
+        "texts": [
+          "2군에서 올라온 {player}이 주전을 꿰찼다. 그러자 타 구단의 트레이드 문의가 쏟아진다.",
+          "김세라 단장: \"{player} 문의만 이번 주에 세 건입니다. 지금이 가장 비싸게 팔 때라는 말도 있습니다.\""
+        ],
+        "choices": [
+          {
+            "id": "keep",
+            "label": "지킨다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 8
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": -3
+              }
+            ],
+            "text": "화수분의 새 얼굴을 지키기로 했다."
+          },
+          {
+            "id": "listen",
+            "label": "제안을 들어 본다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": -8
+              }
+            ],
+            "link": "trade",
+            "text": "트레이드 제안을 들어 보기로 했다. 상대는 구단 화면에서 고른다."
+          }
+        ]
+      },
+      {
+        "id": "GRZ-2-3",
+        "act": 2,
+        "branch": "A",
+        "title": "화수분 출신의 귀환",
+        "phase": "stove",
+        "offseason": 2,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "club",
+        "cond": "story.flag.letGo == 1",
+        "default": "decline",
+        "ai": {
+          "contend": "welcome",
+          "middle": "decline",
+          "rebuild": "decline",
+          "austerity": "decline"
+        },
+        "texts": [
+          "떠났던 간판 외야수가 친정 복귀를 타진해 왔다. \"잠실 1루 더그아웃이 그립더라고요.\"",
+          "2년 전 떠난 간판 외야수의 에이전트가 연락해 왔다. 선수가 그리즐리스로 돌아오고 싶어 한다는 것이다."
+        ],
+        "choices": [
+          {
+            "id": "welcome",
+            "label": "복귀 협상을 연다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 3
+              }
+            ],
+            "link": "market",
+            "text": "친정 복귀 협상을 열었다. 조건은 [계약·이적]에서 정한다."
+          },
+          {
+            "id": "decline",
+            "label": "정중히 거절한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -2
+              }
+            ],
+            "text": "지금의 얼굴들을 믿기로 하고 복귀 제안을 거절했다."
+          }
+        ]
+      },
+      {
+        "id": "GRZ-2-4",
+        "act": 2,
+        "title": "회장의 가위",
+        "phase": "season",
+        "season": 3,
+        "from": "03-01",
+        "to": "05-31",
+        "role": "club",
+        "default": "accept",
+        "ai": {
+          "contend": "resist",
+          "middle": "accept",
+          "rebuild": "accept",
+          "austerity": "accept"
+        },
+        "texts": [
+          "민병철 회장: \"올해는 2군 예산부터 줄입시다. 화수분이라면서요. 알아서 나오겠지요.\"",
+          "회장실에서 예산 삭감안이 내려왔다. 가장 먼저 줄이라는 항목은 2군 운영비다."
+        ],
+        "choices": [
+          {
+            "id": "accept",
+            "label": "삭감을 받아들인다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              },
+              {
+                "type": "GROWTH",
+                "value": 0.95,
+                "who": "club"
+              }
+            ],
+            "text": "2군 예산 삭감을 받아들였다."
+          },
+          {
+            "id": "resist",
+            "label": "육성 예산만은 지킨다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -5
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 2
+              }
+            ],
+            "text": "육성 예산만은 지키겠다고 회장에게 맞섰다."
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "id": "neverDry",
+        "title": "화수분은 마르지 않는다",
+        "kind": "success",
+        "cond": "story.homegrown >= 5 && story.lastPs == 1",
+        "effects": [
+          {
+            "type": "GROWTH",
+            "value": 1.08,
+            "who": "club"
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 5
+          }
+        ],
+        "epilogue": "가을야구 엔트리의 절반이 2군 출신이었다. 김세라 단장: \"샘은 사람이 파는 겁니다.\"",
+        "next": "다음 세대의 샘"
+      },
+      {
+        "id": "bears",
+        "title": "버티는 곰",
+        "kind": "neutral",
+        "cond": "story.lastPs == 1",
+        "effects": [
+          {
+            "type": "PRESS",
+            "value": 3
+          }
+        ],
+        "epilogue": "화려하지 않았지만 가을은 지켰다. 그리즐리스다운 3년이었다.",
+        "next": "화수분"
+      },
+      {
+        "id": "dried",
+        "title": "샘이 말랐다",
+        "kind": "fail",
+        "cond": "story.lowStreak >= 2",
+        "effects": [
+          {
+            "type": "CHAIRMAN",
+            "value": -8
+          },
+          {
+            "type": "FAN_NOW",
+            "value": -4
+          }
+        ],
+        "epilogue": "2군에서 올라올 얼굴이 없다. 회장은 예산 삭감 카드를 다시 꺼냈다.",
+        "next": "샘을 다시 파다"
+      },
+      {
+        "id": "ordinary",
+        "title": "평범한 해",
+        "kind": "neutral",
+        "cond": "1",
+        "effects": [
+          {
+            "type": "PRESS",
+            "value": 1
+          }
+        ],
+        "epilogue": "가을은 멀었지만 2군 구장의 불은 꺼지지 않았다.",
+        "next": "화수분"
+      }
+    ]
+  },
+  {
+    "clubId": 1,
+    "arc": "GEM",
+    "title": "두 번째 별 이후",
+    "task": "우승 뒤의 질문에 답하기. 3시즌 연속 가을야구와 우승 1회",
+    "synopsis": "긴 기다림 끝에 우승을 맛본 팀. 이제 사람들은 묻는다. 진짜 강팀인가, 반짝이었나. 같은 잠실의 라이벌 그리즐리스가 매번 시장에서 발목을 잡는다.",
+    "transition": [
+      {
+        "branch": "A",
+        "cond": "1",
+        "text": "첫 시즌이 끝났다. 2막 「세대가 바뀌는 해」: 캡틴은 마스크를 벗으려 하고, 라이벌은 우리 코치진을 노린다."
+      }
+    ],
+    "chapters": [
+      {
+        "id": "GEM-1-1",
+        "act": 1,
+        "title": "같은 선수, 같은 구장",
+        "phase": "season",
+        "season": 1,
+        "from": "02-01",
+        "to": "02-21",
+        "role": "club",
+        "default": "withdraw",
+        "ai": {
+          "contend": "bid",
+          "middle": "bid",
+          "rebuild": "withdraw",
+          "austerity": "withdraw"
+        },
+        "texts": [
+          "최윤성 단장: \"미계약 3루수 FA를 그리즐리스도 노립니다. 같은 잠실에서 뺏기면 팬들이 못 견딥니다.\" 건너편 그리즐리스 김세라 단장도 이미 에이전트를 만났다고 한다.",
+          "캠프 첫 주, 아직 주인을 못 찾은 3루수 FA가 시장에 남아 있다. 최윤성 단장이 낮게 말했다. \"그리즐리스랑 한 선수를 두고 경쟁하게 됐습니다. 이기면 영웅, 지면 조롱거리입니다.\""
+        ],
+        "choices": [
+          {
+            "id": "bid",
+            "label": "경쟁 입찰에 나선다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 5
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "flags": {
+              "rivalAnger": 1
+            },
+            "link": "market",
+            "text": "그리즐리스와 정면 승부를 택했다. 계약 조건은 [계약·이적]에서 정한다. 라이벌의 감정이 상했다."
+          },
+          {
+            "id": "withdraw",
+            "label": "철수한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -3
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "text": "무리한 경쟁을 접었다. 팬들은 아쉬워했고 회장은 안도했다."
+          },
+          {
+            "id": "swap",
+            "label": "그리즐리스 주축과 맞트레이드를 타진한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -2
+              },
+              {
+                "type": "PRESS",
+                "value": 4
+              }
+            ],
+            "flags": {
+              "rivalAnger": 1
+            },
+            "link": "trade",
+            "text": "라이벌에게 맞트레이드를 던졌다. 잠실이 시끄러워졌다. 협상은 구단 화면에서 연다."
+          }
+        ]
+      },
+      {
+        "id": "GEM-1-2",
+        "act": 1,
+        "title": "라이벌 주간",
+        "phase": "season",
+        "season": 1,
+        "from": "03-01",
+        "to": "04-30",
+        "role": "club",
+        "default": "derby",
+        "ai": {
+          "contend": "derby",
+          "middle": "derby",
+          "rebuild": "normal",
+          "austerity": "normal"
+        },
+        "texts": [
+          "첫 잠실 더비가 다가온다. 홍보팀이 말한다. \"이 3연전은 팬 만족도에도 평소의 두 배로 남습니다. 이기면 크고, 지면 큽니다.\"",
+          "잠실 더비 3연전. 양쪽 응원단이 벌써 광고판 싸움을 시작했다. 홍보팀이 특별 이벤트안을 들고 왔다."
+        ],
+        "choices": [
+          {
+            "id": "derby",
+            "label": "더비 특별 이벤트를 연다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium"
+              },
+              {
+                "type": "DEMAND",
+                "value": 1.1,
+                "weeks": 3
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 2
+              }
+            ],
+            "text": "더비 3연전을 축제로 꾸미기로 했다. 입장권 수요가 오른다."
+          },
+          {
+            "id": "normal",
+            "label": "일반 운영으로 간다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": -1
+              }
+            ],
+            "text": "더비도 평소처럼 치른다. 라이벌 구단만 분주하다."
+          }
+        ]
+      },
+      {
+        "id": "GEM-1-3",
+        "act": 1,
+        "title": "우승 반지의 값",
+        "phase": "season",
+        "season": 1,
+        "from": "05-03",
+        "to": "06-27",
+        "role": "club",
+        "default": "limited",
+        "ai": {
+          "contend": "relaunch",
+          "middle": "limited",
+          "rebuild": "limited",
+          "austerity": "limited"
+        },
+        "texts": [
+          "서경훈 회장: \"우승한 지 한 시즌도 안 됐는데 팬들이 벌써 잊고 있다는 보고를 받았습니다. 굿즈 팀이 우승 기념 라인을 다시 내자고 합니다.\"",
+          "굿즈 매장에서 우승 기념 상품이 바닥을 보인다. 마케팅 팀: \"지금 한 번 더 내면 팝니다. 다만 우려먹는다는 소리도 나옵니다.\""
+        ],
+        "choices": [
+          {
+            "id": "relaunch",
+            "label": "우승 기념 라인을 재출시한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              },
+              {
+                "type": "MERCH",
+                "value": 1.12,
+                "weeks": 12
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "text": "우승 기념 라인을 다시 내기로 했다. 매장이 한동안 붐빈다."
+          },
+          {
+            "id": "limited",
+            "label": "한정 소량만 푼다",
+            "effects": [
+              {
+                "type": "MERCH",
+                "value": 1.05,
+                "weeks": 8
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "text": "한정 수량으로 희소성을 지켰다. 언론은 영리하다고 평했다."
+          }
+        ]
+      },
+      {
+        "id": "GEM-1-4",
+        "act": 1,
+        "title": "반짝이란 말",
+        "phase": "season",
+        "season": 1,
+        "from": "06-14",
+        "to": "08-15",
+        "role": "prospect",
+        "cond": "club.rank >= 5",
+        "default": "leave",
+        "ai": {
+          "contend": "push",
+          "middle": "leave",
+          "rebuild": "push",
+          "austerity": "leave"
+        },
+        "texts": [
+          "민지후 기자의 칼럼 제목은 '제미니즈, 결국 한 번이었나'. 신인 거포 {player}의 방망이가 팀의 유일한 반박이다.",
+          "순위가 처졌다. 최윤성 단장: \"{player}를 라인업에 고정하면 팀에 불을 붙일 수 있습니다. {manager} 감독은 아직 이르다고 합니다.\""
+        ],
+        "choices": [
+          {
+            "id": "push",
+            "label": "신인 거포의 고정 기용을 권한다",
+            "effects": [
+              {
+                "type": "TRUST",
+                "value": -3
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.1
+              },
+              {
+                "type": "MOOD",
+                "value": 8
+              }
+            ],
+            "text": "신인 거포를 라인업에 고정하자고 권했다. 기용은 감독과 [선수단]에서 정한다."
+          },
+          {
+            "id": "leave",
+            "label": "감독에게 맡긴다",
+            "effects": [
+              {
+                "type": "TRUST",
+                "value": 2
+              }
+            ],
+            "text": "기용은 감독의 판단에 맡겼다."
+          }
+        ]
+      },
+      {
+        "id": "GEM-2-1",
+        "act": 2,
+        "branch": "A",
+        "title": "마스크를 벗겠습니다",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "captain",
+        "default": "accept",
+        "ai": {
+          "contend": "persuade",
+          "middle": "accept",
+          "rebuild": "accept",
+          "austerity": "accept"
+        },
+        "texts": [
+          "캡틴 {player}가 구단주실에 찾아왔다. \"이제 마스크 쓰고 홈플레이트 뒤에서 버티기가 힘듭니다. 1루로 옮기고 싶습니다.\"",
+          "{player}의 무릎 상태는 팀 모두가 안다. \"포수는 이제 후배들 몫입니다. 허락해 주십시오.\" 대신 마스크를 쓸 사람은 아직 정해지지 않았다."
+        ],
+        "choices": [
+          {
+            "id": "accept",
+            "label": "수락한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 8
+              },
+              {
+                "type": "CLUBHOUSE",
+                "value": 2
+              }
+            ],
+            "flags": {
+              "catcherSwitch": 1
+            },
+            "text": "캡틴의 1루 전환을 받아들였다. 포수 자리는 새로 채워야 한다."
+          },
+          {
+            "id": "persuade",
+            "label": "포수 유지를 설득한다",
+            "effects": [
+              {
+                "type": "TRUST",
+                "value": 2
+              }
+            ],
+            "outcomes": [
+              {
+                "p": 0.6,
+                "hint": "설득 성공",
+                "effects": [
+                  {
+                    "type": "MOOD",
+                    "value": 3
+                  }
+                ],
+                "text": "{player}가 한 시즌만 더 마스크를 쓰겠다고 했다."
+              },
+              {
+                "p": 0.4,
+                "hint": "불편한 마음",
+                "effects": [
+                  {
+                    "type": "MOOD",
+                    "value": -8
+                  }
+                ],
+                "text": "{player}는 설득에 동의했지만 표정이 어두웠다."
+              }
+            ],
+            "text": "한 시즌만 더 마스크를 쓰자고 설득했다."
+          }
+        ]
+      },
+      {
+        "id": "GEM-2-2",
+        "act": 2,
+        "branch": "A",
+        "title": "코치를 빼가려는 손",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          3,
+          4
+        ],
+        "role": "club",
+        "default": "raise",
+        "ai": {
+          "contend": "raise",
+          "middle": "raise",
+          "rebuild": "release",
+          "austerity": "release"
+        },
+        "texts": [
+          "김세라 단장이 우리 타격 코치에게 접근했다는 정보가 들어왔다. 최윤성 단장: \"작년 영입전 일을 아직 안 잊은 모양입니다.\"",
+          "라이벌 그리즐리스가 우리 코치를 빼가려 한다. 코치는 말이 없다. \"구단주님이 어떻게 하시느냐에 따라 달라지겠지요.\""
+        ],
+        "choices": [
+          {
+            "id": "raise",
+            "label": "연봉을 올려 붙잡는다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              }
+            ],
+            "outcomes": [
+              {
+                "p": 0.35,
+                "hint": "라이벌의 더 큰 제안",
+                "effects": [
+                  {
+                    "type": "GROWTH",
+                    "value": 0.95,
+                    "who": "club"
+                  }
+                ],
+                "text": "그리즐리스의 제안이 더 컸다. 코치는 결국 잠실 건너편으로 떠났다."
+              }
+            ],
+            "elseText": "코치가 남기로 했다. 훈련 체계는 그대로 돌아간다.",
+            "text": "연봉을 올려 코치를 설득했다."
+          },
+          {
+            "id": "release",
+            "label": "깨끗이 보내고 후임을 찾는다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": 2
+              },
+              {
+                "type": "GROWTH",
+                "value": 0.95,
+                "who": "club"
+              }
+            ],
+            "text": "코치를 보내기로 했다. 후임은 조직 화면에서 찾는다."
+          }
+        ]
+      },
+      {
+        "id": "GEM-2-3",
+        "act": 2,
+        "title": "신인 거포의 해",
+        "phase": "season",
+        "season": 2,
+        "from": "04-05",
+        "to": "06-28",
+        "role": "prospect",
+        "cond": "cast.prospect.starter == 1",
+        "default": "cleanup",
+        "ai": {
+          "contend": "cleanup",
+          "middle": "cleanup",
+          "rebuild": "cleanup",
+          "austerity": "gradual"
+        },
+        "texts": [
+          "신인 거포 {player}가 주전으로 자리 잡았다. {manager} 감독: \"4번에 놓고 싶은데, 부담을 줘도 될지 모르겠습니다.\"",
+          "{player}의 타구가 담장을 넘길 때마다 잠실이 들썩인다. 단장이 4번 기용 의견을 물어 왔다."
+        ],
+        "choices": [
+          {
+            "id": "cleanup",
+            "label": "4번 타자로 밀어준다",
+            "effects": [
+              {
+                "type": "GROWTH",
+                "value": 1.1
+              },
+              {
+                "type": "MOOD",
+                "value": 6
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 2
+              }
+            ],
+            "text": "4번 타자 기용을 권했다. 타순은 감독이 정한다."
+          },
+          {
+            "id": "gradual",
+            "label": "단계적으로 키운다",
+            "effects": [
+              {
+                "type": "TRUST",
+                "value": 2
+              },
+              {
+                "type": "MOOD",
+                "value": -2
+              }
+            ],
+            "text": "서두르지 않고 6번에서 시작하기로 했다."
+          }
+        ]
+      },
+      {
+        "id": "GEM-2-4",
+        "act": 2,
+        "title": "잠실의 주인",
+        "phase": "season",
+        "season": 3,
+        "from": "04-05",
+        "to": "07-26",
+        "role": "club",
+        "default": "invest",
+        "ai": {
+          "contend": "invest",
+          "middle": "invest",
+          "rebuild": "inside",
+          "austerity": "inside"
+        },
+        "texts": [
+          "서경훈 회장: \"우리가 잠실의 주인이라는 걸 올해 증명합시다. 필요한 투자는 하겠습니다.\" 최윤성 단장은 \"선수는 돈으로만 오지 않습니다\"라고 덧붙였다.",
+          "3시즌째 봄. 서경훈 회장이 구단주실에 들러 한마디 남겼다. \"한 번은 운이고 두 번은 실력입니다. 세 번이면 역사지요.\""
+        ],
+        "choices": [
+          {
+            "id": "invest",
+            "label": "전력 보강에 투자한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              },
+              {
+                "type": "CLUBHOUSE",
+                "value": 2
+              }
+            ],
+            "link": "market",
+            "text": "올해도 정상을 노린다. 보강은 [계약·이적]에서 한다."
+          },
+          {
+            "id": "inside",
+            "label": "내부 선수들을 믿는다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -3
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              },
+              {
+                "type": "TRUST",
+                "value": 3
+              }
+            ],
+            "text": "새 영입 대신 내부 성장에 힘을 싣기로 했다."
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "id": "owner",
+        "title": "잠실의 주인",
+        "kind": "success",
+        "cond": "story.psStreak >= 3 && story.titles >= 1",
+        "effects": [
+          {
+            "type": "DEMAND",
+            "value": 1.08,
+            "weeks": 52
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 6
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": 8
+          }
+        ],
+        "epilogue": "세 시즌 연속 가을, 그리고 또 한 번의 우승. 잠실 하늘 아래 이제 누구도 제미니즈를 반짝이라 부르지 않는다.",
+        "next": "왕좌의 무게"
+      },
+      {
+        "id": "threshold",
+        "title": "강팀의 문턱",
+        "kind": "neutral",
+        "cond": "story.postseasons >= 2",
+        "effects": [
+          {
+            "type": "PRESS",
+            "value": 3
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 2
+          }
+        ],
+        "epilogue": "민지후 기자: \"더 이상 우연이라 부르지 못한다. 하지만 아직 왕조는 아니다.\"",
+        "next": "두 번째 별 이후"
+      },
+      {
+        "id": "longWait",
+        "title": "긴 기다림 재개",
+        "kind": "fail",
+        "cond": "1",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": -6
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": -3
+          }
+        ],
+        "epilogue": "잠실의 겨울은 길다. 그 한 번의 우승이 다시 먼 이야기가 되었다.",
+        "next": "다시 별을 향해"
+      }
+    ]
+  },
+  {
+    "clubId": 3,
+    "arc": "LGD",
+    "title": "팔 것인가, 지킬 것인가",
+    "task": "모기업 없이 3시즌 버티기. 키운 선수를 팔지 않고 흑자로",
+    "synopsis": "모기업이 없다. 통장 잔고는 얇고, 구단 이름은 빌린 것이다. 키운 선수를 팔아야 사는 팀이 언제까지 팔기만 할 수는 없다.",
+    "transition": [
+      {
+        "branch": "A",
+        "cond": "1",
+        "text": "첫 시즌이 끝났다. 2막 「버티는 구단」: 팔고 받은 유망주들이 자라기 시작하고, 서울 3파전 한가운데서 새 팬을 모아야 한다."
+      }
+    ],
+    "chapters": [
+      {
+        "id": "LGD-1-1",
+        "act": 1,
+        "title": "통장 잔고",
+        "phase": "season",
+        "season": 1,
+        "from": "02-01",
+        "to": "02-21",
+        "role": "club",
+        "default": "perf",
+        "ai": {
+          "contend": "perf",
+          "middle": "perf",
+          "rebuild": "long",
+          "austerity": "long"
+        },
+        "texts": [
+          "강유진 재무이사: \"현금 {cash}입니다. 연봉 첫 지급일이 2월입니다. 이대로면 4월에 마이너스입니다.\" 정민규 상무: \"명명권 재계약 조건입니다. 금액을 낮추는 대신 성적 연동을 넣고 싶습니다. 개막 전에 답을 주십시오.\"",
+          "모기업이 없는 구단의 첫 질문은 늘 돈이다. 통장에는 {cash}. 스카이나우 정민규 상무가 서류를 내밀었다. \"성적이 좋으면 더 드리겠습니다. 대신 기본 금액은 내려갑니다.\""
+        ],
+        "choices": [
+          {
+            "id": "perf",
+            "label": "성적 연동 조건을 수용한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small",
+                "income": true
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "flags": {
+              "perfLink": 1
+            },
+            "text": "명명권에 성적 연동을 넣었다. 기본 수입은 줄었지만 가을야구를 가면 보상이 커진다."
+          },
+          {
+            "id": "hold",
+            "label": "기존 조건을 고수한다",
+            "effects": [],
+            "outcomes": [
+              {
+                "p": 0.5,
+                "hint": "재계약 성사",
+                "effects": [
+                  {
+                    "type": "CASH",
+                    "grade": "medium",
+                    "income": true
+                  }
+                ],
+                "text": "스카이나우가 기존 조건으로 재계약했다."
+              },
+              {
+                "p": 0.5,
+                "hint": "스폰서 공백",
+                "effects": [
+                  {
+                    "type": "PRESS",
+                    "value": -3
+                  },
+                  {
+                    "type": "FAN_NOW",
+                    "value": -1
+                  }
+                ],
+                "text": "재계약이 틀어졌다. 새 스폰서를 찾는 동안 수입이 비어 있다."
+              }
+            ],
+            "text": "기존 조건을 고집하고 담판에 들어갔다."
+          },
+          {
+            "id": "long",
+            "label": "2년 장기 계약으로 할인한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small",
+                "income": true
+              },
+              {
+                "type": "RECUR",
+                "grade": "small",
+                "weeks": 26,
+                "income": true
+              }
+            ],
+            "flags": {
+              "longNaming": 1
+            },
+            "text": "2년 장기 계약으로 총액을 내리고 안정을 택했다."
+          }
+        ]
+      },
+      {
+        "id": "LGD-1-2",
+        "act": 1,
+        "title": "쏟아지는 전화",
+        "phase": "season",
+        "season": 1,
+        "from": "03-01",
+        "to": "04-18",
+        "role": "ace",
+        "default": "prospects",
+        "ai": {
+          "contend": "refuse",
+          "middle": "prospects",
+          "rebuild": "prospects",
+          "austerity": "cash"
+        },
+        "texts": [
+          "강유진: \"에이스 {player}에게 제안이 세 건 왔습니다. 하나만 받아도 올해는 삽니다.\" {manager} 감독은 말없이 고개를 저었다.",
+          "캠프 중 트레이드 문의가 쏟아진다. 현금이 가득한 제안, 유망주 셋을 얹는 제안, 그리고 \"팔지 않겠다\"는 선택지. 에이스 {player}는 구단주실 밖에서 기다리고 있다."
+        ],
+        "choices": [
+          {
+            "id": "cash",
+            "label": "현금 비중이 큰 제안을 받는다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -8
+              },
+              {
+                "type": "MOOD",
+                "value": -8,
+                "who": "club"
+              }
+            ],
+            "flags": {
+              "soldAce": 1
+            },
+            "link": "trade",
+            "text": "현금을 택했다. 올해는 산다. 상대 구단과 조건은 구단 화면에서 연다."
+          },
+          {
+            "id": "prospects",
+            "label": "유망주 3명을 받는 제안을 택한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -5
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.08,
+                "who": "club"
+              }
+            ],
+            "flags": {
+              "prospects": 1
+            },
+            "link": "trade",
+            "text": "미래를 택했다. 유망주 묶음을 받는 협상은 구단 화면에서 연다."
+          },
+          {
+            "id": "refuse",
+            "label": "모두 거절한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 3
+              },
+              {
+                "type": "MOOD",
+                "value": 10
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "flags": {
+              "keptAce": 1
+            },
+            "text": "에이스를 지켰다. 팬들은 환호했지만 통장은 여전히 얇다."
+          }
+        ]
+      },
+      {
+        "id": "LGD-1-3",
+        "act": 1,
+        "title": "돔 아래의 비 오는 날",
+        "phase": "season",
+        "season": 1,
+        "from": "06-01",
+        "to": "07-26",
+        "role": "club",
+        "default": "event",
+        "ai": {
+          "contend": "event",
+          "middle": "event",
+          "rebuild": "event",
+          "austerity": "plain"
+        },
+        "texts": [
+          "장마철이 시작됐다. 강유진: \"다른 구장은 비 오면 경기가 취소되지만 우리는 돔입니다. 이때 가족 단위 관중을 불러오면 됩니다.\"",
+          "빗줄기가 거세다. 타 구단 홈구장 경기가 줄줄이 취소되는 동안 우리 돔은 불이 켜져 있다. 마케팅 팀이 우천 특별 패키지를 제안했다."
+        ],
+        "choices": [
+          {
+            "id": "event",
+            "label": "우천 특별 패키지를 홍보한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              },
+              {
+                "type": "DEMAND",
+                "value": 1.1,
+                "weeks": 6
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 1
+              }
+            ],
+            "text": "비 오는 날에도 열리는 돔을 전면에 내세웠다. 장마철 관중이 오른다."
+          },
+          {
+            "id": "plain",
+            "label": "평소대로 운영한다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": 1
+              }
+            ],
+            "text": "특별한 홍보 없이 돔의 장점만 믿기로 했다."
+          }
+        ]
+      },
+      {
+        "id": "LGD-1-4",
+        "act": 1,
+        "title": "바다 건너 편지",
+        "phase": "stove",
+        "role": "star",
+        "default": "defer",
+        "ai": {
+          "contend": "defer",
+          "middle": "defer",
+          "rebuild": "allow",
+          "austerity": "allow"
+        },
+        "texts": [
+          "{player}가 구단주실에 편지를 놓고 갔다. \"제 꿈을 아시잖아요. 올겨울 포스팅 보내 주세요.\" 강유진 재무이사는 숫자부터 적었다. \"이적료만으로 2년은 삽니다.\"",
+          "간판 {player}의 포스팅 자격 서류가 도착했다. {manager} 감독: \"전력은 크게 깎입니다. 그래도 선수 꿈을 붙잡아 둘 수는 없지요.\""
+        ],
+        "choices": [
+          {
+            "id": "allow",
+            "label": "포스팅을 허락한다",
+            "effects": [
+              {
+                "type": "CONTRACT",
+                "kind": "posting"
+              },
+              {
+                "type": "FAN_NOW",
+                "value": -2
+              }
+            ],
+            "text": "포스팅을 허락했다. 이적료는 구단 곳간에 들어오고 전력은 깎인다."
+          },
+          {
+            "id": "defer",
+            "label": "1년 유예를 청한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": -12
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05
+              }
+            ],
+            "flags": {
+              "deferred": 1
+            },
+            "text": "내년을 기약했다. 선수는 서운해했지만 동기부여는 더 커졌다."
+          },
+          {
+            "id": "deny",
+            "label": "불허한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": -20
+              },
+              {
+                "type": "FAN_NOW",
+                "value": -3
+              }
+            ],
+            "text": "포스팅을 불허했다. 선수는 입을 닫았다."
+          }
+        ],
+        "offseason": 1,
+        "turns": [
+          1,
+          1
+        ]
+      },
+      {
+        "id": "LGD-2-1",
+        "act": 2,
+        "branch": "A",
+        "title": "다시 사려는 손",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "prospect",
+        "default": "keep",
+        "ai": {
+          "contend": "keep",
+          "middle": "keep",
+          "rebuild": "sell",
+          "austerity": "sell"
+        },
+        "texts": [
+          "{player}가 눈에 띄게 성장했다. 그러자 다른 구단이 다시 사겠다고 연락해 왔다. 강유진: \"반복 구조를 끊을지, 한 번 더 팔지 정하셔야 합니다.\"",
+          "키워서 팔고, 다시 키워서 파는 팀. {player}를 둘러싼 문의가 벌써 세 건이다. 강유진 재무이사는 계산기를 두드렸다."
+        ],
+        "choices": [
+          {
+            "id": "keep",
+            "label": "팔지 않고 핵심으로 키운다",
+            "effects": [
+              {
+                "type": "GROWTH",
+                "value": 1.1
+              },
+              {
+                "type": "MOOD",
+                "value": 8
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "flags": {
+              "keepRising": 1
+            },
+            "text": "이번에는 팔지 않기로 했다. 돈은 모자라도 팀에는 중심이 생긴다."
+          },
+          {
+            "id": "sell",
+            "label": "다시 팔아 현금을 만든다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -4
+              }
+            ],
+            "link": "trade",
+            "text": "또 팔기로 했다. 협상은 구단 화면에서 연다. 현금은 늘지만 팬 마음은 식는다."
+          }
+        ]
+      },
+      {
+        "id": "LGD-1-5",
+        "act": 1,
+        "title": "성적 연동 정산",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          2,
+          4
+        ],
+        "role": "club",
+        "cond": "story.flag.perfLink == 1 && story.lastPs == 1",
+        "default": "cash",
+        "ai": {
+          "contend": "cash",
+          "middle": "cash",
+          "rebuild": "extend",
+          "austerity": "cash"
+        },
+        "texts": [
+          "정민규 상무가 정산서를 들고 왔다. \"가을야구 보너스입니다. 성적 연동을 받아 주신 덕분이죠. 일시금으로 드릴까요, 계약 연장분에 얹어 드릴까요?\"",
+          "스카이나우 측이 명명권 성적 연동 보너스를 정산하자고 연락해 왔다. 강유진 재무이사: \"한 번에 받으면 숨통이 트이고, 나눠 받으면 내년이 편합니다.\""
+        ],
+        "choices": [
+          {
+            "id": "cash",
+            "label": "일시금으로 받는다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium",
+                "income": true
+              }
+            ],
+            "text": "성적 연동 보너스를 일시금으로 받았다."
+          },
+          {
+            "id": "extend",
+            "label": "연장 계약분에 나눠 받는다",
+            "effects": [
+              {
+                "type": "RECUR",
+                "grade": "small",
+                "weeks": 20,
+                "income": true
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "flags": {
+              "longNaming": 1
+            },
+            "text": "보너스를 나눠 받으며 명명권 관계를 다졌다."
+          }
+        ]
+      },
+      {
+        "id": "LGD-2-2",
+        "act": 2,
+        "branch": "A",
+        "title": "서울 3파전",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          3,
+          4
+        ],
+        "role": "club",
+        "default": "campus",
+        "ai": {
+          "contend": "creator",
+          "middle": "campus",
+          "rebuild": "campus",
+          "austerity": "campus"
+        },
+        "texts": [
+          "잠실 두 구단과 같은 서울 시장을 나눠 쓴다. 마케팅 팀: \"우리 강점은 젊은 팬입니다. 대학가와 SNS, 둘 다는 못 합니다.\"",
+          "서울 팬 3파전. 규모로는 잠실 두 구단에 못 미친다. 마케팅 팀장이 기획안 두 장을 올렸다."
+        ],
+        "choices": [
+          {
+            "id": "campus",
+            "label": "대학가 캠페인을 연다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              },
+              {
+                "type": "FAN_TARGET",
+                "value": 2,
+                "weeks": 26
+              },
+              {
+                "type": "DEMAND",
+                "value": 1.06,
+                "weeks": 26
+              }
+            ],
+            "text": "대학가에 응원 부스를 열었다. 학생 관중이 서서히 는다."
+          },
+          {
+            "id": "creator",
+            "label": "SNS 크리에이터와 협업한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              },
+              {
+                "type": "MERCH",
+                "value": 1.1,
+                "weeks": 26
+              },
+              {
+                "type": "PRESS",
+                "value": 3
+              }
+            ],
+            "text": "크리에이터 콘텐츠로 구단 이름이 알려졌다. 굿즈 반응이 좋다."
+          }
+        ]
+      },
+      {
+        "id": "LGD-2-3",
+        "act": 2,
+        "title": "줄어드는 숫자",
+        "phase": "season",
+        "season": 2,
+        "from": "04-05",
+        "to": "06-28",
+        "role": "club",
+        "default": "invest",
+        "ai": {
+          "contend": "invest",
+          "middle": "invest",
+          "rebuild": "tight",
+          "austerity": "tight"
+        },
+        "texts": [
+          "강유진 재무이사: \"현금 {cash}입니다. 한 번 더 지출을 줄이든지, 육성에 쓰고 가을을 노리든지 정해야 합니다.\"",
+          "분기 결산표가 올라왔다. 통장 잔고 {cash}. 재무이사가 표 한쪽에 빨간 줄을 그었다. \"여기가 안전선입니다.\""
+        ],
+        "choices": [
+          {
+            "id": "tight",
+            "label": "긴축 재정으로 안전선을 지킨다",
+            "effects": [
+              {
+                "type": "RECUR",
+                "grade": "small",
+                "weeks": 26,
+                "income": true
+              },
+              {
+                "type": "GROWTH",
+                "value": 0.95,
+                "who": "club"
+              }
+            ],
+            "text": "고정비를 줄여 안전선을 지켰다. 2군 지원은 얇아졌다."
+          },
+          {
+            "id": "invest",
+            "label": "육성 투자를 유지한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              }
+            ],
+            "text": "비용을 감수하고 육성 투자를 이어 가기로 했다."
+          }
+        ]
+      },
+      {
+        "id": "LGD-2-4",
+        "act": 2,
+        "title": "스카이나우의 제안",
+        "phase": "stove",
+        "offseason": 2,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "club",
+        "default": "longDeal",
+        "ai": {
+          "contend": "longDeal",
+          "middle": "longDeal",
+          "rebuild": "longDeal",
+          "austerity": "retry"
+        },
+        "texts": [
+          "정민규 상무: \"명명권 장기 연장을 논의하고 싶습니다. 이번에는 구단의 팬 규모가 달라졌습니다.\" 강유진: \"여기서 장기로 묶을지, 단년으로 다시 올릴지입니다.\"",
+          "2년 전의 협상 자리가 다시 열렸다. 스카이나우가 장기 연장안을 내밀었다. 구단 이름이 바뀔 위험도, 안정도 모두 이 서류에 있다."
+        ],
+        "choices": [
+          {
+            "id": "longDeal",
+            "label": "장기 연장 계약에 서명한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium",
+                "income": true
+              },
+              {
+                "type": "RECUR",
+                "grade": "small",
+                "weeks": 26,
+                "income": true
+              }
+            ],
+            "flags": {
+              "longNaming": 1
+            },
+            "text": "명명권을 장기로 묶었다. 안정적인 수입이 생겼다."
+          },
+          {
+            "id": "retry",
+            "label": "단년으로 다시 협상한다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": 2
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 1
+              }
+            ],
+            "text": "장기 계약을 미루고 단년 협상을 택했다. 협상력은 지켰지만 수입은 불안하다."
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "id": "miracle",
+        "title": "모기업 없는 기적",
+        "kind": "success",
+        "cond": "story.profits >= 3 && story.postseasons >= 1",
+        "effects": [
+          {
+            "type": "FAN_TARGET",
+            "value": 3,
+            "weeks": 52
+          },
+          {
+            "type": "RECUR",
+            "grade": "small",
+            "weeks": 26,
+            "income": true
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 6
+          }
+        ],
+        "epilogue": "세 시즌 연속 흑자, 그리고 가을. 통장에는 이제 숫자가 아니라 이름이 쌓였다. 정민규 상무: \"다음 계약은 저희가 먼저 연락드리겠습니다.\"",
+        "next": "독립의 다음 장"
+      },
+      {
+        "id": "longWinter",
+        "title": "긴 겨울",
+        "kind": "fail",
+        "cond": "club.cashEok < 0",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": -4
+          },
+          {
+            "type": "PRESS",
+            "value": -4
+          }
+        ],
+        "epilogue": "통장이 바닥을 보였다. 명명권 스폰서는 교체를 이야기하기 시작했다. 강유진: \"다시 버티면 됩니다. 다만 이번엔 더 아끼면서요.\"",
+        "next": "다시 버티기"
+      },
+      {
+        "id": "survive",
+        "title": "버티는 구단",
+        "kind": "neutral",
+        "cond": "1",
+        "effects": [
+          {
+            "type": "PRESS",
+            "value": 2
+          }
+        ],
+        "epilogue": "파산 없이 세 시즌을 건넜다. 화려하진 않아도 모기업 없는 구단은 아직 서 있다.",
+        "next": "팔 것인가, 지킬 것인가"
+      }
+    ]
+  },
+  {
+    "clubId": 4,
+    "arc": "SAI",
+    "title": "새 깃발의 항해",
+    "task": "평균 연령을 낮추면서 가을야구에 닿기. 회장의 쇼맨십과 균형 잡기",
+    "synopsis": "새 모기업은 화려함을 원하고, 우승 세대는 늙었다. 보여주기와 다시 만들기 사이에서 키를 잡는 이야기다.",
+    "transition": [
+      {
+        "branch": "A",
+        "cond": "1",
+        "text": "첫 시즌이 끝났다. 2막 「선장의 교대」: 신예는 얼굴 마담으로 불려 나오고, 우승 세대의 마지막 장이 닫힌다."
+      }
+    ],
+    "chapters": [
+      {
+        "id": "SAI-1-1",
+        "act": 1,
+        "title": "회장의 장바구니",
+        "phase": "season",
+        "season": 1,
+        "from": "02-01",
+        "to": "02-21",
+        "role": "club",
+        "default": "middle",
+        "ai": {
+          "contend": "star",
+          "middle": "middle",
+          "rebuild": "rebuild",
+          "austerity": "rebuild"
+        },
+        "texts": [
+          "정우빈 회장: \"남은 FA 중 제일 비싼 선수 데려옵시다. 사람들이 우리 얘기 하게.\" 이수현 단장: \"평균 연령이 리그 최고입니다. 지금은 사는 게 아니라 키울 때입니다.\"",
+          "캠프 첫 주, 회장이 직접 구단주실로 왔다. \"최대어가 아직 미계약이라면서요. 그 선수 얼굴로 광고를 찍고 싶습니다.\" 단장은 어쩔 줄 몰라 한다."
+        ],
+        "choices": [
+          {
+            "id": "star",
+            "label": "최대어 FA 영입을 추진한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 10
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 4
+              }
+            ],
+            "flags": {
+              "starSigned": 1
+            },
+            "link": "market",
+            "text": "회장의 뜻대로 최대어를 노린다. 조건은 [계약·이적]에서 정한다. 평균 연령은 더 오른다."
+          },
+          {
+            "id": "rebuild",
+            "label": "리빌딩안을 회장에게 설득한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -3
+              }
+            ],
+            "outcomes": [
+              {
+                "p": 0.5,
+                "hint": "회장 수용",
+                "effects": [
+                  {
+                    "type": "CHAIRMAN",
+                    "value": 8
+                  },
+                  {
+                    "type": "GROWTH",
+                    "value": 1.08,
+                    "who": "club"
+                  }
+                ],
+                "text": "정우빈 회장이 고개를 끄덕였다. \"좋습니다, 키우는 것도 이야기가 되겠군요.\""
+              },
+              {
+                "p": 0.5,
+                "hint": "회장 불쾌",
+                "effects": [
+                  {
+                    "type": "CHAIRMAN",
+                    "value": -5
+                  }
+                ],
+                "text": "회장이 불쾌한 기색을 감추지 않았다. \"이야기가 안 되는데요.\""
+              }
+            ],
+            "flags": {
+              "rebuildPitch": 1
+            },
+            "text": "회장 앞에서 리빌딩안을 설명했다."
+          },
+          {
+            "id": "middle",
+            "label": "중급 FA 1명과 유망주 보호로 절충한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 0
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              }
+            ],
+            "flags": {
+              "middleWay": 1
+            },
+            "link": "market",
+            "text": "중급 FA 한 명을 알아보되 유망주는 지키기로 했다. 계약은 [계약·이적]에서 정한다."
+          }
+        ]
+      },
+      {
+        "id": "SAI-1-2",
+        "act": 1,
+        "title": "마지막 시즌을 원한다",
+        "phase": "season",
+        "season": 1,
+        "from": "03-01",
+        "to": "04-18",
+        "role": "veteran",
+        "default": "tour",
+        "ai": {
+          "contend": "starter",
+          "middle": "tour",
+          "rebuild": "tour",
+          "austerity": "bench"
+        },
+        "texts": [
+          "우승 세대의 마지막 선수 {player}가 말했다. \"주전으로 한 시즌만 더. 그러고 그만두겠습니다.\" 신예 외야수가 그 옆에서 방망이를 갈고 있다.",
+          "38세 {player}가 구단주실을 찾았다. \"마지막 시즌은 라인업에 이름이 있었으면 합니다.\" {manager} 감독은 어느 쪽도 편들지 않았다."
+        ],
+        "choices": [
+          {
+            "id": "starter",
+            "label": "주전을 보장한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 15
+              },
+              {
+                "type": "TRUST",
+                "value": -2
+              },
+              {
+                "type": "MOOD",
+                "value": -5,
+                "role": "youngOF"
+              }
+            ],
+            "flags": {
+              "vetStarter": 1
+            },
+            "text": "마지막 시즌 주전 자리를 약속했다. 신예의 기회는 줄어든다."
+          },
+          {
+            "id": "tour",
+            "label": "은퇴 투어로 꾸미고 신예에게 길을 연다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 5
+              },
+              {
+                "type": "DEMAND",
+                "value": 1.06,
+                "weeks": 26
+              },
+              {
+                "type": "MERCH",
+                "value": 1.1,
+                "weeks": 26
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.1,
+                "role": "youngOF"
+              }
+            ],
+            "flags": {
+              "vetTour": 1
+            },
+            "text": "은퇴 투어를 열기로 했다. 기용은 감독이 정하되 신예를 키우는 방향으로 권했다."
+          },
+          {
+            "id": "bench",
+            "label": "백업 역할을 맡긴다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": -15
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.08,
+                "role": "youngOF"
+              }
+            ],
+            "outcomes": [
+              {
+                "p": 0.35,
+                "hint": "공개 불만",
+                "effects": [
+                  {
+                    "type": "PRESS",
+                    "value": -4
+                  },
+                  {
+                    "type": "CLUBHOUSE",
+                    "value": -3
+                  }
+                ],
+                "text": "{player}가 인터뷰에서 서운함을 드러냈다."
+              }
+            ],
+            "flags": {
+              "vetBench": 1
+            },
+            "text": "베테랑에게 백업을 권했다. 신예에게 기회가 열린다."
+          }
+        ]
+      },
+      {
+        "id": "SAI-1-3",
+        "act": 1,
+        "title": "매장 속 야구장",
+        "phase": "season",
+        "season": 1,
+        "from": "05-03",
+        "to": "06-27",
+        "role": "club",
+        "default": "accept",
+        "ai": {
+          "contend": "accept",
+          "middle": "accept",
+          "rebuild": "accept",
+          "austerity": "accept"
+        },
+        "texts": [
+          "정우빈 회장: \"우리 매장 천 곳에서 구단 굿즈를 파는 겁니다. 야구장이 매장 안에 들어오는 거지요.\" 마케팅 팀은 반신반의한다.",
+          "모기업 유통 매장과의 협업 굿즈 제안이 도착했다. 구단 브랜드를 지킬 것인가, 매장을 타고 나갈 것인가."
+        ],
+        "choices": [
+          {
+            "id": "accept",
+            "label": "협업 굿즈를 수락한다",
+            "effects": [
+              {
+                "type": "MERCH",
+                "value": 1.15,
+                "weeks": 16
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "text": "유통 매장과 손잡았다. 굿즈 판매가 크게 오른다."
+          },
+          {
+            "id": "solo",
+            "label": "구단 브랜드 단독 판매를 유지한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -3
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "text": "브랜드를 지키기로 했다. 회장은 아쉬워했다."
+          }
+        ]
+      },
+      {
+        "id": "SAI-2-1",
+        "act": 2,
+        "branch": "A",
+        "title": "신인왕 후보와 대형 광고",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "youngOF",
+        "default": "decline",
+        "ai": {
+          "contend": "accept",
+          "middle": "decline",
+          "rebuild": "decline",
+          "austerity": "accept"
+        },
+        "texts": [
+          "신예 {player}가 신인왕 후보로 거론된다. 정우빈 회장: \"이 친구 얼굴로 대형 광고를 하나 터뜨립시다.\" 이수현 단장은 선수의 어깨를 걱정한다.",
+          "{player}의 이름이 전광판마다 걸렸다. 회장이 광고안을 들고 왔다. \"지금이 가장 비쌉니다.\" 선수는 아무 말이 없다."
+        ],
+        "choices": [
+          {
+            "id": "accept",
+            "label": "광고 계획을 수락한다",
+            "effects": [
+              {
+                "type": "MERCH",
+                "value": 1.12,
+                "weeks": 20
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              }
+            ],
+            "outcomes": [
+              {
+                "p": 0.35,
+                "hint": "피로와 부담",
+                "effects": [
+                  {
+                    "type": "MOOD",
+                    "value": -8
+                  },
+                  {
+                    "type": "COND",
+                    "value": -2,
+                    "weeks": 4
+                  }
+                ],
+                "text": "{player}는 촬영 일정에 지쳐 컨디션을 잃었다."
+              }
+            ],
+            "text": "광고 계획을 받아들였다. 굿즈는 오르지만 선수의 부담이 커진다."
+          },
+          {
+            "id": "decline",
+            "label": "거절하고 훈련에 집중시킨다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -5
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.08
+              },
+              {
+                "type": "MOOD",
+                "value": 5
+              }
+            ],
+            "text": "광고를 거절했다. 회장은 입맛을 다셨지만 선수는 고마워했다."
+          }
+        ]
+      },
+      {
+        "id": "SAI-2-2",
+        "act": 2,
+        "branch": "A",
+        "title": "코치 제안",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          3,
+          4
+        ],
+        "role": "veteran",
+        "cond": "story.flag.vetTour == 1 || story.flag.vetStarter == 1",
+        "default": "coach",
+        "ai": {
+          "contend": "honorary",
+          "middle": "coach",
+          "rebuild": "coach",
+          "austerity": "honorary"
+        },
+        "texts": [
+          "{player}가 시즌을 마치고 말했다. \"유니폼은 벗지만 야구를 떠나고 싶진 않습니다.\" 이수현 단장이 코치직 가능성을 흘렸다.",
+          "은퇴를 앞둔 {player}에게 코치 제안을 할지 정해야 한다. 신예들은 벌써 그를 따른다."
+        ],
+        "choices": [
+          {
+            "id": "coach",
+            "label": "코치로 위촉한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.1,
+                "role": "youngOF"
+              },
+              {
+                "type": "MOOD",
+                "value": 10
+              }
+            ],
+            "flags": {
+              "coachKept": 1
+            },
+            "text": "베테랑을 코치로 모시기로 했다. 신예에게 가르칠 경험이 남는다."
+          },
+          {
+            "id": "honorary",
+            "label": "명예직으로 예우한다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": 3
+              },
+              {
+                "type": "MOOD",
+                "value": 3
+              }
+            ],
+            "text": "명예직으로 예우했다. 현장은 새 얼굴로 채운다."
+          }
+        ]
+      },
+      {
+        "id": "SAI-2-3",
+        "act": 2,
+        "title": "회장의 쇼",
+        "phase": "season",
+        "season": 2,
+        "from": "05-03",
+        "to": "06-27",
+        "role": "club",
+        "default": "decline",
+        "ai": {
+          "contend": "show",
+          "middle": "decline",
+          "rebuild": "decline",
+          "austerity": "decline"
+        },
+        "texts": [
+          "정우빈 회장: \"유니폼 쇼 한번 합시다. 인천 앞바다에서 선수들이 입장하는 겁니다.\" 이수현 단장: \"좋은 이벤트지만 비용이 만만치 않습니다.\"",
+          "회장이 직접 짠 이벤트 기획서가 책상 위에 올라왔다. 제목은 '인천 대항해'. 선수단은 어리둥절하다."
+        ],
+        "choices": [
+          {
+            "id": "show",
+            "label": "이벤트를 연다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium"
+              },
+              {
+                "type": "DEMAND",
+                "value": 1.08,
+                "weeks": 8
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              }
+            ],
+            "text": "대규모 이벤트를 열었다. 관중이 오르고 회장은 흡족했다."
+          },
+          {
+            "id": "decline",
+            "label": "규모를 줄여 정중히 사양한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -3
+              },
+              {
+                "type": "TRUST",
+                "value": 2
+              }
+            ],
+            "text": "이벤트를 간소화했다. 현장은 안도했고 회장은 서운해했다."
+          }
+        ]
+      },
+      {
+        "id": "SAI-2-4",
+        "act": 2,
+        "title": "젊은 선장들",
+        "phase": "stove",
+        "offseason": 2,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "club",
+        "default": "young",
+        "ai": {
+          "contend": "veterans",
+          "middle": "young",
+          "rebuild": "young",
+          "austerity": "young"
+        },
+        "texts": [
+          "이수현 단장: \"평균 연령이 내려가고 있습니다. 이 방향을 유지할지, 우승 세대를 다시 불러올지 정해야 합니다.\"",
+          "정우빈 회장: \"이게 우리 얘기가 되려면 젊어져야 합니까, 이겨야 합니까?\" 단장은 두 가지 모두라고 답했다."
+        ],
+        "choices": [
+          {
+            "id": "young",
+            "label": "젊은 선수 중심으로 간다",
+            "effects": [
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 1
+              }
+            ],
+            "link": "market",
+            "text": "젊은 선수 중심으로 방향을 굳혔다. 보강은 [계약·이적]에서 한다."
+          },
+          {
+            "id": "veterans",
+            "label": "경험 있는 선수를 보강한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              },
+              {
+                "type": "CLUBHOUSE",
+                "value": 2
+              }
+            ],
+            "link": "market",
+            "text": "즉시 전력을 알아보기로 했다. 평균 연령은 다시 오른다."
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "id": "captainReturn",
+        "title": "선장의 귀환",
+        "kind": "variant",
+        "cond": "story.flag.coachKept == 1 && cast.youngOF.starter == 1 && story.ageDrop > 0 && story.lastPs == 1",
+        "effects": [
+          {
+            "type": "GROWTH",
+            "value": 1.08,
+            "who": "club"
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 6
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": 8
+          }
+        ],
+        "epilogue": "코치석에서 지켜보던 우승 세대의 마지막 선수가 신예의 어깨를 두드렸다. 정우빈 회장: \"이게 우리 얘기였군요.\"",
+        "next": "새 항로의 선장"
+      },
+      {
+        "id": "newRoute",
+        "title": "새 항로",
+        "kind": "success",
+        "cond": "story.ageDrop > 0 && story.lastPs == 1",
+        "effects": [
+          {
+            "type": "GROWTH",
+            "value": 1.05,
+            "who": "club"
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 5
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": 8
+          }
+        ],
+        "epilogue": "젊은 선수들이 가을 무대에 서자 인천 하늘이 붉게 물들었다. 회장: \"이게 우리 얘기였군요.\"",
+        "next": "새 항로의 선장"
+      },
+      {
+        "id": "aground",
+        "title": "좌초",
+        "kind": "fail",
+        "cond": "story.lowSeasons >= 3",
+        "effects": [
+          {
+            "type": "CHAIRMAN",
+            "value": -10
+          },
+          {
+            "type": "FAN_NOW",
+            "value": -5
+          }
+        ],
+        "epilogue": "세 시즌 내내 순위표 아래였다. 모기업의 지원 재협상은 불리하게 돌아갈 것이다.",
+        "next": "다시 항해"
+      },
+      {
+        "id": "calm",
+        "title": "잔잔한 바다",
+        "kind": "neutral",
+        "cond": "1",
+        "effects": [
+          {
+            "type": "PRESS",
+            "value": 2
+          }
+        ],
+        "epilogue": "깃발은 올랐지만 아직 순풍은 아니다. 인천항의 항해는 계속된다.",
+        "next": "새 깃발의 항해"
+      }
+    ]
+  },
+  {
+    "clubId": 6,
+    "arc": "FAL",
+    "title": "신구장의 약속",
+    "task": "신구장 효과가 식기 전에 팀을 완성하기. 3인방을 키워 가을야구로",
+    "synopsis": "긴 암흑기에도 자리를 지킨 팬들에게 새 구장이 생겼다. 구장은 새것인데 팀은 아직 아니다. 새 구장의 약속을 지키는 데 주어진 시간은 길지 않다.",
+    "transition": [
+      {
+        "branch": "A",
+        "cond": "1",
+        "text": "첫 시즌이 끝났다. 2막 「버티는 시간」: 신구장 효과는 식어 가고, 모기업 계열사가 새로운 제안을 들고 온다."
+      }
+    ],
+    "chapters": [
+      {
+        "id": "FAL-1-1",
+        "act": 1,
+        "title": "새 구장 첫 겨울",
+        "phase": "season",
+        "season": 1,
+        "from": "02-01",
+        "to": "02-21",
+        "role": "club",
+        "default": "mix",
+        "ai": {
+          "contend": "big",
+          "middle": "mix",
+          "rebuild": "youth",
+          "austerity": "youth"
+        },
+        "texts": [
+          "김선우 회장: \"구장은 지어 드렸습니다. 이제 팀을 지어 주세요.\" 하윤재 단장: \"3인방이 2~3년이면 터집니다. 그때까지 버틸지, 지금 살지입니다.\"",
+          "캠프 첫날, 새 구장의 조명이 아직 눈부시다. 하윤재 단장이 선택지를 펼쳤다. \"당장 이기는 팀을 만들든가, 3인방을 기다리든가. 양쪽 다는 어렵습니다.\""
+        ],
+        "choices": [
+          {
+            "id": "big",
+            "label": "대형 FA 영입에 승부를 건다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 3
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              },
+              {
+                "type": "MOOD",
+                "value": -5,
+                "role": "prospect"
+              }
+            ],
+            "flags": {
+              "winNow": 1
+            },
+            "link": "market",
+            "text": "즉시 전력에 승부를 걸었다. 영입은 [계약·이적]에서 정한다. 유망주들의 출전 기회는 줄어든다."
+          },
+          {
+            "id": "youth",
+            "label": "유망주 3인방을 우선한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -3
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.1,
+                "role": "prospect"
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.1,
+                "role": "prospect2"
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.1,
+                "role": "prospect3"
+              }
+            ],
+            "flags": {
+              "youthFirst": 1
+            },
+            "text": "3인방에게 힘을 실었다. 팬들은 새 구장에서 이기는 팀을 기대했기에 아쉬워했다."
+          },
+          {
+            "id": "mix",
+            "label": "FA 1명과 유망주 육성을 병행한다",
+            "effects": [
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "role": "prospect"
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 2
+              }
+            ],
+            "flags": {
+              "mixPlan": 1
+            },
+            "link": "market",
+            "text": "FA 한 명을 알아보며 유망주도 키운다. 계약은 [계약·이적]에서 정한다."
+          }
+        ]
+      },
+      {
+        "id": "FAL-1-2",
+        "act": 1,
+        "title": "매진의 유통기한",
+        "phase": "season",
+        "season": 1,
+        "from": "03-08",
+        "to": "04-30",
+        "role": "club",
+        "default": "baseball",
+        "ai": {
+          "contend": "baseball",
+          "middle": "baseball",
+          "rebuild": "baseball",
+          "austerity": "ride"
+        },
+        "texts": [
+          "팬클럽 '새벽까지' 대표: \"구장 보러 오는 건 올해까지입니다. 내년부턴 야구 보러 와야죠.\" 신구장 효과로 오른 관중이 해마다 줄어들 것이다.",
+          "개막 주말 매진이 이어진다. 마케팅 팀: \"오늘 온 사람 중 절반은 구장이 보고 싶어서 온 겁니다. 야구가 재밌어야 다시 옵니다.\""
+        ],
+        "choices": [
+          {
+            "id": "baseball",
+            "label": "야구 중심 마케팅에 투자한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium"
+              },
+              {
+                "type": "DEMAND",
+                "value": 1.08,
+                "weeks": 26
+              },
+              {
+                "type": "FAN_TARGET",
+                "value": 2,
+                "weeks": 26
+              }
+            ],
+            "text": "관람객을 팬으로 바꾸는 마케팅에 투자했다. 구장 효과가 줄어도 수요가 남는다."
+          },
+          {
+            "id": "ride",
+            "label": "구장 관광 이벤트를 이어 간다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              },
+              {
+                "type": "DEMAND",
+                "value": 1.12,
+                "weeks": 8
+              },
+              {
+                "type": "FAN_NOW",
+                "value": -1
+              }
+            ],
+            "text": "구장 투어 중심 이벤트를 이어 가기로 했다. 당장은 좋지만 지속성이 약하다."
+          }
+        ]
+      },
+      {
+        "id": "FAL-1-3",
+        "act": 1,
+        "title": "셋이 함께",
+        "phase": "season",
+        "season": 1,
+        "from": "05-03",
+        "to": "06-27",
+        "role": "club",
+        "cond": "cast.prospect == 1 && cast.prospect2 == 1 && cast.prospect3 == 1",
+        "default": "gradual",
+        "ai": {
+          "contend": "gradual",
+          "middle": "gradual",
+          "rebuild": "trio",
+          "austerity": "gradual"
+        },
+        "texts": [
+          "{manager} 감독: \"셋을 같은 날 올려 보고 싶습니다. 팬들한테 보여 주고 싶어서요.\" 하윤재 단장은 준비 상태를 다시 확인한다.",
+          "파이어볼러, 포수, 외야수. 2군에서 올라올 3인방이 모두 기준을 넘었다. 감독이 말했다. \"이 셋의 이름이 한꺼번에 불리는 날, 새 구장이 완성됩니다.\""
+        ],
+        "choices": [
+          {
+            "id": "trio",
+            "label": "3인방 동반 데뷔 이벤트를 연다",
+            "effects": [
+              {
+                "type": "DEMAND",
+                "value": 1.1,
+                "weeks": 4
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 4
+              },
+              {
+                "type": "MOOD",
+                "value": 5,
+                "role": "prospect"
+              }
+            ],
+            "outcomes": [
+              {
+                "p": 0.35,
+                "hint": "부담",
+                "effects": [
+                  {
+                    "type": "MOOD",
+                    "value": -6,
+                    "role": "prospect2"
+                  },
+                  {
+                    "type": "MOOD",
+                    "value": -6,
+                    "role": "prospect3"
+                  }
+                ],
+                "text": "화려한 조명에 어린 선수들이 얼어붙었다. 어린 선수들은 이날을 오래 기억할 것이다."
+              }
+            ],
+            "flags": {
+              "trioDebut": 1
+            },
+            "text": "3인방의 동반 데뷔 이벤트를 열기로 했다. 1군 엔트리는 감독이 정한다."
+          },
+          {
+            "id": "gradual",
+            "label": "순차 콜업으로 한 명씩 적응시킨다",
+            "effects": [
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              },
+              {
+                "type": "TRUST",
+                "value": 2
+              }
+            ],
+            "text": "한 명씩 적응시키기로 했다. 서두르지 않는다."
+          }
+        ]
+      },
+      {
+        "id": "FAL-2-1",
+        "act": 2,
+        "branch": "A",
+        "title": "계열사 묶음 제안",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "club",
+        "default": "bundle",
+        "ai": {
+          "contend": "bundle",
+          "middle": "bundle",
+          "rebuild": "bundle",
+          "austerity": "bundle"
+        },
+        "texts": [
+          "김선우 회장: \"화학, 방산, 금융 계열사가 야구단에 스폰서를 묶어서 내겠다고 합니다.\" 하윤재 단장: \"수입은 오르지만 다른 업종 슬롯이 막힙니다.\"",
+          "모기업 계열사의 스폰서 패키지 제안이 올라왔다. 단장은 서류를 한참 들여다봤다. \"안정적입니다. 다만 선택지는 줄어듭니다.\""
+        ],
+        "choices": [
+          {
+            "id": "bundle",
+            "label": "계열사 묶음 스폰서를 받아들인다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium",
+                "income": true
+              },
+              {
+                "type": "RECUR",
+                "grade": "small",
+                "weeks": 26,
+                "income": true
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              }
+            ],
+            "text": "계열사와 스폰서를 묶었다. 수입이 안정됐다."
+          },
+          {
+            "id": "open",
+            "label": "업종별 개별 스폰서를 유지한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -3
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "text": "개별 스폰서 구조를 지켰다. 회장은 서운해했지만 자율성은 남았다."
+          }
+        ]
+      },
+      {
+        "id": "FAL-2-2",
+        "act": 2,
+        "title": "버티는 시간",
+        "phase": "season",
+        "season": 2,
+        "from": "04-05",
+        "to": "06-28",
+        "role": "prospect",
+        "default": "wait",
+        "ai": {
+          "contend": "wait",
+          "middle": "wait",
+          "rebuild": "wait",
+          "austerity": "reset"
+        },
+        "texts": [
+          "{player}이 부진에 빠졌다. 팬클럽 대표가 조용히 찾아왔다. \"우리는 20년 넘게 기다렸습니다. 한 시즌 더 기다리지요.\"",
+          "{player}의 방어율이 치솟는다. {manager} 감독: \"믿고 맡기든가, 잠시 2군에서 정리하든가. 구단주님 뜻을 따르겠습니다.\""
+        ],
+        "choices": [
+          {
+            "id": "wait",
+            "label": "믿고 기다린다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 8
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 1
+              }
+            ],
+            "text": "믿고 기다리기로 했다. 팬들도 인내심을 보였다."
+          },
+          {
+            "id": "reset",
+            "label": "2군에서 재조정시킨다",
+            "effects": [
+              {
+                "type": "GROWTH",
+                "value": 1.1
+              },
+              {
+                "type": "MOOD",
+                "value": -5
+              }
+            ],
+            "text": "2군으로 내려 재조정하기로 했다. 1군 명단은 [선수단]에서 정한다."
+          }
+        ]
+      },
+      {
+        "id": "FAL-2-3",
+        "act": 2,
+        "title": "긴 밤의 약속",
+        "phase": "season",
+        "season": 3,
+        "from": "05-03",
+        "to": "07-26",
+        "role": "club",
+        "default": "roadmap",
+        "ai": {
+          "contend": "roadmap",
+          "middle": "roadmap",
+          "rebuild": "result",
+          "austerity": "result"
+        },
+        "texts": [
+          "김선우 회장: \"새 구장의 약속은 3년이라고 했습니다. 올해가 마지막 해입니다.\" 팬클럽 대표가 응원 현수막을 걸고 있다. '이제 자러 가고 싶다'.",
+          "3시즌째 여름. 새 구장의 조명은 여전히 밝다. 하윤재 단장이 말했다. \"올해는 팬들에게 약속의 끝이 어디인지 말씀드려야 합니다.\""
+        ],
+        "choices": [
+          {
+            "id": "roadmap",
+            "label": "공식 로드맵을 발표한다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": 4
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 2
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 2
+              }
+            ],
+            "text": "앞으로의 계획을 공식으로 밝혔다. 팬들이 기록해 둔다."
+          },
+          {
+            "id": "result",
+            "label": "성적으로 보여 주겠다고 한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 5,
+                "who": "club"
+              },
+              {
+                "type": "PRESS",
+                "value": -1
+              }
+            ],
+            "text": "말 대신 성적으로 답하기로 했다. 선수단이 마음을 다잡았다."
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "id": "threeWings",
+        "title": "세 개의 날개",
+        "kind": "variant",
+        "cond": "cast.prospect.starter == 1 && cast.prospect2.starter == 1 && cast.prospect3.starter == 1 && story.postseasons >= 1",
+        "effects": [
+          {
+            "type": "FAN_TARGET",
+            "value": 3,
+            "weeks": 52
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 8
+          },
+          {
+            "type": "GROWTH",
+            "value": 1.08,
+            "who": "club"
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": 8
+          }
+        ],
+        "epilogue": "마운드와 홈플레이트와 외야에서 셋의 이름이 동시에 호명됐다. '새벽까지' 대표는 눈물을 닦으며 말했다. \"오늘 같은 날을 기다렸습니다.\"",
+        "next": "날아오르는 팰컨스"
+      },
+      {
+        "id": "endOfNight",
+        "title": "긴 밤의 끝",
+        "kind": "success",
+        "cond": "story.postseasons >= 1",
+        "effects": [
+          {
+            "type": "FAN_TARGET",
+            "value": 3,
+            "weeks": 52
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 6
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": 5
+          }
+        ],
+        "epilogue": "팬클럽 '새벽까지' 대표: \"이제 자러 가도 되겠습니다.\" 가을이 대전에 돌아왔다.",
+        "next": "날아오르는 팰컨스"
+      },
+      {
+        "id": "stillCheer",
+        "title": "그래도 응원한다",
+        "kind": "fail",
+        "cond": "story.lowStreak >= 2",
+        "effects": [
+          {
+            "type": "CHAIRMAN",
+            "value": -8
+          },
+          {
+            "type": "FAN_NOW",
+            "value": -2
+          }
+        ],
+        "epilogue": "순위는 여전히 아래다. 팬은 남아 있지만 회장은 입을 다물었다.",
+        "next": "다시 새벽까지"
+      },
+      {
+        "id": "dawnWaits",
+        "title": "새벽을 기다리며",
+        "kind": "neutral",
+        "cond": "1",
+        "effects": [
+          {
+            "type": "PRESS",
+            "value": 2
+          }
+        ],
+        "epilogue": "가을은 오지 않았지만 구장의 불은 켜져 있다. 대전의 약속은 아직 끝나지 않았다.",
+        "next": "신구장의 약속"
+      }
+    ]
+  },
+  {
+    "clubId": 8,
+    "arc": "PAN",
+    "title": "불패 신화",
+    "task": "한국시리즈에 오르면 지지 않는 신화를 지키거나 다시 쓰기",
+    "synopsis": "한국시리즈에 오르면 진 적이 없는 구단. 문제는 그 신화가 선수들에게 날개가 될지 짐이 될지다.",
+    "transition": [
+      {
+        "branch": "A",
+        "cond": "story.lastKs == 1",
+        "text": "신화가 이어졌다. 2막 「별이 떠날 때」: 전국구 스타가 더 큰 무대를 바라본다."
+      },
+      {
+        "branch": "B",
+        "cond": "1",
+        "text": "이번에는 한국시리즈에 닿지 못했다. 2막 「기다리는 신화」: 레전드의 귀환을 바라는 여론이 일어난다."
+      }
+    ],
+    "chapters": [
+      {
+        "id": "PAN-1-1",
+        "act": 1,
+        "title": "마지막 퍼즐",
+        "phase": "season",
+        "season": 1,
+        "from": "02-01",
+        "to": "02-21",
+        "role": "club",
+        "default": "foreign",
+        "ai": {
+          "contend": "lefty",
+          "middle": "foreign",
+          "rebuild": "hold",
+          "austerity": "hold"
+        },
+        "texts": [
+          "팬 커뮤니티 1면: \"선발 한 명. 딱 한 명만.\" 남궁선 단장: \"좌완 FA가 아직 미계약입니다. 몸값이 셉니다.\"",
+          "캠프 첫날, 광주 팬들은 구장 앞에 모여 현수막을 걸었다. 남궁선 단장: \"마지막 퍼즐은 선발입니다. FA 좌완이 시장에 남아 있고, 외국인 자리를 바꾸는 방법도 있습니다.\""
+        ],
+        "choices": [
+          {
+            "id": "lefty",
+            "label": "FA 좌완 영입을 추진한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 4
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "link": "market",
+            "text": "좌완 FA를 노린다. 조건은 [계약·이적]에서 정한다."
+          },
+          {
+            "id": "foreign",
+            "label": "외국인 선발 교체로 대응한다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": 2
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 1
+              }
+            ],
+            "link": "market",
+            "text": "외국인 선발 자리를 정비한다. 계약은 [계약·이적]에서 정한다."
+          },
+          {
+            "id": "hold",
+            "label": "현 전력으로 시작한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -3
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              }
+            ],
+            "text": "추가 영입 없이 현 전력을 믿기로 했다. 팬 커뮤니티는 실망했다."
+          }
+        ]
+      },
+      {
+        "id": "PAN-1-2",
+        "act": 1,
+        "title": "전국구 원정",
+        "phase": "season",
+        "season": 1,
+        "from": "03-08",
+        "to": "04-30",
+        "role": "club",
+        "default": "support",
+        "ai": {
+          "contend": "support",
+          "middle": "support",
+          "rebuild": "none",
+          "austerity": "none"
+        },
+        "texts": [
+          "원정 구장 3루 관중석이 빨갛게 물든다. 원정 응원단장이 지원을 요청했다. \"응원가 앰프 하나만 사 주세요.\"",
+          "광주 팬들은 어디에 가든 원정석을 점령한다. 원정 응원단장이 구단주실을 찾았다. \"버스 대절 지원이 어렵습니다.\""
+        ],
+        "choices": [
+          {
+            "id": "support",
+            "label": "원정 응원을 지원한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              },
+              {
+                "type": "MERCH",
+                "value": 1.1,
+                "weeks": 8
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 2
+              }
+            ],
+            "text": "원정 응원을 지원했다. 원정 구장에서 굿즈 판매가 오른다."
+          },
+          {
+            "id": "none",
+            "label": "지원하지 않는다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -1
+              }
+            ],
+            "text": "원정 지원은 보류했다. 팬들은 알아서 움직인다."
+          }
+        ]
+      },
+      {
+        "id": "PAN-1-3",
+        "act": 1,
+        "title": "전국구 스타의 하루",
+        "phase": "season",
+        "season": 1,
+        "from": "06-01",
+        "to": "07-26",
+        "role": "star",
+        "default": "rest",
+        "ai": {
+          "contend": "rest",
+          "middle": "rest",
+          "rebuild": "ad",
+          "austerity": "ad"
+        },
+        "texts": [
+          "광고 대행사에서 연락이 왔다. {player}의 얼굴을 쓰고 싶다는 것이다. {manager} 감독은 한마디 했다. \"선수는 카메라 앞보다 타석에 서 있어야 합니다.\"",
+          "{player}는 전국구 스타다. 어디서든 사인 요청이 쏟아진다. 남궁선 단장: \"지금 이 인기를 활용하지 않으면 아깝고, 활용하면 지칩니다.\""
+        ],
+        "choices": [
+          {
+            "id": "ad",
+            "label": "광고와 행사 출연을 허락한다",
+            "effects": [
+              {
+                "type": "MERCH",
+                "value": 1.12,
+                "weeks": 12
+              },
+              {
+                "type": "COND",
+                "value": -2,
+                "weeks": 3
+              },
+              {
+                "type": "MOOD",
+                "value": 3
+              }
+            ],
+            "text": "광고 출연을 허락했다. 굿즈 판매가 오르지만 컨디션이 흔들릴 수 있다."
+          },
+          {
+            "id": "rest",
+            "label": "휴식과 훈련을 우선시킨다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 5
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05
+              }
+            ],
+            "text": "광고는 줄이고 훈련에 집중시켰다."
+          }
+        ]
+      },
+      {
+        "id": "PAN-1-4",
+        "act": 1,
+        "title": "신화의 무게",
+        "phase": "season",
+        "season": 1,
+        "from": "09-20",
+        "to": "10-31",
+        "role": "club",
+        "cond": "story.inKs == 1",
+        "default": "quiet",
+        "ai": {
+          "contend": "myth",
+          "middle": "quiet",
+          "rebuild": "quiet",
+          "austerity": "quiet"
+        },
+        "texts": [
+          "박상철 해설위원: \"팬서스는 한국시리즈에서 지지 않습니다. 그게 이 팀입니다.\" 마케팅 팀은 이 말을 포스터에 쓰고 싶어 한다.",
+          "한국시리즈가 시작된다. 신문마다 '불패 신화'라는 제목이 붙었다. 선수들이 그 활자를 어떻게 읽을지는 아무도 모른다."
+        ],
+        "choices": [
+          {
+            "id": "myth",
+            "label": "신화를 앞세워 홍보한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 5
+              },
+              {
+                "type": "DEMAND",
+                "value": 1.08,
+                "weeks": 4
+              }
+            ],
+            "flags": {
+              "mythPush": 1
+            },
+            "text": "신화를 전면에 내세웠다. 관중이 늘지만 패배하면 충격도 두 배가 될 것이다."
+          },
+          {
+            "id": "quiet",
+            "label": "신화 언급을 자제한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 3,
+                "who": "club"
+              }
+            ],
+            "text": "신화 언급을 줄이기로 했다. 선수들이 한결 편안해 보인다."
+          }
+        ]
+      },
+      {
+        "id": "PAN-2A-1",
+        "act": 2,
+        "branch": "A",
+        "title": "별이 떠날 때",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "star",
+        "default": "defer",
+        "ai": {
+          "contend": "defer",
+          "middle": "defer",
+          "rebuild": "allow",
+          "austerity": "allow"
+        },
+        "texts": [
+          "{player}가 구단주실에서 조심스럽게 입을 열었다. \"한 번은 더 큰 데서 해보고 싶습니다. 광주가 싫어서가 아닙니다.\"",
+          "포스팅 자격이 갖춰졌다. {player}의 에이전트가 이적 일정을 제시했다. 남궁선 단장: \"결정은 구단주님 몫입니다. 팬들은 어떤 쪽이든 서운해할 겁니다.\""
+        ],
+        "choices": [
+          {
+            "id": "allow",
+            "label": "포스팅을 허락한다",
+            "effects": [
+              {
+                "type": "CONTRACT",
+                "kind": "posting"
+              },
+              {
+                "type": "FAN_NOW",
+                "value": -2
+              },
+              {
+                "type": "PRESS",
+                "value": 3
+              }
+            ],
+            "flags": {
+              "posted": 1
+            },
+            "text": "포스팅을 허락했다. 이적료가 들어오고 고별 행사가 열린다."
+          },
+          {
+            "id": "defer",
+            "label": "1년 뒤를 약속한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": -10
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05
+              }
+            ],
+            "flags": {
+              "deferPost": 1
+            },
+            "text": "1년 뒤 다시 이야기하기로 했다. 선수는 서운해했지만 약속은 지켜질 것이다."
+          },
+          {
+            "id": "deny",
+            "label": "불허한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": -20
+              },
+              {
+                "type": "FAN_NOW",
+                "value": -4
+              }
+            ],
+            "text": "포스팅을 불허했다. 선수는 입을 닫았다."
+          }
+        ]
+      },
+      {
+        "id": "PAN-2A-2",
+        "act": 2,
+        "branch": "A",
+        "title": "별 하나로는",
+        "phase": "season",
+        "season": 2,
+        "from": "04-05",
+        "to": "06-28",
+        "role": "club",
+        "default": "team",
+        "ai": {
+          "contend": "star",
+          "middle": "team",
+          "rebuild": "team",
+          "austerity": "team"
+        },
+        "texts": [
+          "차문혁 회장: \"별 하나로 팀이 사는 건 아닙니다. 하지만 별이 없으면 팬들이 허전해하지요.\" 홍보 팀은 팀 전체 서사로 가자는 입장이다.",
+          "한국시리즈를 다녀온 뒤 맞는 새 시즌. 마케팅 팀이 두 가지 방향을 제시했다. 스타 마케팅을 이어 갈지, 팀 전체의 이야기로 갈지."
+        ],
+        "choices": [
+          {
+            "id": "star",
+            "label": "간판 스타 마케팅을 이어 간다",
+            "effects": [
+              {
+                "type": "MERCH",
+                "value": 1.1,
+                "weeks": 12
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "text": "스타 중심 마케팅을 이어 가기로 했다."
+          },
+          {
+            "id": "team",
+            "label": "팀 전체의 서사로 간다",
+            "effects": [
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              },
+              {
+                "type": "PRESS",
+                "value": 3
+              }
+            ],
+            "text": "팀 전체 이야기를 전면에 내세웠다. 선수단 결속이 강해진다."
+          }
+        ]
+      },
+      {
+        "id": "PAN-2B-1",
+        "act": 2,
+        "branch": "B",
+        "title": "무등의 사나이를 부르는 목소리",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "club",
+        "default": "decline",
+        "ai": {
+          "contend": "hire",
+          "middle": "decline",
+          "rebuild": "decline",
+          "austerity": "decline"
+        },
+        "texts": [
+          "지역 여론이 레전드 박상철의 코치 복귀를 원한다. {manager} 감독은 뚱한 얼굴로 서 있다. \"저는 구단주님 뜻을 따르겠습니다.\"",
+          "광주의 라디오가 연일 레전드를 부른다. 남궁선 단장: \"수석코치로 모시면 팬들은 좋아합니다. 감독이 불편해할 뿐입니다.\""
+        ],
+        "choices": [
+          {
+            "id": "hire",
+            "label": "수석코치로 영입한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 4
+              },
+              {
+                "type": "TRUST",
+                "value": -4
+              },
+              {
+                "type": "CASH",
+                "grade": "small"
+              }
+            ],
+            "text": "레전드를 수석코치로 모시기로 했다. 감독과의 호흡이 변수다."
+          },
+          {
+            "id": "decline",
+            "label": "정중히 거절한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -2
+              },
+              {
+                "type": "TRUST",
+                "value": 2
+              }
+            ],
+            "text": "현 코치진을 지키기로 했다. 여론이 조금 싸늘해졌다."
+          }
+        ]
+      },
+      {
+        "id": "PAN-2B-2",
+        "act": 2,
+        "branch": "B",
+        "title": "다시 오르는 길",
+        "phase": "season",
+        "season": 2,
+        "from": "04-05",
+        "to": "06-28",
+        "role": "club",
+        "default": "boost",
+        "ai": {
+          "contend": "boost",
+          "middle": "boost",
+          "rebuild": "grow",
+          "austerity": "grow"
+        },
+        "texts": [
+          "차문혁 회장: \"한국시리즈 없이 끝난 해가 낯섭니다. 올해는 다를 겁니까?\" 남궁선 단장이 전력 보강안과 육성안을 함께 올렸다.",
+          "신화는 한국시리즈에 가야 이어진다. 가을이 멀어 보이는 지금, 단장이 두 가지 길을 제시했다."
+        ],
+        "choices": [
+          {
+            "id": "boost",
+            "label": "전력을 보강한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              },
+              {
+                "type": "CLUBHOUSE",
+                "value": 2
+              }
+            ],
+            "link": "market",
+            "text": "올해도 정상을 노린다. 보강은 [계약·이적]에서 한다."
+          },
+          {
+            "id": "grow",
+            "label": "육성에 힘을 싣는다",
+            "effects": [
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": -3
+              }
+            ],
+            "text": "육성 중심으로 다음 가을을 준비하기로 했다."
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "id": "mythContinues",
+        "title": "신화는 계속된다",
+        "kind": "success",
+        "cond": "story.titles >= 1",
+        "early": true,
+        "effects": [
+          {
+            "type": "DEMAND",
+            "value": 1.08,
+            "weeks": 52
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 8
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": 8
+          }
+        ],
+        "epilogue": "박상철 해설위원: \"역시 이 팀입니다.\" 불패의 기록이 또 한 줄 늘었다.",
+        "next": "신화의 계승"
+      },
+      {
+        "id": "mythCrack",
+        "title": "신화의 균열",
+        "kind": "fail",
+        "cond": "story.ksLosses >= 1",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": -12
+          },
+          {
+            "type": "PRESS",
+            "value": -3
+          }
+        ],
+        "epilogue": "리그 전체가 뉴스를 쏟아냈다. 불패의 기록이 처음으로 멈췄다. 광주 거리는 오래 조용했다.",
+        "next": "신화를 다시 쓰다"
+      },
+      {
+        "id": "waitingMyth",
+        "title": "기다리는 신화",
+        "kind": "neutral",
+        "cond": "1",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": -5
+          }
+        ],
+        "epilogue": "세 시즌째 한국시리즈의 문턱에 닿지 못했다. 신화의 기록은 보존되었다. 기다림은 계속된다.",
+        "next": "신화를 다시 쓰다"
+      }
+    ]
+  },
+  {
+    "clubId": 9,
+    "arc": "REX",
+    "title": "작은 구단의 데이터 반란",
+    "task": "적은 예산으로 가장 효율적으로 이기기. 키운 보물을 지키면서",
+    "synopsis": "작은 시장, 작은 예산, 젊은 게임사 모기업. 남들이 못 보는 선수를 찾아 이기는 팀. 다만 키운 보물은 늘 큰 구단이 사 간다.",
+    "transition": [
+      {
+        "branch": "A",
+        "cond": "1",
+        "text": "첫 시즌이 끝났다. 2막 「떠나는 보물」: 키운 선수에게 큰 구단의 제안이 쏟아지고, 모기업을 둘러싼 소문이 돈다."
+      }
+    ],
+    "chapters": [
+      {
+        "id": "REX-1-1",
+        "act": 1,
+        "title": "서버실 옆 분석실",
+        "phase": "season",
+        "season": 1,
+        "from": "02-01",
+        "to": "02-21",
+        "role": "club",
+        "default": "analysis",
+        "ai": {
+          "contend": "analysis",
+          "middle": "analysis",
+          "rebuild": "scout",
+          "austerity": "hold"
+        },
+        "texts": [
+          "류지안 대표: \"우리는 게임 회사입니다. 데이터로 이기는 게 우리답죠. 분석실 투자는 반을 대겠습니다.\" 송태경 단장의 눈이 반짝였다.",
+          "서버실 옆 좁은 방이 분석실이다. 송태경 단장: \"사람 둘만 더 있으면 남들이 못 보는 숫자를 볼 수 있습니다. 스카우트팀 증원도 같은 비용입니다.\""
+        ],
+        "choices": [
+          {
+            "id": "analysis",
+            "label": "전력분석팀을 증원한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium"
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "text": "분석팀을 키웠다. 훈련 계획과 라인업에 데이터가 스며든다."
+          },
+          {
+            "id": "scout",
+            "label": "스카우트팀을 증원한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium"
+              },
+              {
+                "type": "PRESS",
+                "value": 3
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "flags": {
+              "scoutBoost": 1
+            },
+            "text": "스카우트팀을 키웠다. 저평가 선수를 찾는 눈이 넓어진다."
+          },
+          {
+            "id": "hold",
+            "label": "현 체제를 유지한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "text": "추가 투자 없이 현 체제를 유지했다. 모기업은 비용 절감을 반겼다."
+          }
+        ]
+      },
+      {
+        "id": "REX-1-2",
+        "act": 1,
+        "title": "싸게 산 보물",
+        "phase": "season",
+        "season": 1,
+        "from": "03-01",
+        "to": "04-18",
+        "role": "bargain",
+        "default": "chance",
+        "ai": {
+          "contend": "chance",
+          "middle": "chance",
+          "rebuild": "chance",
+          "austerity": "watch"
+        },
+        "texts": [
+          "송태경 단장: \"타구 속도 상위 5%인데 2군에서 썩던 선수가 있습니다. {player}. 연봉은 최저입니다.\" {manager} 감독은 \"숫자는 숫자일 뿐\"이라며 팔짱을 꼈다.",
+          "2군 기록지 구석에서 {player}의 이름이 계속 눈에 띈다. 송태경 단장은 그래프를 프린트해 구단주실 벽에 붙였다. \"이 친구, 기회만 주면 됩니다.\""
+        ],
+        "choices": [
+          {
+            "id": "chance",
+            "label": "1군 기회를 주라고 권한다",
+            "effects": [
+              {
+                "type": "TRUST",
+                "value": -2
+              },
+              {
+                "type": "MOOD",
+                "value": 10
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.1
+              }
+            ],
+            "text": "그 선수에게 1군 기회를 주자고 감독에게 권했다. 명단은 [선수단]에서 정한다."
+          },
+          {
+            "id": "watch",
+            "label": "2군에서 더 지켜본다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": -3
+              },
+              {
+                "type": "TRUST",
+                "value": 2
+              }
+            ],
+            "text": "조금 더 지켜보기로 했다."
+          }
+        ]
+      },
+      {
+        "id": "REX-1-3",
+        "act": 1,
+        "title": "게임 콜라보",
+        "phase": "season",
+        "season": 1,
+        "from": "05-03",
+        "to": "06-27",
+        "role": "club",
+        "default": "launch",
+        "ai": {
+          "contend": "launch",
+          "middle": "launch",
+          "rebuild": "launch",
+          "austerity": "launch"
+        },
+        "texts": [
+          "류지안 대표: \"우리 게임 캐릭터가 렉스 유니폼을 입는 겁니다.\" 마케팅 팀은 신나 있고, 전통 팬 단체는 불안해한다.",
+          "모기업 게임 IP와의 콜라보 유니폼 시안이 도착했다. 형광 컬러에 캐릭터 패치가 붙어 있다. 응원단장이 쓴웃음을 지었다."
+        ],
+        "choices": [
+          {
+            "id": "launch",
+            "label": "콜라보 유니폼을 출시한다",
+            "effects": [
+              {
+                "type": "MERCH",
+                "value": 1.15,
+                "weeks": 12
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 5
+              }
+            ],
+            "outcomes": [
+              {
+                "p": 0.25,
+                "hint": "전통 팬 반발",
+                "effects": [
+                  {
+                    "type": "FAN_NOW",
+                    "value": -3
+                  }
+                ],
+                "text": "전통 팬 일부가 유니폼을 두고 불만을 터뜨렸다."
+              }
+            ],
+            "text": "콜라보 유니폼을 출시했다. 굿즈가 날개 돋친 듯 팔린다."
+          },
+          {
+            "id": "hold",
+            "label": "출시를 보류한다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -3
+              }
+            ],
+            "text": "전통 팬을 고려해 출시를 미뤘다. 모기업은 서운해했다."
+          }
+        ]
+      },
+      {
+        "id": "REX-1-4",
+        "act": 1,
+        "title": "머니볼이라는 이름",
+        "phase": "season",
+        "season": 1,
+        "from": "07-05",
+        "to": "08-30",
+        "role": "club",
+        "default": "open",
+        "ai": {
+          "contend": "open",
+          "middle": "open",
+          "rebuild": "careful",
+          "austerity": "careful"
+        },
+        "texts": [
+          "민지후 기자: \"가장 적게 쓰고 가장 많이 이기는 팀이라는 말이 있던데요. 방법을 공개하실 의향은 있습니까?\"",
+          "승리당 연봉 지출이 눈에 띄게 낮다는 분석이 퍼졌다. 송태경 단장은 곤란한 표정이다. \"공개하면 따라 하고, 숨기면 의심받습니다.\""
+        ],
+        "choices": [
+          {
+            "id": "open",
+            "label": "효율 지표를 공개한다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": 4
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 1
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 2
+              }
+            ],
+            "text": "효율 지표를 공개하고 데이터 구단의 이미지를 굳혔다."
+          },
+          {
+            "id": "careful",
+            "label": "신중하게 응대한다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": -1
+              },
+              {
+                "type": "TRUST",
+                "value": 2
+              }
+            ],
+            "text": "세부 방법은 공개하지 않았다. 현장은 안도했다."
+          }
+        ]
+      },
+      {
+        "id": "REX-2-1",
+        "act": 2,
+        "branch": "A",
+        "title": "떠나는 보물",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "bargain",
+        "default": "letGo",
+        "ai": {
+          "contend": "overpay",
+          "middle": "letGo",
+          "rebuild": "letGo",
+          "austerity": "letGo"
+        },
+        "texts": [
+          "{player}에게 큰 구단이 두 배의 제안을 했다. 송태경 단장: \"맞춰 주면 예산이 흔들리고, 보내면 또 뺏겼다는 소리를 듣습니다.\"",
+          "키운 보물은 늘 큰 구단이 사 간다. {player}의 에이전트는 이번에도 그렇다고 말했다. 선수는 \"여기서 계속하고 싶긴 합니다\"라고만 했다."
+        ],
+        "choices": [
+          {
+            "id": "overpay",
+            "label": "오버페이로 붙잡는다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": -3
+              },
+              {
+                "type": "MOOD",
+                "value": 10
+              }
+            ],
+            "flags": {
+              "keepGem": 1
+            },
+            "link": "market",
+            "text": "무리해서라도 붙잡기로 했다. 조건은 [계약·이적]에서 정한다. 예산 압박이 커진다."
+          },
+          {
+            "id": "letGo",
+            "label": "보내고 보상금을 받는다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -3
+              },
+              {
+                "type": "PRESS",
+                "value": -3
+              }
+            ],
+            "flags": {
+              "lostGem": 1
+            },
+            "text": "보물을 보내기로 했다. FA로 떠나면 보상금이 들어온다. 언론은 '또 뺏겼다'고 썼다."
+          }
+        ]
+      },
+      {
+        "id": "REX-2-2",
+        "act": 2,
+        "branch": "A",
+        "title": "매각설",
+        "phase": "season",
+        "season": 2,
+        "from": "04-05",
+        "to": "06-28",
+        "role": "club",
+        "default": "deny",
+        "ai": {
+          "contend": "deny",
+          "middle": "deny",
+          "rebuild": "silent",
+          "austerity": "silent"
+        },
+        "texts": [
+          "민지후 기자: \"렉스 모기업, 야구단 매각 검토설.\" 류지안 대표는 웃으며 말했다. \"소문은 소문이지요. 하지만 선수들은 신경 쓸 겁니다.\"",
+          "매각설 기사가 하루 종일 포털 1면에 걸렸다. 송태경 단장이 회견문 초안을 들고 왔다. \"공식 부인하시겠습니까, 무대응으로 가시겠습니까?\""
+        ],
+        "choices": [
+          {
+            "id": "deny",
+            "label": "구단주가 공식 부인한다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": 4
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "text": "공식 부인 성명을 냈다. 소문은 가라앉았다."
+          },
+          {
+            "id": "silent",
+            "label": "무대응으로 간다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -4
+              },
+              {
+                "type": "MOOD",
+                "value": -3,
+                "who": "club"
+              }
+            ],
+            "text": "대응하지 않았다. 불안한 팬 반응이 이어졌다."
+          }
+        ]
+      },
+      {
+        "id": "REX-2-3",
+        "act": 2,
+        "title": "다음 보물",
+        "phase": "stove",
+        "offseason": 2,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "club",
+        "default": "reinvest",
+        "ai": {
+          "contend": "reinvest",
+          "middle": "reinvest",
+          "rebuild": "reinvest",
+          "austerity": "keep"
+        },
+        "texts": [
+          "송태경 단장: \"보물이 떠나도 숫자를 보는 눈은 남습니다. 다음 저평가 후보 명단을 뽑았습니다.\" 류지안 대표는 \"게임도 업데이트가 있어야지요\"라며 웃었다.",
+          "분석실 불은 밤에도 켜져 있다. 단장이 두 번째 보물 후보 리스트를 들고 왔다. 예산은 여전히 빠듯하다."
+        ],
+        "choices": [
+          {
+            "id": "reinvest",
+            "label": "분석실에 재투자한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              },
+              {
+                "type": "GROWTH",
+                "value": 1.05,
+                "who": "club"
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "text": "분석실에 재투자했다. 다음 보물을 찾는 눈이 날카로워진다."
+          },
+          {
+            "id": "keep",
+            "label": "현 체제로 간다",
+            "effects": [
+              {
+                "type": "CHAIRMAN",
+                "value": 2
+              }
+            ],
+            "text": "비용을 아끼고 현 체제로 간다."
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "id": "dataRevolt",
+        "title": "데이터 반란",
+        "kind": "success",
+        "cond": "story.effRank == 1 && story.postseasons >= 1",
+        "effects": [
+          {
+            "type": "GROWTH",
+            "value": 1.08,
+            "who": "club"
+          },
+          {
+            "type": "PRESS",
+            "value": 5
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 5
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": 8
+          }
+        ],
+        "epilogue": "가장 적게 쓰고도 가을에 닿았다. 송태경 단장은 화이트보드에 마지막 줄을 적었다. 'Q.E.D.'",
+        "next": "데이터의 다음 장"
+      },
+      {
+        "id": "efficiencyLimit",
+        "title": "효율의 한계",
+        "kind": "neutral",
+        "cond": "story.effRank == 1",
+        "effects": [
+          {
+            "type": "PRESS",
+            "value": 3
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 1
+          }
+        ],
+        "epilogue": "효율은 1위였지만 가을은 멀었다. 민지후 기자: \"숫자는 이겼는데 순위는 졌다.\"",
+        "next": "작은 구단의 데이터 반란"
+      },
+      {
+        "id": "smallSorrow",
+        "title": "작은 구단의 비애",
+        "kind": "fail",
+        "cond": "story.lowStreak >= 2",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": -4
+          },
+          {
+            "type": "CHAIRMAN",
+            "value": -5
+          }
+        ],
+        "epilogue": "류지안 대표: \"다시 해 봅시다. 게임도 그렇게 만들었으니까.\"",
+        "next": "다시 처음부터"
+      },
+      {
+        "id": "nextPatch",
+        "title": "다음 패치를 기다리며",
+        "kind": "neutral",
+        "cond": "1",
+        "effects": [
+          {
+            "type": "PRESS",
+            "value": 1
+          }
+        ],
+        "epilogue": "성공도 실패도 아닌 채로 시즌이 쌓였다. 분석실의 불은 꺼지지 않았다.",
+        "next": "작은 구단의 데이터 반란"
+      }
+    ]
+  },
+  {
+    "clubId": 10,
+    "arc": "TIT",
+    "title": "30여 년의 기다림",
+    "task": "가장 뜨거운 팬과 가장 짠 예산 사이에서 가을야구 3회, 그리고 우승",
+    "synopsis": "리그에서 가장 시끄럽고 뜨거운 팬, 가장 오래 기다린 우승. 돈은 부족하고 기대는 넘친다. 이 팀의 구단주는 매주 시험대에 오른다.",
+    "transition": [
+      {
+        "branch": "A",
+        "cond": "story.postseasons >= 1",
+        "text": "가을 문턱에 닿았다. 2막 「낡은 구장」: 기대는 한층 높아졌고, 구장은 더 낡아 보인다."
+      },
+      {
+        "branch": "B",
+        "cond": "1",
+        "text": "또 가을을 놓쳤다. 2막 「낡은 구장」: 팬들의 인내가 닳고, 간판은 우승할 수 있는 팀을 바라본다."
+      }
+    ],
+    "chapters": [
+      {
+        "id": "TIT-1-1",
+        "act": 1,
+        "title": "첫 질문",
+        "phase": "season",
+        "season": 1,
+        "from": "02-01",
+        "to": "02-21",
+        "role": "club",
+        "default": "result",
+        "ai": {
+          "contend": "promise",
+          "middle": "result",
+          "rebuild": "years",
+          "austerity": "years"
+        },
+        "texts": [
+          "취임 기자회견장. 민지후 기자: \"부산 팬들이 가장 궁금해하는 질문입니다. 올해는 됩니까?\" 카메라가 일제히 구단주를 향했다.",
+          "회견장 뒷줄에서 응원단장 염태수가 팔짱을 끼고 서 있다. 민지후 기자가 질문했다. \"30여 년을 기다린 도시에 한 말씀 해 주시지요.\""
+        ],
+        "choices": [
+          {
+            "id": "promise",
+            "label": "\"가을야구, 약속합니다\"",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 5
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "flags": {
+              "promise": 1
+            },
+            "text": "가을야구를 약속했다. 사직이 환호했지만 약속은 시즌 말에 청구된다."
+          },
+          {
+            "id": "years",
+            "label": "\"3년을 주십시오\"",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -2
+              },
+              {
+                "type": "PRESS",
+                "value": 4
+              }
+            ],
+            "flags": {
+              "threeYears": 1
+            },
+            "text": "3년을 달라고 했다. 팬은 술렁였지만 언론은 솔직함을 평가했다."
+          },
+          {
+            "id": "result",
+            "label": "\"성적으로 말하겠습니다\"",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": 1
+              }
+            ],
+            "text": "말을 아꼈다. 무난한 회견이었다."
+          }
+        ]
+      },
+      {
+        "id": "TIT-1-2",
+        "act": 1,
+        "title": "모기업의 계산기",
+        "phase": "season",
+        "season": 1,
+        "from": "03-01",
+        "to": "03-28",
+        "role": "club",
+        "default": "food",
+        "ai": {
+          "contend": "merch",
+          "middle": "food",
+          "rebuild": "food",
+          "austerity": "ads"
+        },
+        "texts": [
+          "시즌 예산 확정 회의. 한기석 회장: \"지원금은 올해도 이만큼입니다. 모자라면 버세요.\" 표정민 단장은 한숨을 쉬었다.",
+          "예산표를 본 표정민 단장의 얼굴이 굳었다. 회장은 한 줄만 남겼다. \"지원금은 동결. 모자라면 구단이 벌 것.\""
+        ],
+        "choices": [
+          {
+            "id": "food",
+            "label": "구장 먹거리를 명물로 키운다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium"
+              },
+              {
+                "type": "RECUR",
+                "grade": "small",
+                "weeks": 26,
+                "income": true
+              }
+            ],
+            "text": "사직 먹거리를 키우기로 했다. 매점 수입이 서서히 오른다."
+          },
+          {
+            "id": "merch",
+            "label": "굿즈 라인을 확장한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              },
+              {
+                "type": "MERCH",
+                "value": 1.15,
+                "weeks": 12
+              }
+            ],
+            "outcomes": [
+              {
+                "p": 0.3,
+                "hint": "재고 부담",
+                "effects": [
+                  {
+                    "type": "CASH",
+                    "grade": "small"
+                  }
+                ],
+                "text": "예상보다 안 팔려 재고 비용이 생겼다."
+              }
+            ],
+            "text": "굿즈 라인을 넓혔다. 팬들의 지갑이 열린다."
+          },
+          {
+            "id": "ads",
+            "label": "구장 광고판을 확대한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium",
+                "income": true
+              },
+              {
+                "type": "FAN_NOW",
+                "value": -1
+              }
+            ],
+            "text": "광고판을 늘렸다. 수입은 오르지만 팬들은 어색해했다."
+          }
+        ]
+      },
+      {
+        "id": "TIT-1-3",
+        "act": 1,
+        "title": "올해는 다르다",
+        "phase": "season",
+        "season": 1,
+        "from": "05-03",
+        "to": "06-27",
+        "role": "club",
+        "cond": "club.rank >= 6",
+        "default": "visit",
+        "ai": {
+          "contend": "visit",
+          "middle": "letter",
+          "rebuild": "letter",
+          "austerity": "letter"
+        },
+        "texts": [
+          "염태수 응원단장: \"팬들 화났습니다. 구단주님이 한 번 나와 주셔야겠습니다.\" 구장 앞에는 트럭 시위 예고 글이 올라와 있다.",
+          "순위표가 아래로 처졌다. 사직 응원석은 반쯤 비었다. 염태수 응원단장이 구단주실 문을 두드렸다. \"얼굴 한 번 보여 주세요. 그게 시작입니다.\""
+        ],
+        "choices": [
+          {
+            "id": "visit",
+            "label": "응원석을 직접 찾아간다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 4
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "text": "응원석을 직접 찾았다. 야유와 박수가 뒤섞였다."
+          },
+          {
+            "id": "letter",
+            "label": "공식 서신을 보낸다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 1
+              }
+            ],
+            "text": "공식 서신으로 마음을 전했다. 반응은 미지근했다."
+          }
+        ]
+      },
+      {
+        "id": "TIT-1-4",
+        "act": 1,
+        "title": "매진 행진",
+        "phase": "season",
+        "season": 1,
+        "from": "05-03",
+        "to": "06-27",
+        "role": "club",
+        "cond": "club.rank <= 3",
+        "default": "calm",
+        "ai": {
+          "contend": "ride",
+          "middle": "calm",
+          "rebuild": "calm",
+          "austerity": "calm"
+        },
+        "texts": [
+          "6주 연속 매진. 사직이 포효한다. 표정민 단장: \"기대치가 너무 올라갔습니다. 이럴 때 한 번 삐끗하면 반동이 큽니다.\"",
+          "순위표 위쪽에 부산이 있다. 염태수 응원단장의 목소리가 쉬었다. \"구단주님, 이번에는 정말 다릅니까?\""
+        ],
+        "choices": [
+          {
+            "id": "ride",
+            "label": "분위기를 타고 이벤트를 연다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "small"
+              },
+              {
+                "type": "DEMAND",
+                "value": 1.08,
+                "weeks": 8
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 3
+              }
+            ],
+            "text": "분위기를 더 끌어올리는 이벤트를 열었다. 기대치도 함께 오른다."
+          },
+          {
+            "id": "calm",
+            "label": "기대치를 차분히 관리한다",
+            "effects": [
+              {
+                "type": "PRESS",
+                "value": 3
+              },
+              {
+                "type": "MOOD",
+                "value": 3,
+                "who": "club"
+              }
+            ],
+            "text": "차분한 메시지를 냈다. 선수단은 부담을 덜었다."
+          }
+        ]
+      },
+      {
+        "id": "TIT-2-1",
+        "act": 2,
+        "title": "낡은 구장",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          1,
+          2
+        ],
+        "role": "club",
+        "default": "remodel",
+        "ai": {
+          "contend": "remodel",
+          "middle": "remodel",
+          "rebuild": "hold",
+          "austerity": "hold"
+        },
+        "texts": [
+          "표정민 단장: \"구장 노후화 보고서입니다. 관중석 일부는 안전 점검이 필요하고, 화장실 줄은 3회까지 이어집니다.\" 한기석 회장은 \"돈은 없습니다\"라고만 답했다.",
+          "사직의 함성은 그대로지만 콘크리트는 낡았다. 시설 팀이 보수안을 정리했다. 대규모 개선, 부분 리모델링, 보류 중 하나를 골라야 한다."
+        ],
+        "choices": [
+          {
+            "id": "major",
+            "label": "대규모 구장 개선을 선언한다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "large"
+              },
+              {
+                "type": "DEMAND",
+                "value": 1.1,
+                "weeks": 52
+              },
+              {
+                "type": "PRESS",
+                "value": 3
+              }
+            ],
+            "flags": {
+              "newPark": 1
+            },
+            "text": "구장을 크게 손보기로 했다. 비용은 크지만 관중 만족이 오른다."
+          },
+          {
+            "id": "remodel",
+            "label": "부분 리모델링으로 간다",
+            "effects": [
+              {
+                "type": "CASH",
+                "grade": "medium"
+              },
+              {
+                "type": "DEMAND",
+                "value": 1.05,
+                "weeks": 26
+              },
+              {
+                "type": "FAN_TARGET",
+                "value": 1,
+                "weeks": 26
+              }
+            ],
+            "text": "필요한 부분만 고치기로 했다."
+          },
+          {
+            "id": "hold",
+            "label": "올해는 보류한다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -2
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": 3
+              }
+            ],
+            "text": "투자를 미뤘다. 회장은 안도했고 팬은 한숨을 쉬었다."
+          }
+        ]
+      },
+      {
+        "id": "TIT-2-2",
+        "act": 2,
+        "title": "부산에서 끝내고 싶다",
+        "phase": "stove",
+        "offseason": 1,
+        "turns": [
+          3,
+          4
+        ],
+        "role": "star",
+        "default": "keep",
+        "ai": {
+          "contend": "keep",
+          "middle": "keep",
+          "rebuild": "letGo",
+          "austerity": "letGo"
+        },
+        "texts": [
+          "{player}가 FA 자격을 얻었다. \"부산에서 끝내고 싶습니다. 근데 우승하는 팀에서 끝내고 싶기도 합니다.\" 염태수 응원단장은 선수의 이름을 연호한다.",
+          "{player}의 에이전트가 구단주실에서 말했다. \"선수는 이 도시를 사랑합니다. 하지만 가을 무대도 사랑합니다.\" 표정민 단장은 입을 다물었다."
+        ],
+        "choices": [
+          {
+            "id": "keep",
+            "label": "잔류를 설득한다",
+            "effects": [
+              {
+                "type": "MOOD",
+                "value": 10
+              },
+              {
+                "type": "FAN_NOW",
+                "value": 3
+              },
+              {
+                "type": "CHAIRMAN",
+                "value": -2
+              }
+            ],
+            "link": "market",
+            "text": "잔류를 설득한다. 조건은 [계약·이적]에서 정한다. 예산 압박이 있다."
+          },
+          {
+            "id": "letGo",
+            "label": "다른 길을 열어 준다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -5
+              },
+              {
+                "type": "PRESS",
+                "value": -2
+              }
+            ],
+            "text": "간판을 보내기로 했다. 사직의 야유는 구단주를 향했다."
+          }
+        ]
+      },
+      {
+        "id": "TIT-2-3",
+        "act": 2,
+        "title": "약속의 청구서",
+        "phase": "season",
+        "season": 2,
+        "from": "04-05",
+        "to": "06-28",
+        "role": "club",
+        "cond": "story.flag.promise == 1",
+        "default": "apology",
+        "ai": {
+          "contend": "boost",
+          "middle": "apology",
+          "rebuild": "apology",
+          "austerity": "apology"
+        },
+        "texts": [
+          "염태수 응원단장: \"구단주님이 약속하셨죠. 가을야구. 올해는 지키시는 겁니까?\" 응원석에는 '약속 이행' 현수막이 올라왔다.",
+          "취임 회견에서의 한마디가 돌아왔다. 팬 커뮤니티는 구단주의 약속을 매주 캡처해 올리고 있다."
+        ],
+        "choices": [
+          {
+            "id": "boost",
+            "label": "전력을 보강해 약속을 지킨다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": 3
+              },
+              {
+                "type": "CLUBHOUSE",
+                "value": 2
+              }
+            ],
+            "link": "market",
+            "text": "약속을 지키기 위해 전력 보강에 나선다. 보강은 [계약·이적]에서 한다."
+          },
+          {
+            "id": "apology",
+            "label": "정중한 해명 서신을 보낸다",
+            "effects": [
+              {
+                "type": "FAN_NOW",
+                "value": -2
+              },
+              {
+                "type": "PRESS",
+                "value": 2
+              }
+            ],
+            "text": "솔직한 해명 서신을 냈다. 팬들은 마음을 열진 않았다."
+          }
+        ]
+      }
+    ],
+    "endings": [
+      {
+        "id": "harborFestival",
+        "title": "항구의 축제",
+        "kind": "success",
+        "cond": "story.titles >= 1",
+        "early": true,
+        "effects": [
+          {
+            "type": "MERCH",
+            "value": 1.15,
+            "weeks": 52
+          },
+          {
+            "type": "FAN_TARGET",
+            "value": 3,
+            "weeks": 52
+          },
+          {
+            "type": "FAN_NOW",
+            "value": 10
+          }
+        ],
+        "epilogue": "도시 전체가 축제였다. 염태수 응원단장은 마이크를 내려놓지 못했다. \"30여 년을 기다렸습니다. 이제야 노래합니다.\"",
+        "next": "항구의 왕좌"
+      },
+      {
+        "id": "heartBeats",
+        "title": "다시 뛰는 심장",
+        "kind": "variant",
+        "cond": "story.postseasons >= 3",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": 8
+          },
+          {
+            "type": "PRESS",
+            "value": 3
+          }
+        ],
+        "epilogue": "세 번의 가을. 우승은 아니었지만 사직은 다시 뛰었다.",
+        "next": "그다음 가을"
+      },
+      {
+        "id": "longWinter",
+        "title": "긴 겨울",
+        "kind": "fail",
+        "cond": "story.lowStreak >= 2",
+        "effects": [
+          {
+            "type": "CHAIRMAN",
+            "value": -8
+          },
+          {
+            "type": "FAN_NOW",
+            "value": -6
+          }
+        ],
+        "epilogue": "빈 응원석에 바람이 불었다. 한기석 회장은 해임 경고를 전달했다.",
+        "next": "처음부터"
+      },
+      {
+        "id": "stillWaiting",
+        "title": "아직 기다리는 도시",
+        "kind": "neutral",
+        "cond": "1",
+        "effects": [
+          {
+            "type": "FAN_NOW",
+            "value": 1
+          }
+        ],
+        "epilogue": "가을은 닿을 듯 멀었다. 사직의 함성은 여전히 크고, 기다림은 이어진다.",
+        "next": "30여 년의 기다림"
+      }
+    ]
+  }
+]

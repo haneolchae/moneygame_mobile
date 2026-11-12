@@ -33,7 +33,7 @@ export function CardPopup({ card, nav }: { card: CardView; nav: Nav }) {
             {card.major ? '사건 · ' : card.priority ? '◆ 결정 카드 · ' : '결정 카드 · '}
             {card.categoryLabel}
           </h2>
-          <span className="meta">{card.major ? '필수 결정 · 맡길 수 없습니다 · 결과는 조사 뒤 나옵니다' : '즉시 선택 · 행동력 0 · 고르기 전에는 진행할 수 없습니다'}</span>
+          <span className="meta">{card.major ? '필수 결정 · 맡길 수 없습니다 · 결과는 조사 뒤 나옵니다' : card.category === 'story' ? '구단 스토리 장면 · 맡길 수 없습니다 · 행동력 0 · 선택에 따라 다음 장이 갈립니다' : '즉시 선택 · 행동력 0 · 고르기 전에는 진행할 수 없습니다'}</span>
         </div>
         <div className="modal-body">
           <p>{card.text}</p>
@@ -48,7 +48,7 @@ export function CardPopup({ card, nav }: { card: CardView; nav: Nav }) {
             <div key={c.id} className="approval-row" style={{ alignItems: 'flex-start' }}>
               <span className="txt">
                 <b>{c.label}</b>
-                {c.isDefault && <span className="muted small"> (담당 팀 기본 선택)</span>}
+                {c.isDefault && <span className="muted small">{card.category === 'story' ? ' (자동 진행 기본 선택)' : ' (담당 팀 기본 선택)'}</span>}
                 <div className="small">{c.effects.length ? c.effects.join(' · ') : '변화 없음'}</div>
                 {c.risks.map((r, i) => (
                   <div key={i} className="small muted">

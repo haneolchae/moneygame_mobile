@@ -8,6 +8,7 @@ import { NextGameCard } from '../NextGameCard';
 import { PostseasonBracket } from '../PostseasonBracket';
 import { TurnMeeting } from '../TurnMeeting';
 import { WinterReportPopup } from '../WinterReport';
+import { StorySummary } from '../StoryPanel';
 import { useState } from 'react';
 
 const TASK_ICON: Record<string, string> = { inbox: 'mail', players: 'users', finance: 'coins', schedule: 'calendar', standings: 'chart', market: 'handshake', org: 'org', draft: 'star', roster: 'ball' };
@@ -122,6 +123,7 @@ export function Dashboard({ nav }: { nav: Nav }) {
           {d.stove && <TurnMeeting d={d} nav={nav} />}
           {d.firstAgenda && d.phase === 'preseason' && <FirstAgenda d={d} nav={nav} />}
           {d.phase === 'stove' ? <StoveWeek d={d} /> : <NextGameCard d={d} nav={nav} back={{ name: 'dashboard' }} />}
+          <StorySummary nav={nav} />
           <section className="panel">
             <div className="panel-head">
               <h2>주요 선수단 현황</h2>

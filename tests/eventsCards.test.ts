@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { addDays, weekday } from '../src/engine/calendar';
 import { EVENTS } from '../src/engine/config';
 import { CARD_ERRORS, CARDS, CATEGORY_TEAM } from '../src/engine/events/cards';
+import { findCard } from '../src/engine/events/story';
 import { seasonKeyDates } from '../src/engine/schedule';
 import { weekNumber } from '../src/game/events';
 import type { GameService } from '../src/game/service';
@@ -75,7 +76,7 @@ describe('결정 카드 화면·위임 (EV-3)', () => {
       expect(rows.find((x) => x.category === 'personal')!.delegate).toBe(true);
       // 맡긴 분류: 연쇄 예약 카드를 담당 팀이 처리량 4로 처리
       const pend = repo.getMeta().eventState!.pendingCard;
-      if (pend) await call(d, 'events.choose', { choiceId: CARDS.find((c) => c.id === pend.cardId)!.delegateDefault });
+      if (pend) await call(d, 'events.choose', { choiceId: findCard(pend.cardId)!.delegateDefault });
       const m1 = addDays(await today(d), ((8 - weekday(await today(d))) % 7) || 7);
       const wid = m1;
       const st = repo.getMeta().eventState!;

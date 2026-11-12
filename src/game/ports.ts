@@ -165,6 +165,51 @@ export interface GameMeta {
   stoveTurnFrom?: GameDate;
   /** D-228 MLB 진출(포스팅 성사) 기록 */
   postings?: Array<{ playerId: PlayerId; clubId: ClubId | null; season: number; date: GameDate; feeWon: number }>;
+  /** ② 구단 스토리(D-222·D-224·D-237): 구단 ID → 진행 상태(우리·AI 구단 모두) */
+  stories?: Record<string, ClubStoryState>;
+  /** ② 모기업 신뢰(0~100, 없으면 시작값): 구단 ID → 값. 이후 모기업 지원금 지급분 배수에 반영(D-237) */
+  chairman?: Record<string, number>;
+}
+
+/** ② 스토리 시즌 성적 요약(시즌 마감 때 원시 기록에서 한 번 집계) */
+export interface StorySeasonRow {
+  season: number;
+  rank: number;
+  ps: boolean;
+  ks: boolean;
+  champion: boolean;
+  profit: boolean;
+  /** 자체 육성 주전 수(능력 순 타자 9·투수 6 중) */
+  homegrown: number;
+  /** 1군 평균 나이 */
+  avgAge: number;
+  /** 승리당 국내 연봉 순위(1 = 가장 효율적) */
+  effRank: number;
+}
+
+/** ② 구단 스토리 진행 상태 */
+export interface ClubStoryState {
+  arc: string;
+  startSeason: number;
+  /** 2막 분기(1시즌 마감 때 정한다) */
+  branch: string | null;
+  /** 장 ID → 처리 결과(선택지, 처리한 쪽). skip = 조건·시기를 놓쳐 건너뜀 */
+  done: Record<string, { choice: string | null; by: 'owner' | 'ai' | 'skip'; date: GameDate; clubOwner: boolean }>;
+  flags: Record<string, number>;
+  /** 배역 → 선수 */
+  cast: Record<string, PlayerId>;
+  /** 스토리 시작 때 나이 기준 이하로 이 구단에 있던 선수(자체 육성 판정) */
+  homeIds: PlayerId[];
+  seasons: StorySeasonRow[];
+  /** 이번 시즌 시작(2/1) 현금과 그 시즌 */
+  cashStart: number;
+  cashSeason: number;
+  /** 마지막 스토리 카드 주(시즌 간격), 마지막 스토리 카드 턴(오프시즌-턴) */
+  lastCardWeek: number | null;
+  lastTurnKey: string | null;
+  ending: { id: string; title: string; kind: string; season: number; date: GameDate; epilogue: string; next: string | null; owner: boolean } | null;
+  /** 결말 효과: 다음 시즌 시작(2/1)에 적용 */
+  pendingEffects: import('../engine/events/cards').CardEffect[];
 }
 
 /** D-216·D-219·D-220 스토브리그 턴 진행 상태 */

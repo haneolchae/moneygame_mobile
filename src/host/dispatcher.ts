@@ -116,6 +116,8 @@ export class Dispatcher {
         return this.game().chooseCard((payload as RequestMap['events.choose']['payload']).choiceId) as R;
       case 'events.delegation':
         return this.game().cardDelegation() as R;
+      case 'story.view':
+        return this.game().storyView((payload as RequestMap['story.view']['payload'])?.clubId) as R;
       case 'events.setDelegation': {
         const q = payload as RequestMap['events.setDelegation']['payload'];
         return this.game().setCardDelegation(q.category, q.delegate) as R;

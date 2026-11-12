@@ -64,6 +64,9 @@ import { Postseason, postseasonMaxInnings, SERIES_LABEL } from './postseason';
 import { DELEGABLE_TEAMS, directWpCost, ORG_AP, Organization } from './organization';
 import { apPeriodId, weekIdFor } from './week';
 import { beginAutoRun, finishAutoRun } from './firstWinter';
+import { StoryOps } from './story';
+import { arcOf, findCard, ROLE_LABEL, STORIES, storyChapter, type StoryRole } from '../engine/events/story';
+import { STORY } from '../engine/config';
 import {
   GameError,
   type BoxScoreView,
@@ -116,6 +119,8 @@ import {
   type BriefingView,
   type CardDelegationView,
   type CardView,
+  type StoryChapterView,
+  type StoryView,
   type NewsLogView,
   type AwardsView,
   type BudgetView,
@@ -316,6 +321,8 @@ export class GameService {
   readonly awards: AwardOps;
   readonly allStar: AllStarOps;
   readonly events: EventOps;
+  /** ② 구단 스토리 */
+  readonly story: StoryOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -405,6 +412,8 @@ export class GameService {
     // 8e(D-189·D-190): 올스타전
     // EV-1(D-203): 턴 브리핑·결정 카드
     this.events = new EventOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), fatigue: (d, ps) => this.health.fatigueMap(d, ps), adjustTrust: (c, v, d, s) => this.managers.adjustTrust(c, v, d, s), prQuality: (c) => this.org.teamQuality(c, 'pr'), spendWp: (w, t, wp) => { try { this.repo.spendWp(w, t, wp); return true; } catch { return false; } }, release: (m, d, id, why) => this.market.releaseForCase(m, d, id, why), fireManager: (m, c, d) => { const r = this.org.dismissManager(m, c, d); this.managers.reset(); return r; }, stance: (c) => this.aiClubs.stance(c) ?? 'middle', nearMilestone: (s, ids) => this.awards.nearMilestone(s, ids) });
+    this.story = new StoryOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), stance: (c) => this.aiClubs.stance(c) ?? 'middle', managerName: (c) => this.managers.managerOf(c)?.name ?? '', apply: (effects, ctx) => this.events.applyEffects(effects, ctx) });
+    this.events.attachStory(this.story);
     this.allStar = new AllStarOps(repo, this.clubMap, (id) => this.managers.profileOf(id), (s, d, ps, env) => this.forms.formsFor(s, d, ps, env), this.budget);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -729,6 +738,8 @@ export class GameService {
       // 4c-2b(D-163·D-166): 감독 신뢰도 되돌림·AI 구단 감독 교체
       this.repo.addInbox(this.managers.closeSeason(this.meta(), date));
       this.seasonClose.close(after, date);
+      // ②(D-237): 구단 스토리 시즌 요약 → 2막 분기·결말(우리 구단 결말은 편지, AI 구단은 리그 소식)
+      this.repo.addInbox(this.story.close(this.meta(), date));
     }
     // 은퇴 설득 기한·파산 감시
     this.seasonClose.onDay(this.meta(), date);
@@ -849,7 +860,7 @@ export class GameService {
       }
       const pend = this.meta().eventState?.pendingCard;
       if (pend) {
-        if (autoCards) this.events.choose(this.meta(), CARDS.find((c) => c.id === pend.cardId)!.delegateDefault);
+        if (autoCards) this.events.choose(this.meta(), findCard(pend.cardId)!.delegateDefault);
         else if (daysProcessed === 0) throw new GameError('DECISION_PENDING', '이번 주 결정 카드를 먼저 고르세요.');
         else {
           stoppedReason = '결정 카드가 도착했습니다';
@@ -1633,13 +1644,14 @@ export class GameService {
 
   /** 카드 화면 응답(시즌 대기 카드·스토브리그 턴 회의 카드 공용). 확률은 위험 등급, 히든 값 없음(D-207) */
   private toCardView(meta: GameMeta, pend: { cardId: string; playerId: number | null; date: GameDate; text: string }): CardView | null {
-    const card = CARDS.find((c) => c.id === pend.cardId);
+    const card = findCard(pend.cardId);
     if (!card) return null;
     const p = pend.playerId !== null ? this.repo.getPlayer(pend.playerId) : null;
+    const story = card.category === 'story' ? storyChapter(card.id) : null;
     return {
       cardId: card.id,
       category: card.category,
-      categoryLabel: CARD_CATEGORY_LABEL[card.category],
+      categoryLabel: story ? `구단 스토리 · 「${story.arc.title}」 ${story.chapter.act}막` : CARD_CATEGORY_LABEL[card.category],
       priority: card.priority,
       date: pend.date,
       player: p ? { id: p.id, name: p.name } : null,
@@ -1652,6 +1664,52 @@ export class GameService {
         isDefault: c.id === card.delegateDefault,
         link: c.link ?? null,
       })),
+    };
+  }
+
+  /** ② 구단 스토리 화면(우리 구단 기본, 다른 구단은 공개 기록만) */
+  storyView(clubId?: number): StoryView | null {
+    const meta = this.meta();
+    const id = clubId ?? meta.userClubId;
+    const arc = arcOf(id);
+    if (!arc || !this.clubMap.has(id)) return null;
+    const st = meta.stories?.[String(id)] ?? null;
+    const club = this.clubMap.get(id)!;
+    const md = (s: string) => s.replace('-', '/');
+    const n = st ? meta.season - st.startSeason + 1 : 0;
+    const act = !st ? 1 : st.ending ? 3 : st.seasons.length >= 1 ? 2 : 1;
+    const players = new Map(this.repo.getPlayers().map((p) => [p.id, p]));
+    const chapters = arc.chapters.map((ch) => {
+      const d = st?.done[ch.id];
+      const choice = d?.choice ? (ch.choices.find((c) => c.id === d.choice)?.label ?? d.choice) : null;
+      const other = !!ch.branch && !!st?.branch && ch.branch !== st.branch;
+      const pending = !d && (meta.eventState?.pendingCard?.cardId === ch.id || (meta.eventState?.stoveCards ?? []).some((c) => c.cardId === ch.id));
+      const status: StoryChapterView['status'] = d ? (d.by === 'skip' ? (other ? 'otherBranch' : 'skipped') : 'done') : other ? 'otherBranch' : pending ? 'pending' : 'upcoming';
+      const when = ch.phase === 'season' ? `${ch.season}시즌 ${md(ch.from!)}~${md(ch.to!)}` : `${ch.offseason === 1 ? '첫' : '두 번째'} 스토브리그 ${ch.turns![0]}~${ch.turns![1]}턴`;
+      return { id: ch.id, act: ch.act, branch: ch.branch ?? null, title: ch.title, when, status, choice, by: d && d.by !== 'skip' ? (d.by === 'owner' ? '구단주' : 'AI 운영') : null, date: d?.date ?? null };
+    });
+    return {
+      club: this.ref(id),
+      isUserClub: id === meta.userClubId,
+      title: arc.title,
+      task: arc.task,
+      synopsis: arc.synopsis,
+      act,
+      branch: st?.branch ?? null,
+      storySeason: st ? (meta.mode === 'season' ? n : st.seasons.length) : 0,
+      startSeason: st?.startSeason ?? (meta.mode === 'stove' ? meta.season + 1 : meta.season),
+      chairman: club.parentSupport > 0 ? (meta.chairman?.[String(id)] ?? STORY.chairmanStart) : null,
+      cast: Object.entries(st?.cast ?? {}).flatMap(([role, pid]) => {
+        const p = players.get(pid);
+        return p ? [{ role, label: ROLE_LABEL[role as StoryRole] ?? role, playerId: pid, name: p.name, present: !p.retired && (p.clubId === id || (role === 'franchise' && p.clubId === null)) }] : [];
+      }),
+      chapters,
+      seasons: (st?.seasons ?? []).map((r) => ({ season: r.season, rank: r.rank, result: r.champion ? '한국시리즈 우승' : r.ks ? '한국시리즈 준우승' : r.ps ? '가을야구' : '가을야구 실패' })),
+      ending: st?.ending ? { title: st.ending.title, kind: st.ending.kind, season: st.ending.season, epilogue: st.ending.epilogue, next: st.ending.next, owner: st.ending.owner } : null,
+      league: STORIES.filter((a) => this.clubMap.has(a.clubId)).map((a) => {
+        const s = meta.stories?.[String(a.clubId)];
+        return { club: this.ref(a.clubId), title: a.title, act: !s ? 1 : s.ending ? 3 : s.seasons.length >= 1 ? 2 : 1, ending: s?.ending?.title ?? null, endingKind: s?.ending?.kind ?? null, endingSeason: s?.ending?.season ?? null };
+      }),
     };
   }
 
@@ -2087,7 +2145,9 @@ export class GameService {
   private supportAdjusted(meta: GameMeta, club: ClubProfile): ClubProfile {
     const key = String(meta.season);
     // D-135 재협상 배수(모든 구단), 경고 삭감·긴급 지원 차감(우리 구단)
-    const factor = meta.supportBp?.[key]?.[String(club.id)] ?? 10_000;
+    // ②(D-237): 모기업 신뢰 배수(신뢰 50 = 1배)
+    const trust = meta.chairman?.[String(club.id)];
+    const factor = Math.round(((meta.supportBp?.[key]?.[String(club.id)] ?? 10_000) * (10_000 + (trust === undefined ? 0 : (trust - STORY.chairmanStart) * STORY.chairmanBpPerPoint))) / 10_000);
     const mine = club.id === meta.userClubId;
     const cut = mine ? (meta.supportCutBp?.[key] ?? 0) : 0;
     const deduction = mine ? (meta.supportDeduction?.[key] ?? 0) : (meta.aiSupportDeduction?.[key]?.[String(club.id)] ?? 0);

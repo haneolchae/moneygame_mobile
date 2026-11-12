@@ -62,7 +62,7 @@ export type Route =
   | { name: 'market' }
   | { name: 'org' }
   | { name: 'team' }
-  | { name: 'hof'; clubId?: number }
+  | { name: 'hof'; clubId?: number; tab?: 'story' }
   | { name: 'club'; clubId: number }
   /** 5a 트레이드 협상: want = 처음 받을 선수(선수 상세 '트레이드 문의') */
   | { name: 'trade'; clubId: number; want?: number }
@@ -301,7 +301,7 @@ export function App() {
         {route.name === 'market' && <Market nav={nav} />}
         {route.name === 'org' && <Organization nav={nav} />}
         {route.name === 'team' && <TeamRecords nav={nav} />}
-        {route.name === 'hof' && <HallOfFame nav={nav} initialClubId={route.clubId} key={route.clubId ?? 0} />}
+        {route.name === 'hof' && <HallOfFame nav={nav} initialClubId={route.clubId} initialTab={route.tab} key={`${route.clubId ?? 0}-${route.tab ?? ''}`} />}
         {route.name === 'club' && <Club nav={nav} clubId={route.clubId} key={route.clubId} />}
         {route.name === 'trade' && <Trade nav={nav} clubId={route.clubId} want={route.want} key={`${route.clubId}-${route.want ?? 0}`} />}
         {route.name === 'compare' && <Compare nav={nav} />}

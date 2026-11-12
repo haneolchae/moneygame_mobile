@@ -23,6 +23,9 @@ import type { CaseRow, EventLogRow, EventState, GameMeta, GameRepository, InboxM
 import { STOVE_TURN } from '../engine/config';
 import { stoveTurnOf, turnWeeks, type StoveTurn } from '../engine/stove';
 import { weekIdFor } from './week';
+import { findCard } from '../engine/events/story';
+import { STORY } from '../engine/config';
+import type { StoryOps } from './story';
 
 const md = (d: GameDate) => d.slice(5).replace('-', '/');
 const eok = (n: number) => `${(n / EOK).toFixed(1).replace(/\.0$/, '')}억`;
@@ -96,6 +99,12 @@ export interface ApplyCtx {
 }
 
 export class EventOps {
+  /** ② 구단 스토리(우선 결정 카드, D-224) */
+  private story: StoryOps | null = null;
+  attachStory(story: StoryOps): void {
+    this.story = story;
+  }
+
   constructor(
     private readonly repo: GameRepository,
     private readonly clubs: Map<ClubId, ClubProfile>,
@@ -118,10 +127,13 @@ export class EventOps {
   // ───────── 효과 적용(D-203 (6)) ─────────
 
   /** 효과를 적용하고 결과 문장 조각을 돌려준다. 연결 전 효과는 들어오지 않는다(비활성 카드는 추첨하지 않음) */
-  applyEffects(effects: readonly CardEffect[], c: ApplyCtx): string[] {
+  applyEffects(effects: readonly CardEffect[], c0: ApplyCtx): string[] {
     const out: string[] = [];
     let fanDrop = 0;
     for (const e of effects) {
+      // ②: 스토리 효과의 배역 대상(그 구단에 남아 있는 배역 선수, 없으면 건너뜀)
+      const c: ApplyCtx = e.role ? { ...c0, playerId: this.story?.castOf(c0.clubId, e.role) ?? null } : c0;
+      if (e.role && c.playerId === null) continue;
       if (!CONNECTED.has(e.type)) throw new Error(`연결 전 효과: ${e.type}`);
       if (e.type === 'CASH') {
         let amount = e.won ?? 0;
@@ -221,8 +233,15 @@ export class EventOps {
         p.health!.injury = { ...inj, returnDate: shift(inj.returnDate), estimate: { from: shift(inj.estimate.from), to: shift(inj.estimate.to) } };
         this.repo.savePlayers([p]);
         out.push(`복귀 ${Math.abs(e.days ?? 0)}일 ${(e.days ?? 0) < 0 ? '앞당김' : '늦춤'}`);
+      } else if (e.type === 'CHAIRMAN') {
+        // ② 모기업 신뢰(D-237): 0~100, 이후 모기업 지원금 지급분 배수에 반영
+        const meta = this.repo.getMeta();
+        const key = String(c.clubId);
+        this.repo.updateMeta({ chairman: { ...(meta.chairman ?? {}), [key]: clamp((meta.chairman?.[key] ?? STORY.chairmanStart) + (e.value ?? 0), 0, 100) } });
+        out.push(`모기업 신뢰 ${(e.value ?? 0) >= 0 ? '▲' : '▼'}`);
       } else if (e.type === 'GROWTH') {
-        const end = weekNumber(addDays(seasonKeyDates(c.meta.season).regularSeasonEnd, 40));
+        // 스토브리그에 정한 효과는 다가오는 시즌 끝까지(② 이전에는 끝난 시즌 기준이라 바로 만료됐다)
+        const end = weekNumber(addDays(seasonKeyDates(c.meta.mode === 'stove' ? c.meta.season + 1 : c.meta.season).regularSeasonEnd, 40));
         (c.state.effects ??= []).push({ type: 'GROWTH', clubId: c.clubId, playerId: e.who === 'club' ? null : c.playerId, value: e.value ?? 1, untilWeek: end });
         out.push(`훈련 효과 ${(e.value ?? 1) >= 1 ? '▲' : '▼'}(시즌)`);
       }
@@ -315,7 +334,10 @@ export class EventOps {
     const fresh = this.repo.getMeta();
     const drawn: Array<{ card: LoadedCard; playerId: PlayerId | null; text: string }> = [];
     const exclude = new Set<string>();
-    for (let i = 0; i < Math.min(STOVE_TURN.maxCards, turnWeeks(turn)); i++) {
+    // ②(D-224): 우리 구단 스토리 장은 턴 회의 카드 1장(턴 카드 상한 안). AI 구단 스토리도 여기서 진행한다
+    const storyPick = this.story ? this.story.onStoveTurn(fresh, turn.start, week, state) : null;
+    if (storyPick) drawn.push(storyPick);
+    for (let i = storyPick ? 1 : 0; i < Math.min(STOVE_TURN.maxCards, turnWeeks(turn)); i++) {
       const c = this.drawCard(fresh, turn.start, week, state, rng, exclude);
       if (!c) continue;
       exclude.add(c.card.id);
@@ -356,7 +378,7 @@ export class EventOps {
     const rng = new Rng((meta.rngStreams.eventStove as RngState | undefined) ?? Rng.derive(meta.seed, 'event-stove').state());
     this.repo.transaction(() => {
       for (const pend of list) {
-        const card = CARDS.find((c) => c.id === pend.cardId);
+        const card = findCard(pend.cardId);
         if (card) this.resolve(meta, meta.currentDate, pend.week, pend.weekId, card, pend.playerId, pend.text, card.delegateDefault, 'delegate', state, rng);
       }
       state.stoveCards = [];
@@ -369,7 +391,7 @@ export class EventOps {
     const state: EventState = structuredClone(meta.eventState ?? newEventState());
     const pend = (state.stoveCards ?? []).find((c) => c.cardId === cardId);
     if (!pend) throw new GameError('NOT_AVAILABLE', '고를 턴 회의 카드가 없습니다.');
-    const card = CARDS.find((c) => c.id === pend.cardId);
+    const card = findCard(pend.cardId);
     const choice = card?.choices.find((c) => c.id === choiceId);
     if (!card || !choice) throw new GameError('INVALID', '없는 선택지입니다.');
     const rng = new Rng((meta.rngStreams.eventStove as RngState | undefined) ?? Rng.derive(meta.seed, 'event-stove').state());
@@ -689,9 +711,11 @@ export class EventOps {
     this.caseStep(meta, monday, week, state, rng);
     results.push(...(state.caseLines?.results ?? []));
     // 3) 결정 카드 추첨(그 주 1장) → 브리핑 → 맡긴 분류는 담당 팀 처리, 아니면 대기 카드(D-207)
+    // ②(D-224): 구단 스토리 장은 우선 결정 카드(25% 공란과 무관, 그 주 1장, 위임 불가). AI 구단 스토리도 여기서 진행한다
+    const storyPick = this.story ? this.story.onWeek(this.repo.getMeta(), monday, week, state, !state.pendingCard) : null;
     const fresh = this.repo.getMeta();
-    const card = state.pendingCard ? null : this.drawCard(fresh, monday, week, state, rng);
-    const text = card ? this.cardText(fresh, card.card, card.playerId, rng) : '';
+    const card = state.pendingCard ? null : (storyPick ?? this.drawCard(fresh, monday, week, state, rng));
+    const text = card ? (storyPick ? storyPick.text : this.cardText(fresh, card.card, card.playerId, rng)) : '';
     const team = card ? CATEGORY_TEAM[card.card.category] : null;
     const delegated = !!card && !!team && !!fresh.cardDelegation?.[card.card.category] && this.deps.spendWp(weekId, TEAM_KEY[team]!, E.delegateWp);
     const lines = this.briefingLines(fresh, monday, state, results);
@@ -720,7 +744,7 @@ export class EventOps {
     const state: EventState = structuredClone(meta.eventState ?? newEventState());
     const pend = state.pendingCard;
     if (!pend) throw new GameError('NOT_AVAILABLE', '고를 결정 카드가 없습니다.');
-    const card = CARDS.find((c) => c.id === pend.cardId);
+    const card = findCard(pend.cardId);
     const choice = card?.choices.find((c) => c.id === choiceId);
     if (!card || !choice) throw new GameError('INVALID', '없는 선택지입니다.');
     const rng = new Rng((meta.rngStreams.event as RngState | undefined) ?? Rng.derive(meta.seed, 'event').state());
@@ -764,13 +788,21 @@ export class EventOps {
       case 'FAN_NOW': return `팬 만족도 ${up(e.value)}`;
       case 'FAN_TARGET': return `팬 만족도 흐름 ${up(e.value)} (${e.weeks}주)`;
       case 'PRESS': return `언론 관계 ${up(e.value)}`;
-      case 'MOOD': return `${e.who === 'other' ? '다른 선수 ' : e.who === 'club' ? '1군 전원 ' : ''}기분 ${up(e.value)}`;
+      case 'MOOD': return `${e.role ? this.roleName(meta, e.role) : e.who === 'other' ? '다른 선수 ' : e.who === 'club' ? '1군 전원 ' : ''}기분 ${up(e.value)}`;
       case 'CLUBHOUSE': return `선수단 분위기 ${up(e.value)}`;
       case 'TRUST': return `감독 신뢰도 ${up(e.value)}`;
-      case 'GROWTH': return `훈련 효과 ${up(e.value, 1)} (시즌${e.who === 'club' ? ', 1군 전원' : ''})`;
+      case 'GROWTH': return `${e.role ? this.roleName(meta, e.role) : ''}훈련 효과 ${up(e.value, 1)} (시즌${e.who === 'club' ? ', 1군 전원' : ''})`;
       case 'CONTRACT': return '계약 조치';
+      case 'CHAIRMAN': return `모기업 신뢰 ${up(e.value)}`;
       default: return null;
     }
+  }
+
+  /** ② 배역 효과 표시: 우리 구단 배역 선수 이름 */
+  private roleName(meta: GameMeta, role: string): string {
+    const id = this.story?.castOf(meta.userClubId, role) ?? null;
+    const p = id !== null ? this.repo.getPlayer(id) : null;
+    return p ? `${p.name} ` : '';
   }
 
   riskGrade(p: number): '낮음' | '보통' | '높음' {
@@ -906,6 +938,8 @@ export class EventOps {
     state.lastCategory = card.category;
     const row: EventLogRow = { season: meta.season, weekId, week, date, cardId: card.id, category: card.category, playerId, choiceId: choice.id, by, outcome, text: `${text} → ${choice.text}` };
     this.repo.addEventLog(row);
+    // ②: 스토리 장 처리 기록(선택·스토리 플래그)
+    if (card.category === 'story') this.story?.chosen(meta.userClubId, card.id, choice.id, date);
   }
 
   // ───────── 턴 브리핑(D-192·D-203 (8)) ─────────

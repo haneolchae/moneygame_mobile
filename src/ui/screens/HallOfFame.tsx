@@ -4,8 +4,9 @@ import type { AwardsView, ClubOption, TeamRecordsView } from '../../shared/proto
 import type { Nav } from '../App';
 import { api } from '../api';
 import { Emblem } from '../Emblem';
+import { StoryDetail, useStory } from '../StoryPanel';
 
-type Tab = 'timeline' | 'history' | 'records' | 'legends' | 'awards' | 'mine';
+type Tab = 'timeline' | 'history' | 'records' | 'legends' | 'awards' | 'mine' | 'story';
 
 const SOURCE_LABEL: Record<string, string> = { real: '', start: ' (시작 이전)', game: '' };
 const BAT_KEYS = ['G', 'H', 'HR', 'RBI', 'SB', 'AVG'];
@@ -15,11 +16,13 @@ function MineBadge() {
   return <span className="badge star">구단주 달성</span>;
 }
 
-export function HallOfFame({ nav, initialClubId }: { nav: Nav; initialClubId?: number }) {
+export function HallOfFame({ nav, initialClubId, initialTab }: { nav: Nav; initialClubId?: number; initialTab?: Tab }) {
   const userClub = nav.dashboard!.userClub.id;
   const [clubs, setClubs] = useState<ClubOption[]>([]);
   const [clubId, setClubId] = useState(initialClubId ?? userClub);
-  const [tab, setTab] = useState<Tab>('timeline');
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'timeline');
+  // ② 구단 서사(27, D-237): 그 구단 스토리 진행·결말 에필로그
+  const story = useStory(nav, clubId, tab === 'story');
   const [v, setV] = useState<TeamRecordsView | null>(null);
   // 8a 리그 시상 기록(전 구단)
   const [aw, setAw] = useState<AwardsView | null>(null);
@@ -96,6 +99,7 @@ export function HallOfFame({ nav, initialClubId }: { nav: Nav; initialClubId?: n
                   ['records', '구단 기록'],
                   ['legends', `레전드 (${v.legends.length})`],
                   ['awards', '리그 시상 기록'],
+                  ['story', '구단 서사'],
                   ...(v.isUserClub ? ([['mine', `구단주 달성 (${mineCount})`]] as Array<[Tab, string]>) : []),
                 ] as Array<[Tab, string]>
               ).map(([k, label]) => (
@@ -107,6 +111,7 @@ export function HallOfFame({ nav, initialClubId }: { nav: Nav; initialClubId?: n
             <span className="muted small">2025년까지 실제 KBO 기록(선수 이름은 가상) · 2027 시즌부터 구단주 재임 기록</span>
           </div>
 
+          {tab === 'story' && (story === undefined ? <div className="muted">불러오는 중…</div> : story === null ? <div className="muted">이 구단의 스토리가 없습니다.</div> : <StoryDetail v={story} />)}
           {tab === 'timeline' && (
             <section className="panel">
               <div className="panel-head">

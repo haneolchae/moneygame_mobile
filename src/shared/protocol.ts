@@ -856,6 +856,41 @@ export interface BriefingView {
 }
 
 /** EV-3 결정 카드 화면(D-207 (1)): 확정 효과는 숫자, 지표는 방향, 확률 효과는 위험 등급만 */
+/** ② 구단 스토리 화면(27, D-222·D-237). 다른 구단 스토리도 공개 기록(장 선택·결말)만 보인다 */
+export interface StoryChapterView {
+  id: string;
+  act: number;
+  branch: string | null;
+  title: string;
+  /** 시기 설명(예: 1시즌 02/01~02/21, 첫 스토브리그 1~2턴) */
+  when: string;
+  status: 'done' | 'skipped' | 'pending' | 'upcoming' | 'otherBranch';
+  choice: string | null;
+  by: string | null;
+  date: string | null;
+}
+
+export interface StoryView {
+  club: ClubRef;
+  isUserClub: boolean;
+  title: string;
+  task: string;
+  synopsis: string;
+  /** 1·2막, 3 = 결말 */
+  act: number;
+  branch: string | null;
+  storySeason: number;
+  startSeason: number;
+  /** 모기업 신뢰(모기업 없는 구단은 null) */
+  chairman: number | null;
+  cast: Array<{ role: string; label: string; playerId: number; name: string; present: boolean }>;
+  chapters: StoryChapterView[];
+  seasons: Array<{ season: number; rank: number; result: string }>;
+  ending: { title: string; kind: string; season: number; epilogue: string; next: string | null; owner: boolean } | null;
+  /** 리그 전체 스토리 현황(결말·현재 막) */
+  league: Array<{ club: ClubRef; title: string; act: number; ending: string | null; endingKind: string | null; endingSeason: number | null }>;
+}
+
 export interface CardView {
   cardId: string;
   category: string;
@@ -1309,6 +1344,7 @@ export interface RequestMap {
   'events.delegation': { payload: void; result: CardDelegationView };
   'events.setDelegation': { payload: { category: string; delegate: boolean }; result: CardDelegationView };
   'events.force': { payload: { cardId: string; playerId?: number | null }; result: CardView | null };
+  'story.view': { payload: { clubId?: number }; result: StoryView | null };
   'allStar.campaign': { payload: Record<string, never>; result: { message: string; view: AllStarView } };
   'allStar.apply': { payload: Record<string, never>; result: { message: string; view: AllStarView } };
   'trade.respondOffer': { payload: { offerId: number; accept: boolean; commandId: string }; result: TradeOfferResultView };
@@ -1407,6 +1443,7 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'events.delegation',
   'events.setDelegation',
   'events.force',
+  'story.view',
   'allStar.campaign',
   'allStar.apply',
   'trade.respondOffer',
