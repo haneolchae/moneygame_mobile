@@ -353,6 +353,17 @@ export const SPONSOR = {
   satisfactionGoal: 60,
   campaignsRequired: 2,
   refundShare: 0.2,
+  /**
+   * 9b-1(D-236 (2), 지급 세부는 D-243 초기안): 보장액 지급 방식. 일시불은 체결일 전액, 월별은 계약 시즌 months의 월말마다 균등 분할,
+   * 혼합은 체결일 mixedUpfront 몫 + 나머지 월별. 브랜드별 방식은 brands.json payment(없으면 일시불).
+   */
+  payment: {
+    labels: { lump: '일시불', monthly: '월별', mixed: '혼합' },
+    mixedUpfront: 0.5,
+    months: [3, 4, 5, 6, 7, 8, 9, 10],
+    /** D-246(사용자 확정): 지급 방식별 금액 배율 범위(일시불 100 기준 90~100, 월별 100~120, 혼합 95~110). 제안마다 범위 안에서 1% 단위로 정한다 */
+    factor: { lump: [0.9, 1.0], monthly: [1.0, 1.2], mixed: [0.95, 1.1] } as Record<'lump' | 'monthly' | 'mixed', readonly [number, number]>,
+  },
   /** 구단 매력 = 1 + 시장·승률·만족도 보정, 0.7~1.4 */
   appealMarket: 0.25,
   appealPct: 0.8,

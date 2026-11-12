@@ -771,6 +771,8 @@ export interface SponsorRowView {
   incentiveWon: number;
   incentive: string;
   obligation: string;
+  /** 9b-1(D-236 (2)): 보장액 지급 방식 문구 */
+  payment: string;
 }
 
 export interface BusinessView {
@@ -808,7 +810,8 @@ export interface BusinessView {
     signAp: number;
     open: boolean;
     note: string;
-    contracts: Array<SponsorRowView & { by: string }>;
+    /** paidWon: 지금까지 받은 보장액 */
+    contracts: Array<SponsorRowView & { by: string; paidWon: number }>;
     offers: Array<SponsorRowView & { signReason: string | null }>;
   };
   campaigns: Array<{ kind: CampaignKindView; label: string; weeks: number; costWon: number; demandPct: number; satisfaction: number; active: { start: string; end: string } | null; startReason: string | null }>;

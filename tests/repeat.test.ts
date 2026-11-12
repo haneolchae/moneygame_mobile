@@ -281,8 +281,10 @@ describe('반복 조작 점검 (7c) — 스토브리그 시작 한 게임', () =
     expect(both.filter((r) => r.ok)).toHaveLength(1);
     s1 = await snap(d);
     expect(s1.ap).toBe(s0.ap - SPONSOR.signAp);
-    expect(s1.cash).toBe(s0.cash + main.guaranteedWon);
-    expect(s1.ledger).toBe(s0.ledger + 1);
+    // 9b-1(D-236 (2)): 체결일에는 지급 방식의 체결일 몫만(일시불 전액·혼합 선지급·월별 0)
+    const paid = repo.getMeta().sponsors![String(CLUB)]!.find((c) => c.id === main.id)!.paidWon!;
+    expect(s1.cash).toBe(s0.cash + paid);
+    expect(s1.ledger).toBe(s0.ledger + (paid > 0 ? 1 : 0));
     // 다시 보내도(순차 재전송) 무비용 거부
     expect(await fails(d, 'business.signSponsor', { offerId: main.id })).not.toBe('INTERNAL');
     expect(await snap(d)).toEqual(s1);

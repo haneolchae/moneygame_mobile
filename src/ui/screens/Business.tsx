@@ -131,6 +131,7 @@ export function Business({ nav }: { nav: Nav }) {
                 <th>업종</th>
                 <th>유형</th>
                 <th className="num">보장액</th>
+                <th>지급</th>
                 <th>인센티브</th>
                 <th>구단 의무</th>
                 <th>상태</th>
@@ -144,6 +145,10 @@ export function Business({ nav }: { nav: Nav }) {
                   <td>{c.industry}</td>
                   <td>{c.style}</td>
                   <td className="num amount-pos">{won(c.guaranteedWon)}</td>
+                  <td>
+                    {c.payment}
+                    {c.paidWon < c.guaranteedWon && <span className="muted small"> · 수령 {won(c.paidWon)}</span>}
+                  </td>
                   <td>
                     {won(c.incentiveWon)} · {c.incentive}
                   </td>
@@ -164,6 +169,7 @@ export function Business({ nav }: { nav: Nav }) {
                     <td>{o.industry}</td>
                     <td>{o.style}</td>
                     <td className="num">{won(o.guaranteedWon)}</td>
+                    <td>{o.payment}</td>
                     <td>
                       {won(o.incentiveWon)} · {o.incentive}
                     </td>
@@ -181,7 +187,7 @@ export function Business({ nav }: { nav: Nav }) {
                 ))}
               {v.sponsors.contracts.length === 0 && v.sponsors.offers.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="muted">
+                  <td colSpan={9} className="muted">
                     계약과 제안이 없습니다. {v.sponsors.note}
                   </td>
                 </tr>

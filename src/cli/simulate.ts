@@ -295,6 +295,8 @@ async function main() {
       }
       console.log(JSON.stringify({ trades: { attempts, done }, extensions }));
     }
+    // --keep-dir: 정규시즌 진행 직전 상태도 슬롯 pre<시즌>으로 남긴다(9b-1 시즌 진행 성능 조사용)
+    if (keepDir) await call('save.save', { slot: `pre${(await call<DashboardView>('game.dashboard')).season}` });
     const t0 = performance.now();
     // --check-daily: 정규시즌을 하루씩 진행하며 모든 구단 1군 인원을 매일 확인한다(원인 조사용, 결과는 같다)
     const adv = process.argv.includes('--check-daily') ? await dailyChecked() : await advance('untilSeasonEnd');

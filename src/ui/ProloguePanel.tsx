@@ -1,6 +1,6 @@
 // ③ 프롤로그 안내(27b, D-223·D-238): 화면 오른쪽 아래에 붙는 안내 창. 진행을 막지 않는다.
 // 장면(대사·회견 답변) → 미션 목록(설명·화면 안내·건너뛰기). 판정·기본 처리는 게임 진행 계층이 하고, 여기서는 요청과 표시만 한다.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PrologueActionResult, PrologueView } from '../shared/protocol';
 import type { Nav, Route } from './App';
 import { api, ApiError } from './api';
@@ -15,6 +15,11 @@ export function ProloguePanel({ view, nav }: { view: PrologueView; nav: Nav }) {
   const [open, setOpen] = useState(true);
   const [sending, setSending] = useState(false);
   const [summary, setSummary] = useState<string[] | null>(null);
+  // 9b-1: 창을 연 동안 본문 오른쪽에 창 너비만큼 자리를 비워 표의 오른쪽 열(제안·맡기기 버튼)을 가리지 않는다
+  useEffect(() => {
+    document.body.classList.toggle('prologue-docked', open);
+    return () => document.body.classList.remove('prologue-docked');
+  }, [open]);
 
   const run = async (p: Promise<PrologueActionResult>) => {
     setSending(true);

@@ -19,6 +19,7 @@ import { EOK, splitEvenly } from '../engine/money';
 import { arcOf } from '../engine/events/story';
 import { STORY } from '../engine/config';
 import { PROLOGUE } from '../engine/events/prologue';
+import { expectedPaid } from '../engine/sponsors';
 
 export function checkInvariants(repo: GameRepository, season: number): string[] {
   const errors: string[] = [];
@@ -341,6 +342,12 @@ export function checkBusiness(repo: GameRepository): string[] {
       if (season !== meta.season && season !== meta.season + 1) errors.push(`스폰서 계약 시즌 오류: 구단 ${id} ${season}`);
       if (same.filter((c) => c.slot === 'main').length > SPONSOR.mainSlots || same.filter((c) => c.slot === 'sub').length > SPONSOR.subSlots) errors.push(`스폰서 슬롯 초과: 구단 ${id} ${season}`);
       if (new Set(same.map((c) => c.industry)).size !== same.length) errors.push(`스폰서 업종 중복: 구단 ${id} ${season}`);
+    }
+    // 9b-1(D-236 (2)): 받은 보장액은 지급 계획대로(체결일 몫 + 지난 월말 몫), 보장액을 넘지 않는다
+    for (const c of list) {
+      if (c.paidWon === undefined) continue;
+      if (c.paidWon < 0 || c.paidWon > c.guaranteedWon) errors.push(`스폰서 수령액 범위 오류: 구단 ${id} ${c.brand} ${c.paidWon}/${c.guaranteedWon}`);
+      else if (c.paidWon !== expectedPaid(c, meta.currentDate)) errors.push(`스폰서 수령액이 지급 계획과 다름: 구단 ${id} ${c.brand} ${c.paidWon} ≠ ${expectedPaid(c, meta.currentDate)}`);
     }
   }
   for (const [id, f] of Object.entries(meta.facilities ?? {})) {

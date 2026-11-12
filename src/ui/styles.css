@@ -80,7 +80,7 @@ button:focus:not(:focus-visible) { outline: none; }
 @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
 
 /* ───── 셸: 상단 상태 줄 + 주 메뉴(60px) + 본문 ───── */
-.shell { display: grid; grid-template-columns: 1fr; grid-template-rows: auto var(--do-nav-h) 1fr; height: 100vh; }
+.shell { display: grid; grid-template-columns: minmax(0, 1fr); /* 9b-1: 넓은 표가 창보다 셸을 넓히지 않게(표는 본문 안에서 가로 스크롤) */ grid-template-rows: auto var(--do-nav-h) 1fr; height: 100vh; }
 .topbar { display: flex; align-items: center; gap: 16px; padding: 8px var(--do-pad); background: #0a1728; color: var(--text); border-bottom: 1px solid var(--line); min-height: 58px; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 800; letter-spacing: 0.02em; white-space: nowrap; }
 .brand img { width: 30px; height: 30px; }
@@ -305,7 +305,10 @@ button.danger:hover:not(:disabled) { background: rgba(230, 106, 114, 0.15); }
 .meeting-items li { margin-bottom: 6px; line-height: 1.5; }
 
 /* ③ 프롤로그 안내(27b): 진행을 막지 않는 오른쪽 아래 안내 창, 화면 안내 메뉴 강조(색 + 테두리 + 점) */
-.prologue-dock { position: fixed; right: 18px; bottom: 18px; width: min(440px, 92vw); max-height: 70vh; overflow: auto; z-index: 40; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5); margin: 0; }
+/* 9b-1: 안내 창 너비. 창을 연 동안(.prologue-docked) 본문 오른쪽에 같은 너비 + 여백을 비워 표 버튼을 가리지 않는다 */
+:root { --prologue-w: clamp(300px, 30vw, 420px); }
+body.prologue-docked .content { padding-right: calc(var(--prologue-w) + 36px); }
+.prologue-dock { position: fixed; right: 18px; bottom: 18px; width: var(--prologue-w); max-height: 70vh; overflow: auto; z-index: 40; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5); margin: 0; }
 .prologue-dock .panel-body { display: flex; flex-direction: column; gap: 10px; }
 .prologue-scene { border-left: 3px solid var(--do-mint); padding-left: 10px; }
 .prologue-scene h3 { margin: 0 0 6px; font-size: 15px; }

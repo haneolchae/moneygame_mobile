@@ -7,10 +7,13 @@ export const BRAND_ROLES = ['sponsor', 'maker', 'collab'] as const;
 export const BRAND_STYLES = ['guaranteed', 'balanced', 'performance'] as const;
 export const BRAND_INCENTIVES = ['postseason', 'top3', 'occupancy', 'satisfaction', 'allstar3', 'mrAllstar'] as const;
 export const BRAND_OBLIGATIONS = ['none', 'campaigns', 'noHighPrice'] as const;
+/** 9b-1(D-236 (2)): 스폰서 보장액 지급 방식 — 일시불·월별·혼합 */
+export const BRAND_PAYMENTS = ['lump', 'monthly', 'mixed'] as const;
 
 export type BrandStyle = (typeof BRAND_STYLES)[number];
 export type BrandIncentive = (typeof BRAND_INCENTIVES)[number];
 export type BrandObligation = (typeof BRAND_OBLIGATIONS)[number];
+export type BrandPayment = (typeof BRAND_PAYMENTS)[number];
 
 export interface BrandSpec {
   id: string;
@@ -20,6 +23,8 @@ export interface BrandSpec {
   awareness: '상' | '중' | '하';
   audience: string;
   roles: Array<(typeof BRAND_ROLES)[number]>;
+  /** 스폰서 보장액 지급 방식(없으면 일시불) */
+  payment?: BrandPayment;
   traits?: {
     /** 제안 유형 가중치(없으면 고르게) */
     style?: Partial<Record<BrandStyle, number>>;
@@ -52,6 +57,7 @@ export function parseBrands(input: unknown): { brands: BrandSpec[]; errors: stri
     if (!within(['상', '중', '하'] as const, b.awareness)) bad.push('awareness는 상·중·하');
     if (!isText(b.audience)) bad.push('audience 없음');
     if (!listOf(BRAND_ROLES, b.roles)) bad.push('roles 값 오류');
+    if (b.payment !== undefined && !within(BRAND_PAYMENTS, b.payment)) bad.push('payment는 lump·monthly·mixed');
     const t = b.traits as Record<string, unknown> | undefined;
     if (t !== undefined) {
       if (typeof t !== 'object' || t === null) bad.push('traits는 객체');

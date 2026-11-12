@@ -2,7 +2,7 @@
 // 고가 티켓 금지 의무, AI 선택, 1/31 기본 계약, 시즌 마감 정산과 계약 종료
 import { describe, expect, it } from 'vitest';
 import { SPONSOR } from '../src/engine/config';
-import { settle, slotReason, type SponsorContract } from '../src/engine/sponsors';
+import { paidOf, paymentPlan, settle, slotReason, type SponsorContract } from '../src/engine/sponsors';
 import type { SponsorOps } from '../src/game/sponsors';
 import type { GameMeta } from '../src/game/ports';
 import type { Dispatcher } from '../src/host/dispatcher';
@@ -50,19 +50,20 @@ describe('스폰서 (6c)', () => {
       expect(v0.offers.filter((o) => o.slot === 'main')).toHaveLength(SPONSOR.mainOffers);
       expect(v0.offers.filter((o) => o.slot === 'sub')).toHaveLength(SPONSOR.subOffers);
 
-      // 메인 체결: 행동력 2, 보장액 수령. 같은 제안·두 번째 메인은 무비용 거부
+      // 메인 체결: 행동력 2, 체결일 몫 수령(9b-1 지급 방식: 일시불 전액·혼합 선지급·월별 0). 같은 제안·두 번째 메인은 무비용 거부
       const main = v0.offers.find((o) => o.slot === 'main')!;
       const [ap0, cash0] = [await ap(), repo.cashBalance(1)];
       const r = await call(d, 'business.signSponsor', { offerId: main.id });
       expect(await ap()).toBe(ap0 - SPONSOR.signAp);
-      expect(repo.cashBalance(1)).toBe(cash0 + main.guaranteedWon);
+      const upfront = paymentPlan(svc.meta().sponsorOffers!.find((o) => o.id === main.id)!).upfrontWon;
+      expect(repo.cashBalance(1)).toBe(cash0 + upfront);
       expect(r.view.sponsors.contracts).toHaveLength(1);
       const other = v0.offers.find((o) => o.slot === 'main' && o.id !== main.id)!;
       for (const id of [main.id, other.id]) expect((await d.respond('business.signSponsor', { offerId: id })).ok).toBe(false);
       const sameIndustry = r.view.sponsors.offers.find((o) => o.slot === 'sub' && o.industry === main.industry);
       if (sameIndustry) expect(sameIndustry.signReason).toContain('업종');
       expect(await ap()).toBe(ap0 - SPONSOR.signAp);
-      expect(repo.cashBalance(1)).toBe(cash0 + main.guaranteedWon);
+      expect(repo.cashBalance(1)).toBe(cash0 + upfront);
 
       // 고가 티켓 금지 의무가 있는 계약이면 고가 정책을 고를 수 없다
       const meta0 = svc.meta();
@@ -81,14 +82,15 @@ describe('스폰서 (6c)', () => {
       expect((await call(d, 'business.view')).sponsors.open).toBe(false);
       expect(checkBusiness(repo)).toEqual([]);
 
-      // 시즌 마감 정산: 인센티브·반환이 장부와 시즌 합계에 들어가고 그 시즌 계약이 끝난다
+      // 시즌 마감 정산: 인센티브·반환이 장부와 시즌 합계에 들어가고 그 시즌 계약이 끝난다. 못 받은 월별 몫은 이때 받는다(9b-1)
       const guaranteed = mine.reduce((a, c) => a + c.guaranteedWon, 0);
+      const unpaid = mine.reduce((a, c) => a + c.guaranteedWon - paidOf(c), 0);
       expect(meta1.sponsorTotals!['2027']!['1']).toBe(guaranteed);
       const cash1 = repo.cashBalance(1);
       svc.sponsors.settleSeason(svc.meta(), '2027-10-30');
       const meta2 = svc.meta();
       expect(meta2.sponsors!['1']).toEqual([]);
-      expect(repo.cashBalance(1) - cash1).toBe(meta2.sponsorTotals!['2027']!['1']! - guaranteed);
+      expect(repo.cashBalance(1) - cash1).toBe(meta2.sponsorTotals!['2027']!['1']! - guaranteed + unpaid);
     } finally {
       d.close();
       cleanup(dir);
