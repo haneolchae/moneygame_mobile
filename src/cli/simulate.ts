@@ -8,13 +8,17 @@ import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { FACILITY } from '../engine/config';
 import { PROBABILITY_CONFIG } from '../engine/probabilityConfig';
 import { CLOSE_RULES } from '../game/seasonClose';
 import { Dispatcher } from '../host/dispatcher';
+import { xpToNext } from '../engine/owner';
 import type { GameService } from '../game/service';
 import { coreAverage } from '../engine/development';
+import { capPayroll, salaryCap } from '../engine/contracts';
+import { overall } from '../engine/worldgen';
 import { checkForeignQuota, checkInvariants, injuryStats, checkRegularSeasons, checkRosterComposition, checkRosterLimits } from '../host/invariants';
-import type { AdvanceResult, BudgetPlanInput, BudgetView, DashboardView, DelegationPolicyView, BusinessView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView, TradeOffersView, TradeResultView, TradeView } from '../shared/protocol';
+import type { AdvanceResult, BudgetPlanInput, BudgetView, CareerView, DashboardView, DelegationPolicyView, BusinessView, OrganizationView, PlayerActionsView, PlayerListItem, RosterView, StandingView, TradeOffersView, TradeResultView, TradeView } from '../shared/protocol';
 
 const arg = (name: string, fallback: string) => {
   const i = process.argv.indexOf(`--${name}`);
@@ -28,7 +32,9 @@ async function main() {
   // --keep-dir: 지정한 폴더에서 돌리고 지우지 않는다. 시즌마다 정규시즌 끝 상태를 슬롯 s<시즌>으로 남긴다(원인 조사용)
   const keepDir = arg('keep-dir', '');
   const baseDir = keepDir || mkdtempSync(join(tmpdir(), 'fo-sim-'));
-  const d = new Dispatcher({ baseDir, platform: () => ({ steam: { mode: 'mock', initialized: false, detail: 'CLI' }, appVersion: 'cli' }) });
+  // 진행 통지: 정규시즌 진행 중 위임 구단주의 시설 투자 확인에 쓴다(아래 progressHook)
+  let progressHook: ((p: { date: string; daysProcessed: number }) => void) | null = null;
+  const d = new Dispatcher({ baseDir, platform: () => ({ steam: { mode: 'mock', initialized: false, detail: 'CLI' }, appVersion: 'cli' }), onEvent: (e) => progressHook?.(e) });
   const call = async <T>(name: string, payload?: unknown): Promise<T> => {
     const r = await d.respond(name as never, payload as never);
     if (!r.ok) throw new Error(`${name}: ${r.error.message}`);
@@ -80,8 +86,34 @@ async function main() {
   // ①(D-214·D-215): 새 게임은 첫 스토브리그를 자동 실행하고 2027-02-01 캠프에서 시작한다
   const startDate = (await call<DashboardView>('game.dashboard')).date;
   // 우리 구단: 위임 가능한 팀을 완전 위임으로 둔다(정책 한도는 기본값).
-  const org = await call<OrganizationView>('org.view');
-  for (const p of org.policies.filter((x) => x.team === 'ops' || x.team === 'admin')) await call('org.setPolicy', { ...p, mode: 'auto' } satisfies DelegationPolicyView);
+  const setPolicies = async () => {
+    const org = await call<OrganizationView>('org.view');
+    for (const p of org.policies.filter((x) => x.team === 'ops' || x.team === 'admin')) await call('org.setPolicy', { ...p, mode: 'auto' } satisfies DelegationPolicyView);
+  };
+  await setPolicies();
+  // 9b-2: 해임되면 실제 플레이어처럼 영입 제안 첫 구단을 수락해 이어서 한다(7b, D-157). 제안이 없거나 파산이면 장기 실행을 거기서 끝낸다.
+  let uid = 1;
+  let offersBefore = 0;
+  let ended: string | null = null;
+  const moves: Array<{ date: string; from: number; to: number }> = [];
+  const continueCareer = async (): Promise<boolean> => {
+    const dash = await call<DashboardView>('game.dashboard');
+    if (!dash.gameOver) return true;
+    const offer = dash.gameOver.kind === 'dismissed' ? (await call<CareerView>('owner.career')).jobOffers[0] : undefined;
+    if (!offer) {
+      ended = `${dash.date} ${dash.gameOver.reason} (영입 제안 없음)`;
+      console.log(JSON.stringify({ ended }));
+      return false;
+    }
+    await call('owner.acceptJob', { clubId: offer.club.id });
+    moves.push({ date: dash.date, from: uid, to: offer.club.id });
+    console.log(JSON.stringify({ dismissed: dash.gameOver.reason, date: dash.date, from: uid, to: offer.club.id }));
+    uid = offer.club.id;
+    // 받은 트레이드 제안 목록은 구단을 옮기면 비워진다(7b): 시즌별 건수 계산 기준도 0으로
+    offersBefore = 0;
+    await setPolicies();
+    return true;
+  };
 
   // 6c(D-149): 스토브리그 제안 기간에 주마다 스폰서 1건을 직접 체결한다(보장액이 큰 제안부터). 남은 자리는 1/31 기본 계약이 채운다.
   const trySponsor = async () => {
@@ -139,6 +171,26 @@ async function main() {
       // 행동력 부족 등 규칙상 거부
     }
   };
+  // 6a(D-141·D-142)·9b-2(D-247): 위임 구단주도 AI 구단과 같은 규칙(현금 − 진행 공사 남은 지급 − 새 공사비 × aiCommitShare ≥ 시작 현금 × aiCashFloor)으로
+  // 시설에 투자한다. 스토브리그 턴마다, 캠프에서 한 번 더 시도한다(전에는 캠프에서만 해서 행동력 부족으로 시즌당 1건에 그쳤다). 행동력 3은 게임 쪽이 차감한다.
+  let facilityStarted = 0;
+  // 디스패처의 business.view·business.startFacility와 같은 게임 명령을 바로 부른다(진행 통지 안에서도 쓸 수 있게 동기 호출).
+  const tryFacilityNow = (): number => {
+    let started = 0;
+    for (let guard = 0; guard < 2; guard++) {
+      try {
+        const bv: BusinessView = svc().businessView();
+        const pick = bv.facilities.filter((f) => f.next && !f.startReason).sort((a, b) => a.level - b.level)[0];
+        if (!pick || bv.cashWon - bv.committedWon - Math.round(pick.next!.costWon * FACILITY.aiCommitShare) < bv.startCashWon * FACILITY.aiCashFloor) break;
+        svc().startFacility(pick.kind);
+        started++;
+      } catch {
+        break; // 행동력 부족 등 규칙상 거부
+      }
+    }
+    return started;
+  };
+  const tryFacility = async (): Promise<number> => tryFacilityNow();
   const tStove = performance.now();
   // 두 번째 이후 스토브리그 턴 수 기록(시즌 번호를 턴마다 하나씩)
   const stoveTurns: number[] = [];
@@ -156,10 +208,10 @@ async function main() {
   let firstCoreMean: number | undefined;
   const tradeStats: Array<{ season: number; attempts: number; done: number }> = [];
   let aiTradesBefore = 0;
-  let offersBefore = 0;
   let extensions = 0;
   let prevCore = new Map<number, number>();
   for (let s = 1; s <= seasons; s++) {
+    if (!(await continueCareer())) break;
     // 두 번째 시즌부터: 한국시리즈 뒤 스토브리그를 주 단위로 지나 다음 시즌으로 간다(D-085).
     // 스토브리그를 지난 직후: 모든 구단 40인 한도(우리 구단은 의무 안건, AI는 같은 정리 규칙)
     const stoveErrors: string[] = [];
@@ -170,6 +222,7 @@ async function main() {
       while (true) {
         const sd = await call<DashboardView>('game.dashboard');
         if (sd.phase !== 'stove') break;
+        if (sd.gameOver) break;
         if (!rebuildTried && sd.goal.misses >= CLOSE_RULES.warnAfterMisses) {
           try {
             const r = await call<{ message: string }>('owner.rebuild');
@@ -183,10 +236,16 @@ async function main() {
         await trySponsor();
         await tryOffer();
         await tryBudget();
+        facilityStarted += await tryFacility();
         // D-216: 스토브리그는 턴 단위로 진행한다
         await advance('turn');
         stoveTurns.push(s);
       }
+    // 스토브리그 중 해임: 새 구단에서 남은 스토브리그를 마친다
+    if ((await call<DashboardView>('game.dashboard')).gameOver) {
+      if (!(await continueCareer())) break;
+      while ((await call<DashboardView>('game.dashboard')).phase === 'stove') await advance('turn');
+    }
     stoveErrors.push(...[...checkRosterLimits(d.saves.repository()), ...checkRosterComposition(d.saves.repository()), ...checkForeignQuota(d.saves.repository())].map((e) => `스토브리그 후 ${e}`));
     // 2d(D-120): 위임 구단주도 캠프 중 감독 추천을 수동 계획으로 저장하고, 계획의 지명타자를 2군 타자와 바꿔
     // 수동 경기 운영·계획 보정 경로를 시즌 내내 함께 검사한다(규칙 판정은 게임 쪽 명령이 한다).
@@ -198,8 +257,13 @@ async function main() {
         const isC = (id: number) => rv.players.find((p) => p.id === id)?.position === 'C';
         const lineup = [...rv.recommended.lineup].sort((a, b) => Number(b.position === 'DH') - Number(a.position === 'DH'));
         const dh = lineup.find((x) => !isC(x.playerId))?.playerId;
-        const up = rv.players.find((p) => p.level !== '1군' && !p.isPitcher && p.position !== 'C');
-        if (dh && up) await call('roster.move', { promote: [up.id], demote: [dh] });
+        // 출장 정지·부상 등으로 올릴 수 없는 선수는 규칙상 거부되므로 다음 후보로 넘어간다(다른 사유의 거부는 실패로 남긴다)
+        for (const up of rv.players.filter((p) => p.level !== '1군' && !p.isPitcher && p.position !== 'C')) {
+          if (!dh) break;
+          const r = await d.respond('roster.move', { promote: [up.id], demote: [dh] });
+          if (r.ok) break;
+          if (r.error.code !== 'NOT_AVAILABLE' && r.error.code !== 'INJURED' && r.error.code !== 'RE_REGISTER') throw new Error(`roster.move: ${r.error.message}`);
+        }
       }
     } catch (e) {
       stoveErrors.push(`개막 준비 편성 실패: ${(e as Error).message}`);
@@ -228,22 +292,9 @@ async function main() {
       }
       console.log(JSON.stringify({ training: { direct, delegated } }));
     }
-    // 6a(D-141·D-142): 위임 구단주도 AI 구단과 같은 규칙(투자 뒤 현금 ≥ 시작 현금 × 0.9)으로 시설에 투자한다. 행동력 3은 게임 쪽이 차감한다.
-    {
-      let started = 0;
-      for (let guard = 0; guard < 2; guard++) {
-        const bv = await call<BusinessView>('business.view');
-        const pick = bv.facilities.filter((f) => f.next && !f.startReason).sort((a, b) => a.level - b.level)[0];
-        if (!pick || bv.cashWon - bv.committedWon - pick.next!.costWon < bv.startCashWon * 0.9) break;
-        try {
-          await call('business.startFacility', { kind: pick.kind });
-          started++;
-        } catch {
-          break; // 행동력 부족 등 규칙상 거부
-        }
-      }
-      console.log(JSON.stringify({ facilities: { started } }));
-    }
+    // 6a(D-141·D-142): 캠프에서도 같은 규칙으로 시설에 투자한다(스토브리그 턴마다 한 것에 더해).
+    console.log(JSON.stringify({ facilities: { started: facilityStarted + (await tryFacility()) } }));
+    facilityStarted = 0;
     // 6b(D-147): 다음 주(새 행동력)에 캠페인 1건을 실행한다. 규칙상 거부는 건너뛴다. 트레이드 시도도 이 주의 행동력으로 한다.
     await advance('week');
     try {
@@ -297,10 +348,26 @@ async function main() {
     }
     // --keep-dir: 정규시즌 진행 직전 상태도 슬롯 pre<시즌>으로 남긴다(9b-1 시즌 진행 성능 조사용)
     if (keepDir) await call('save.save', { slot: `pre${(await call<DashboardView>('game.dashboard')).season}` });
-    const t0 = performance.now();
-    // --check-daily: 정규시즌을 하루씩 진행하며 모든 구단 1군 인원을 매일 확인한다(원인 조사용, 결과는 같다)
-    const adv = process.argv.includes('--check-daily') ? await dailyChecked() : await advance('untilSeasonEnd');
-    const simMs = performance.now() - t0;
+    // 정규시즌 진행(9b-2, D-248): 한 번의 진행 요청으로 끝까지 가되, 진행 통지(하루 처리가 끝난 시점)에서 4주마다 시설 투자를 다시 본다
+    // (AI 구단은 매주 본다. 시즌 중 투자를 못 하면 시즌 말 현금이 공사비만큼 쌓여 보인다). 진행 시간은 진행 요청에 걸린 시간이다.
+    // --check-daily: 정규시즌을 하루씩 진행하며 모든 구단 1군 인원을 매일 확인한다(원인 조사용)
+    let simMs = 0;
+    let adv: AdvanceResult | null = null;
+    let inSeasonStarted = 0;
+    progressHook = (p) => {
+      if (p.daysProcessed % 28 === 0) inSeasonStarted += tryFacilityNow();
+    };
+    for (;;) {
+      const t0 = performance.now();
+      const r: AdvanceResult = process.argv.includes('--check-daily') ? await dailyChecked() : await advance('untilSeasonEnd');
+      simMs += performance.now() - t0;
+      adv = adv ? { ...r, daysProcessed: adv.daysProcessed + r.daysProcessed, gamesPlayed: adv.gamesPlayed + r.gamesPlayed } : r;
+      // 시즌 중 해임(팬 만족도 등): 새 구단에서 정규시즌을 마저 치른다
+      if (!(await call<DashboardView>('game.dashboard')).gameOver || !(await continueCareer())) break;
+    }
+    progressHook = null;
+    if (ended) break;
+    console.log(JSON.stringify({ facilitiesInSeason: { started: inSeasonStarted } }));
     const dash = await call<DashboardView>('game.dashboard');
     const q0 = performance.now();
     const hitters = await call<PlayerListItem[]>('game.players', { scope: 'all', group: 'hitters', sortKey: 'OPS', sortDesc: true });
@@ -349,16 +416,13 @@ async function main() {
     if (inj.seasonOutPerClub > 3) inv.push(`사전 등록 4b-1 ④ 위반: 시즌 아웃 ${inj.seasonOutPerClub}건/구단`);
     // 5b 사전 등록 ①②(D-137): 시즌 말 현금 / 시작 현금
     const repo5 = d.saves.repository();
-    const userStart = repo5.getClubs().find((c) => c.id === 1)!.startCash;
+    const userStart = repo5.getClubs().find((c) => c.id === uid)!.startCash;
     const cashRatio = +(dash.cashWon / userStart).toFixed(2);
-    const aiClubs = repo5.getClubs().filter((c) => c.id !== 1 && c.parentSupport > 0);
+    const aiClubs = repo5.getClubs().filter((c) => c.id !== uid && c.parentSupport > 0);
     const aiCashRatio = +(aiClubs.reduce((a, c) => a + repo5.cashBalance(c.id) / c.startCash, 0) / aiClubs.length).toFixed(2);
-    // D-151: 재무 현금 기준 전체는 마일스톤(10시즌 이상)에서만 판정한다
-    if (seasons >= 10 && cashRatio > 2.0) inv.push(`사전 등록 5b ① 위반: 현금 ${cashRatio}배 > 2.0`);
-    // 10시즌 측정 기준(D-137 ① 마지막 시즌·②)은 10시즌 이상 실행(최종 마일스톤)에서만 판정한다(D-143·D-146). 그 전에는 '10시즌 기준 보류'.
+    // D-137 ①②(현금 배수)는 한 시드 실행에서 판정하지 않는다: 5시드 평균으로 scripts/sim-seeds.mjs가 판정한다(D-242 (2)·D-248).
+    // 10시즌 측정 기준은 10시즌 이상 실행(최종 마일스톤)에서만 판정한다(D-143·D-146). 그 전에는 '10시즌 기준 보류'.
     const milestone = seasons >= 10;
-    if (milestone && s === seasons && (cashRatio < 0.8 || cashRatio > 1.8)) inv.push(`사전 등록 5b ① 위반: 마지막 시즌 현금 ${cashRatio}배(0.8~1.8)`);
-    if (milestone && s === seasons && aiCashRatio > 2.0) inv.push(`사전 등록 5b ② 위반: AI 구단 현금 평균 ${aiCashRatio}배 > 2.0`);
     // 6a 사전 등록 ②③(D-142): 리그 평균 점유율 55~85%, 구단당 입장수입 2026 기준 환산 100~200억
     const att = repo5.getMeta().attendance?.[String(dash.season)] ?? {};
     const caps = new Map(repo5.getClubs().map((c) => [String(c.id), c.stadiumCapacity]));
@@ -442,9 +506,10 @@ async function main() {
       merchEok2026,
       merchMargin,
       merchStockRatio,
-      userFan: repo5.getMeta().fans?.['1']?.satisfaction ?? null,
+      userClubId: uid,
+      userFan: repo5.getMeta().fans?.[String(uid)]?.satisfaction ?? null,
       facilityLevelAvg: facLevels.length ? +(facLevels.reduce((a, b) => a + b, 0) / facLevels.length).toFixed(1) : null,
-      userFacilityLevels: Object.values(repo5.getMeta().facilities?.['1']?.levels ?? {}).join('/'),
+      userFacilityLevels: Object.values(repo5.getMeta().facilities?.[String(uid)]?.levels ?? {}).join('/'),
       trades: tradeStats.find((t) => t.season === s) ?? null,
       aiTrades,
       offers: { received: offersNow, ratioMedian: offerRatioMedian, ratioSample: ratios.length, ...offerStats },
@@ -477,6 +542,8 @@ async function main() {
       runsPerGame: +(standings.reduce((a, r) => a + (r.runsFor ?? 0), 0) / Math.max(1, dash.gamesPlayedLeague)).toFixed(2),
       cashWon: dash.cashWon,
       invariantErrors: inv.length,
+      // 사전 등록 기준 위반 수(나머지는 규칙 위반). 다시드 실행은 첫 시드가 아닌 시드의 사전 등록 기준(한 시드 기준)을 참고로만 본다(D-248)
+      preRegErrors: inv.filter((e) => e.includes('사전 등록')).length,
       firstErrors: inv.slice(0, 3),
     });
     console.log(JSON.stringify(rows[rows.length - 1]));
@@ -489,7 +556,9 @@ async function main() {
       // 첫 교체가 규칙(부상으로 인원 부족 등)에 따라 거부되면 이번 시즌 재등록 확인은 건너뛴다.
       if (down && up && first?.ok) {
         const again = await d.respond('roster.move', { promote: [down.id], demote: [up.id] });
-        if (again.ok || again.error.code !== 'RE_REGISTER') {
+        // 다시 올리는 것이 성공하면 위반. 다른 규칙(출장 정지·부상)이 먼저 막았으면 이번 시즌 확인은 건너뛴다
+        if (!again.ok && again.error.code !== 'RE_REGISTER') console.log(JSON.stringify({ reRegisterCheckSkipped: again.error.code, message: again.error.message }));
+        if (again.ok) {
           const last = rows[rows.length - 1]!;
           last.invariantErrors = Number(last.invariantErrors) + 1;
           last.firstErrors = [...(last.firstErrors as string[]), '재등록 제한이 적용되지 않음'].slice(0, 3);
@@ -527,7 +596,7 @@ async function main() {
       }
       const byId = new Map(players.map((p) => [p.id, p]));
       const hrRace = (race?.entrants ?? []).map((id) => ({ id, power: byId.get(id)?.batting?.power ?? null, hr: raceHr.get(id) ?? 0 })).filter((x) => x.power !== null);
-      const retiredTotal = players.filter((p) => p.retired).length;
+      const retiredTotal = players.filter((p) => p.retired && p.origin === 'domestic').length;
       const maxId = players.reduce((a, p) => Math.max(a, p.id), 0);
       const rostered = players.filter((p) => p.clubId !== null && !p.retired);
       const payrollEok = +(rostered.reduce((a, p) => a + p.salary, 0) / clubsById.size / 1e8).toFixed(1);
@@ -544,6 +613,8 @@ async function main() {
         championDifficulty: champ !== null ? (clubsById.get(champ)?.difficulty ?? null) : null,
         hrRace,
         retired: retiredTotal - obsPrev.retired,
+        // 9b-2(D-247): 1년 미계약으로 풀을 떠난 외국인·아시아쿼터 무소속(누적)
+        foreignLeft: players.filter((p) => p.retired && p.origin !== 'domestic').length,
         newPlayers: obsPrev.maxId ? maxId - obsPrev.maxId : null,
         // D-239 ③ 국내 무소속(국내 선수만). 외국인·아시아쿼터 무소속은 관측값
         freeAgents: players.filter((p) => p.clubId === null && !p.retired && p.origin === 'domestic').length,
@@ -551,7 +622,27 @@ async function main() {
         amateurs: repo.getAmateurs('active').length,
         payrollEok,
         level: meta.ownerLevel,
+        // 누적 경험치(레벨 환산 전 합계): 페이싱 원인 조사용
+        xpTotal: Array.from({ length: meta.ownerLevel - 1 }, (_, i) => xpToNext(i + 1)).reduce((a, b) => a + b, 0) + meta.ownerXp,
         xp: meta.achievementXp?.[String(season)] ?? 0,
+        // 9b-2: 구단별 순위·승수·핵심 전력(상위 타자 9·투수 10 능력 평균)·핵심 나이·캡 산정액(상한 대비)·현금 배수·운영 상태(시즌 마감 직후)
+        clubs: [...clubsById.values()].map((c) => {
+          const mine = rostered.filter((p) => p.clubId === c.id);
+          const top = [...mine.filter((p) => !p.isPitcher).sort((a, b) => overall(b) - overall(a) || a.id - b.id).slice(0, 9), ...mine.filter((p) => p.isPitcher).sort((a, b) => overall(b) - overall(a) || a.id - b.id).slice(0, 10)];
+          const st = repo.getSeasonStandings(season).find((x) => x.clubId === c.id);
+          const pay = capPayroll(players, c.id, season);
+          return {
+            id: c.id,
+            rank: st?.rank ?? null,
+            wins: st?.wins ?? null,
+            core: +(top.reduce((a, p) => a + overall(p), 0) / Math.max(1, top.length)).toFixed(1),
+            coreAge: +(top.reduce((a, p) => a + (season - Number(p.birthDate.slice(0, 4))), 0) / Math.max(1, top.length)).toFixed(1),
+            capEok: +(pay / 1e8).toFixed(1),
+            capUse: +(pay / salaryCap(season)).toFixed(2),
+            cashRatio: +(repo.cashBalance(c.id) / c.startCash).toFixed(2),
+            stance: meta.clubStance?.[String(c.id)]?.stance ?? 'user',
+          };
+        }),
         // ①(D-234) MLB 관심: 이 시즌 앞 스토브리그(시즌 번호 season − 1로 기록)의 카드 수·성사·이적료
         mlb: {
           cards: repo.getEventLog({ season: season - 1 }).filter((r) => r.cardId === 'MLB-01').length,
@@ -573,17 +664,15 @@ async function main() {
     if (cards < 22 || cards > 28) errs.push(`사전 등록 D-236 (1) 위반: 시즌 결정 카드 평균 ${cards.toFixed(1)}장(22~28)`);
     const majorOurs = mean(obs.map((o) => Number(o.majorOurs)));
     const majorLeague = mean(obs.map((o) => Number(o.majorLeague)));
-    if (majorOurs < 0.4 || majorOurs > 0.6) errs.push(`사전 등록 D-211 ⑦ 위반: 우리 구단 중대 사건 평균 ${majorOurs.toFixed(2)}건(0.4~0.6)`);
+    // D-211 ⑦ 우리 구단 평균·D-239 ①④·D-183 ⑥은 5시드 평균으로 판정한다(scripts/sim-seeds.mjs, D-242 (2)·D-248). 여기서는 값만 남긴다.
     if (majorLeague < 3 || majorLeague > 6) errs.push(`사전 등록 D-211 ⑦ 위반: 리그 중대 사건 평균 ${majorLeague.toFixed(2)}건(3~6)`);
     const awardTotals: Record<string, number> = {};
     for (const o of obs) for (const [c, n] of Object.entries(o.awardsByClub as Record<string, number>)) awardTotals[c] = (awardTotals[c] ?? 0) + n;
     const awardAll = Object.values(awardTotals).reduce((a, b) => a + b, 0);
     const topShare = awardAll ? Math.max(...Object.values(awardTotals)) / awardAll : 0;
-    if (topShare > 0.25) errs.push(`사전 등록 D-239 ① 위반: 수상 한 구단 몫 ${(100 * topShare).toFixed(1)}% > 25%`);
     const mvpBy: Record<string, number> = {};
     for (const o of obs) if (o.mvpClub !== null) mvpBy[String(o.mvpClub)] = (mvpBy[String(o.mvpClub)] ?? 0) + 1;
     const mvpMax = Math.max(0, ...Object.values(mvpBy));
-    if (mvpMax > 4) errs.push(`사전 등록 D-239 ① 위반: 정규시즌 MVP 한 구단 ${mvpMax}회 > 4`);
     const pts = obs.flatMap((o) => o.hrRace as Array<{ power: number; hr: number }>);
     const corr = (() => {
       if (pts.length < 3) return null;
@@ -604,13 +693,12 @@ async function main() {
     const champs: Record<string, number> = {};
     for (const o of obs) if (o.champion !== null) champs[String(o.champion)] = (champs[String(o.champion)] ?? 0) + 1;
     const champMax = Math.max(0, ...Object.values(champs));
-    if (champMax > 5) errs.push(`사전 등록 D-239 ④ 위반: 한국시리즈 우승 한 구단 ${champMax}회 > 5`);
     // D-183 ⑥·D-185 ⑤·D-187 ⑥(02 페이싱): 보통 운영 10시즌 뒤 구단주 레벨 17~20(업적 경험치 포함)
     const lastLevel = Number(lastO.level);
-    if (seasons === 10 && (lastLevel < 17 || lastLevel > 20)) errs.push(`사전 등록 D-183 ⑥ 위반: 10시즌 뒤 구단주 레벨 ${lastLevel}(17~20)`);
-    summaryObs = { cardsAvg: +cards.toFixed(2), majorOursAvg: +majorOurs.toFixed(2), majorLeagueAvg: +majorLeague.toFixed(2), awardTopShare: +topShare.toFixed(3), awardTotals, mvpBy, hrRaceCorr: corr === null ? null : +corr.toFixed(3), hrRaceSample: pts.length, champions: champs, lastLevel, errors: errs };
+    summaryObs = { mvpMax, champMax, cardsAvg: +cards.toFixed(2), majorOursAvg: +majorOurs.toFixed(2), majorLeagueAvg: +majorLeague.toFixed(2), awardTopShare: +topShare.toFixed(3), awardTotals, mvpBy, hrRaceCorr: corr === null ? null : +corr.toFixed(3), hrRaceSample: pts.length, champions: champs, lastLevel, errors: errs };
     const last = rows[rows.length - 1]!;
     last.invariantErrors = Number(last.invariantErrors) + errs.length;
+    last.preRegErrors = Number(last.preRegErrors) + errs.length;
     last.firstErrors = [...(last.firstErrors as string[]), ...errs].slice(0, 6);
     console.log(JSON.stringify({ summaryObs }));
   }
@@ -625,6 +713,8 @@ async function main() {
     startDate,
     stoveWeeks,
     stoveMs,
+    ended,
+    moves,
     stoveTurnsBySeason: Object.fromEntries([...new Set(stoveTurns)].map((s) => [String(s), stoveTurns.filter((x) => x === s).length])),
     loadMs,
     rows,

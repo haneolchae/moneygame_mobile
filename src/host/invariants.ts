@@ -1,6 +1,6 @@
 // 규칙 위반 검사. 장기 실행·테스트·자체 점검에서 같은 검사를 쓴다.
 import { seasonKeyDates } from '../engine/schedule';
-import { AI_CLUB, CLUTCH, DEVELOPMENT, FACILITY, FOREIGN, LEAGUE, ROSTER_MOVE, SPONSOR, TRADE, TRAINING } from '../engine/config';
+import { AI_CLUB, CAP_SANCTION, CLUTCH, DEVELOPMENT, FACILITY, FOREIGN, LEAGUE, ROSTER_MOVE, SPONSOR, TRADE, TRAINING } from '../engine/config';
 import { STANCES } from '../engine/aiClub';
 import { weekIdFor } from '../game/week';
 import { FACILITY_KINDS } from '../engine/business';
@@ -59,6 +59,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   errors.push(...checkBusiness(repo));
   errors.push(...checkAiClubs(repo));
   errors.push(...checkManagers(repo));
+  errors.push(...checkBalance(repo, season));
 
   // 경기 기록 일관성: 득점 = 득점 기록 수, 타석 수 = 아웃 + 출루, 이닝 아웃 수
   const games = repo.getGames(season);
@@ -183,6 +184,30 @@ export function checkFielding(
  * 정규시즌 경기 수: 정규시즌 마지막 날 시즌 ID별로 기록한 값(meta.regularSeasons)이
  * 전 경기 완료(played = total)이고, 포스트시즌·다음 시즌 일정이 생긴 뒤에도 실제 기록과 같아야 한다.
  */
+/**
+ * 9b-2(D-247): 외국인 무소속 풀은 해마다 정리된다(새 후보 36명 + 구단이 내보낸 선수, 구단당 4명까지),
+ * 샐러리캡 초과 연속 횟수가 있는 구단은 그 시즌 제재금 장부가 있고, 드래프트 순서 제재는 3회 연속 이상 구단만 받는다.
+ */
+export function checkBalance(repo: GameRepository, season: number): string[] {
+  const errors: string[] = [];
+  const meta = repo.getMeta();
+  const clubs = repo.getClubs();
+  const freeForeign = repo.getPlayers().filter((p) => p.clubId === null && !p.retired && p.origin !== 'domestic').length;
+  const limit = 36 + clubs.length * (FOREIGN.maxForeign + FOREIGN.maxAsia);
+  if (freeForeign > limit) errors.push(`외국인 무소속 풀 ${freeForeign}명 > ${limit}(정리 규칙 미적용)`);
+  for (const [id, n] of Object.entries(meta.capOverStreak ?? {})) {
+    const fine = [season - 1, season, season + 1].flatMap((y) => repo.ledgerByCategory(Number(id), y)).filter((r) => r.category === 'capPenalty').reduce((a, r) => a + r.amount, 0);
+    if (n < 1 || fine >= 0) errors.push(`샐러리캡 초과 구단 ${id}(${n}회 연속)의 제재금 장부 없음`);
+  }
+  // 가장 최근 마감 때 정한 드래프트 순서 제재: 연속 횟수도 같은 마감 때 값이다
+  const lastYear = Math.max(0, ...Object.keys(meta.capDraftPenalty ?? {}).map(Number));
+  for (const [year, ids] of Object.entries(meta.capDraftPenalty ?? {})) {
+    if (Number(year) !== lastYear || lastYear < season) continue;
+    for (const id of ids) if ((meta.capOverStreak?.[String(id)] ?? 0) < CAP_SANCTION.draftPenaltyStreak) errors.push(`드래프트 순서 제재 구단 ${id}의 샐러리캡 연속 초과 ${meta.capOverStreak?.[String(id)] ?? 0}회 < ${CAP_SANCTION.draftPenaltyStreak}`);
+  }
+  return errors;
+}
+
 export function checkRegularSeasons(repo: GameRepository): string[] {
   const errors: string[] = [];
   const meta = repo.getMeta();
@@ -389,6 +414,7 @@ export function checkAiClubs(repo: GameRepository): string[] {
   }
   const perWeek = new Map<string, number>();
   const perClub = new Map<string, number>();
+  const userSince = (meta.tenures ?? []).find((t) => t.to === null && t.clubId === meta.userClubId)?.from ?? '';
   for (const h of history.filter((x) => x.ai)) {
     const w = weekIdFor(h.date);
     perWeek.set(w, (perWeek.get(w) ?? 0) + 1);
@@ -396,7 +422,8 @@ export function checkAiClubs(repo: GameRepository): string[] {
       const k = `${club}:${h.season}:${h.period}`;
       perClub.set(k, (perClub.get(k) ?? 0) + 1);
     }
-    if (h.clubA === meta.userClubId || h.clubB === meta.userClubId) errors.push(`AI 간 거래에 우리 구단 포함: ${h.date}`);
+    // 해임 뒤 옮긴 구단(7b)의 부임 전 거래는 AI 구단 때 것이다
+    if ((h.clubA === meta.userClubId || h.clubB === meta.userClubId) && h.date >= userSince) errors.push(`AI 간 거래에 우리 구단 포함: ${h.date}`);
   }
   // 7b(D-157·D-158 ①): 우리 구단에는 운영 상태가 없다, 받은 제안은 주 1건·기간당 4건·열린 제안 2건 이하, 같은 구단 30일 간격
   if (meta.clubStance?.[String(meta.userClubId)]) errors.push('우리 구단에 AI 운영 상태가 남아 있음');

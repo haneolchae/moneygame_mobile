@@ -845,18 +845,23 @@ export class GameService {
    * 진행. 시즌은 1일·1주·정규시즌 끝까지. 스토브리그는 턴 단위(D-216, 구간 진행 → 다음 턴 첫날에서 멈춤)이고,
    * 엔진의 날짜 처리는 같아서 주 단위 진행(시험·비교용)도 그대로 받는다.
    */
-  advance(mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn', onProgress?: (p: AdvanceProgress) => void, shouldStop?: () => boolean, autoCards = false) {
+  /**
+   * defaultCards(D-250): '끝까지' 진행 중에 새로 온 결정 카드를 구단주의 기본 선택(카드의 자동 진행 기본 선택지)으로 처리하고 계속 간다.
+   * 진행을 시작할 때 이미 떠 있던 카드, 구단 스토리 카드, 중대 사건은 그대로 멈춘다.
+   */
+  advance(mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn', onProgress?: (p: AdvanceProgress) => void, shouldStop?: () => boolean, autoCards = false, defaultCards = false) {
     // 9a(D-240): 여러 날을 이어 처리하는 동안은 날마다의 디스크 동기화를 미룬다(날짜별 트랜잭션은 그대로)
-    return this.repo.bulkWrites(() => this.advanceDays(mode, onProgress, shouldStop, autoCards));
+    return this.repo.bulkWrites(() => this.advanceDays(mode, onProgress, shouldStop, autoCards, defaultCards));
   }
 
-  private advanceDays(mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn', onProgress?: (p: AdvanceProgress) => void, shouldStop?: () => boolean, autoCards = false) {
+  private advanceDays(mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn', onProgress?: (p: AdvanceProgress) => void, shouldStop?: () => boolean, autoCards = false, defaultCards = false) {
     const start = this.meta();
     if (start.mode === 'stove' && mode !== 'week' && mode !== 'turn') throw new GameError('STOVE_TURN_ONLY', '스토브리그는 턴 단위로 진행합니다.');
     if (start.mode !== 'stove' && mode === 'turn') throw new GameError('INVALID', '턴 진행은 스토브리그에만 합니다.');
     let daysProcessed = 0;
     let gamesPlayed = 0;
     let stoppedReason: string | null = null;
+    let defaulted = 0;
     const startWeek = weekIdFor(start.currentDate);
     const startPhase = this.phase();
     const turn = start.mode === 'stove' ? stoveTurnOf(start.kDate, start.currentDate) : null;
@@ -889,8 +894,11 @@ export class GameService {
       }
       const pend = this.meta().eventState?.pendingCard;
       if (pend) {
-        if (autoCards) this.events.choose(this.meta(), findCard(pend.cardId)!.delegateDefault);
-        else if (daysProcessed === 0) throw new GameError('DECISION_PENDING', '이번 주 결정 카드를 먼저 고르세요.');
+        const byDefault = defaultCards && mode === 'untilSeasonEnd' && daysProcessed > 0 && findCard(pend.cardId)?.category !== 'story';
+        if (autoCards || byDefault) {
+          this.events.choose(this.meta(), findCard(pend.cardId)!.delegateDefault);
+          if (byDefault) defaulted++;
+        } else if (daysProcessed === 0) throw new GameError('DECISION_PENDING', '이번 주 결정 카드를 먼저 고르세요.');
         else {
           stoppedReason = '결정 카드가 도착했습니다';
           break;
@@ -928,7 +936,7 @@ export class GameService {
     }
     if (this.phase() === 'seasonComplete' && !stoppedReason) stoppedReason = `${this.meta().season} 시즌 종료 (한국시리즈 끝)`;
     if (daysProcessed > 0) this.prologue.note('advance');
-    return { daysProcessed, gamesPlayed, stoppedReason };
+    return { daysProcessed, gamesPlayed, stoppedReason, defaultedCards: defaulted };
   }
 
   /** ASSUMPTION(D-056, 임시): 포스트시즌·스토브리그 없이 다음 시즌 정규시즌을 시작한다. 장기 데이터 검증용. 건너뛴 기간의 수입·지출은 처리되지 않는다. */
@@ -1190,7 +1198,8 @@ export class GameService {
       briefing: this.briefingView(meta.mode === 'stove' ? stoveTurnOf(meta.kDate, meta.currentDate).start : weekIdFor(meta.currentDate)),
       card: this.cardView(),
       stove: this.stoveView(meta),
-      firstAgenda: meta.firstAgenda ? { playerId: meta.firstAgenda.playerId, name: this.repo.getPlayer(meta.firstAgenda.playerId)?.name ?? '', deadline: meta.firstAgenda.deadline, status: meta.firstAgenda.status } : null,
+      // 첫 안건 패널은 취임한 첫 시즌에만 보인다(다음 시즌 캠프에 지난 안건이 다시 뜨던 문제)
+      firstAgenda: meta.firstAgenda && meta.season === NEW_GAME.firstSeason ? { playerId: meta.firstAgenda.playerId, name: this.repo.getPlayer(meta.firstAgenda.playerId)?.name ?? '', deadline: meta.firstAgenda.deadline, status: meta.firstAgenda.status } : null,
       hasWinterReport: !!meta.winterReport,
       upcomingEvents: this.calendar(meta.currentDate, addDays(meta.currentDate, 45)),
       keyPlayers,
@@ -1309,7 +1318,7 @@ export class GameService {
       status,
     });
     const mineForeign = players.filter((p) => p.clubId === meta.userClubId && p.origin !== 'domestic').map((p) => fv(p, p.contractYears === 0 && meta.mode === 'stove' ? 'expiring' : 'contracted'));
-    const pool = players.filter((p) => p.clubId === null && p.origin !== 'domestic').map((p) => fv(p, 'pool')).sort((a, b) => b.scoutGrade - a.scoutGrade);
+    const pool = players.filter((p) => p.clubId === null && !p.retired && p.origin !== 'domestic').map((p) => fv(p, 'pool')).sort((a, b) => b.scoutGrade - a.scoutGrade);
     const foreignMine = mineForeign.filter((p) => p.origin === 'foreign');
     const roster = players.filter((p) => p.clubId === meta.userClubId);
     const weekId = weekIdFor(meta.currentDate);

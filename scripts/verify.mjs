@@ -6,7 +6,7 @@
 //   --label   개발 차수 이름(리포트 파일 이름과 제목에 쓴다)
 //   --stage   dev       작업 중 확인: 타입·경계·바뀐 파일 관련 테스트(vitest --changed)
 //             phase     차수 종료 검증(기본값): 타입·경계·전체 테스트·빌드·실제 Electron 자체 점검·장기 실행 2시즌·문서·저장소
-//             milestone 최종 마일스톤 검증: phase + 장기 실행 10시즌. 모든 기능 차수가 끝난 뒤 한 번(D-143)
+//             milestone 최종 마일스톤 검증: phase + 장기 실행 10시즌 + 다시드 장기 실행(5시드 평균 판정, D-248). 모든 기능 차수가 끝난 뒤 한 번(D-143)
 //   --quick   --stage dev와 같다(기존 명령 호환)
 //   --seasons 장기 실행 시즌 수(지정하면 단계 기본값보다 우선)
 //
@@ -30,7 +30,8 @@ const flag = (name) => process.argv.includes(`--${name}`);
 const STAGES = {
   dev: { name: '작업 중 확인', changedTestsOnly: true, build: false, selftest: false, sim: false, seasons: 0, docs: false, git: false },
   phase: { name: '차수 종료 검증', changedTestsOnly: false, build: true, selftest: true, sim: true, seasons: 2, docs: true, git: true },
-  milestone: { name: '최종 마일스톤 검증', changedTestsOnly: false, build: true, selftest: true, sim: true, seasons: 10, docs: true, git: true },
+  // seeds: 다시드 장기 실행 시드 수(9b-2, D-248). 첫 시드(혼자 돌린 장기 실행)를 포함해 나란히 돌리고 시드 평균으로 판정한다
+  milestone: { name: '최종 마일스톤 검증', changedTestsOnly: false, build: true, selftest: true, sim: true, seasons: 10, seeds: 5, docs: true, git: true },
 };
 
 const LABEL = arg('label', 'unlabeled');
@@ -259,6 +260,9 @@ if (!STAGE.build) {
       record('sim', `장기 실행 ${SEASONS}시즌 (시드 ${SEED})`, worst(...st), m.sec, summary, checks, m.log);
       // 7c·9a(D-239): 장기 관측 표(판정은 위 규칙 위반·경고에 들어 있다)
       steps.at(-1).observations = observationTable(sim);
+      // 9b-2(D-242 (2)·D-248): 다시드 장기 실행 — 같은 빌드로 시드 N개를 나란히 돌려 시드 평균으로 판정한다.
+      // 첫 시드는 위 실행과 같은 시드라 결과가 같은지도 함께 본다(같은 시드 결과 동일). 성능은 위 단독 실행으로만 판정한다.
+      if (STAGE.seeds && SEASONS >= 10) seedsStep(simOut);
     }
   }
 }
@@ -293,6 +297,46 @@ if (STAGE.git) {
 
 finish();
 
+/** 다시드 장기 실행(9b-2, D-248): scripts/sim-seeds.mjs를 돌리고 시드 평균 판정을 단계로 남긴다 */
+function seedsStep(simOut) {
+  const out = join(LOG_DIR, 'seeds.json');
+  const base = SEED.replace(/-\d+$/, '');
+  const name = `다시드 장기 실행 ${SEASONS}시즌 × ${STAGE.seeds}시드 (${base}-1~${STAGE.seeds})`;
+  const m = run('seeds', `node scripts/sim-seeds.mjs --skip-build --seasons ${SEASONS} --seeds ${STAGE.seeds} --seed ${base} --out "${out}" --log-dir "${join(LOG_DIR, 'seeds')}" --repeat-of "${simOut}"`, { timeoutMs: 3_600_000, env: process.env });
+  let rep = null;
+  try {
+    rep = JSON.parse(readFileSync(out, 'utf8'));
+  } catch {}
+  if (!rep) {
+    record('seeds', name, 'FAIL', m.sec, m.timedOut ? '시간 초과' : '결과 없음', tailLines(m.out), m.log);
+    return;
+  }
+  const st = [];
+  const checks = [];
+  if (rep.failed.length) st.push('FAIL'), checks.push(`완료하지 못한 시드: ${rep.failed.join(', ')}`);
+  for (const e of rep.errors) st.push('FAIL'), checks.push(e);
+  rep.perSeed.forEach((s, i) => {
+    if (s.ended) checks.push(`시드 ${s.seed} 중단: ${s.ended}`);
+    if (s.ruleErrors > 0) st.push('FAIL'), checks.push(`시드 ${s.seed} 규칙 위반 ${s.ruleErrors}건: ${s.firstErrors.filter((e) => !e.includes('사전 등록')).slice(0, 4).join(' / ')}`);
+    // 첫 시드의 사전 등록 기준은 위 단독 실행에서 판정했다. 나머지 시드는 참고(한 시드 기준으로 등록된 항목)
+    if (i > 0 && s.preRegErrors > 0) checks.push(`[참고] 시드 ${s.seed} 한 시드 기준 사전 등록 항목 ${s.preRegErrors}건: ${s.firstErrors.filter((e) => e.includes('사전 등록')).slice(0, 4).join(' / ')}`);
+  });
+  if (rep.repeat?.same === false) st.push('FAIL'), checks.push(`같은 시드(${rep.repeat.seed}) 다시 실행 결과가 다름`);
+  if (!rep.repeat || rep.repeat.same === null) st.push('WARN'), checks.push('같은 시드 결과 비교를 하지 못함');
+  const passed = rep.verdicts.filter((v) => v.ok).length;
+  const summary = `시드 평균 판정 ${passed}/${rep.verdicts.length} 통과, 규칙 위반 ${rep.perSeed.reduce((a, s) => a + s.ruleErrors, 0)}건, 같은 시드 결과 ${rep.repeat?.same === true ? '동일' : rep.repeat?.same === false ? '다름' : '비교 못 함'}`;
+  record('seeds', name, worst(...st), m.sec, summary, checks, m.log);
+  const a = rep.average;
+  const t = ['| 기준 | 시드 평균 [시드별] | 범위 | 판정 |', '| --- | --- | --- | --- |'];
+  for (const v of rep.verdicts) t.push(`| ${v.label} | ${v.value} | ${v.range} | ${v.ok ? '통과' : '미달'} |`);
+  t.push('', '| 시드 | 규칙 위반 | 한 시드 기준 사전 등록 위반 | 우승 구단별 | 레벨 | 우리 사건·리그 사건 | 결정 카드 | 현금 배수 우리·AI(마지막) | 외국인 무소속(마지막) | 구단 이동 | 시간(초) |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
+  for (const s of rep.perSeed) t.push(`| ${s.seed} | ${s.ruleErrors} | ${s.preRegErrors} | ${JSON.stringify(s.champions).replace(/"/g, '')} | ${s.lastLevel} | ${s.majorOurs}·${s.majorLeague} | ${s.cards} | ${s.cash.at(-1)}·${s.aiCash.at(-1)} | ${s.foreignFree.at(-1)} | ${s.moves.length ? s.moves.map((x) => `${x.date.slice(0, 4)} ${x.from}→${x.to}`).join(', ') : '-'} | ${rep.secBySeed[s.seed]} |`);
+  t.push('', `- 관측(판정 없음): 모든 시드를 합친 구단별 우승 ${JSON.stringify(a.titlesAllSeeds).replace(/"/g, '')}, 결정 카드 평균 ${a.cards}장, 리그 중대 사건 평균 ${a.majorLeague}건, 마지막 시즌 외국인 무소속 평균 ${a.foreignFreeLast}명`);
+  t.push(`- 현금 배수 시즌별 시드 평균: 우리 ${a.cashBySeason.join(' · ')} / AI ${a.aiCashBySeason.join(' · ')}`);
+  t.push(`- 같은 시드(${rep.repeat?.seed ?? '-'}) 다시 실행: ${rep.repeat?.same === true ? '결과 동일(시간 측정값 제외)' : rep.repeat?.same === false ? '결과 다름' : '비교 못 함'}`);
+  steps.at(-1).seedTable = t;
+}
+
 /** 장기 관측 표(7c, D-239): 시즌별 성능·재무·리그·이벤트·순환 지표 */
 function observationTable(sim) {
   const rows = sim.rows ?? [];
@@ -305,7 +349,8 @@ function observationTable(sim) {
   }
   const s = sim.summaryObs;
   if (s) {
-    out.push('', `- 10시즌 평균: 결정 카드 ${s.cardsAvg}장(22~28), 중대 사건 우리 ${s.majorOursAvg}건(0.4~0.6)·리그 ${s.majorLeagueAvg}건(3~6)`);
+    out.push('', '- 아래에서 우리 구단 중대 사건·수상 쏠림·우승 쏠림·구단주 레벨과 표의 현금 배수는 이 시드 값이고, 판정은 시드 평균으로 한다(시드 평균 판정 표, D-248).');
+    out.push(`- 10시즌 평균: 결정 카드 ${s.cardsAvg}장(22~28), 중대 사건 우리 ${s.majorOursAvg}건·리그 ${s.majorLeagueAvg}건(3~6)`);
     out.push(`- 수상 한 구단 최대 몫 ${(100 * s.awardTopShare).toFixed(1)}%(25% 이하), 구단별 수상 ${JSON.stringify(s.awardTotals)}, 정규시즌 MVP 구단별 ${JSON.stringify(s.mvpBy)}`);
     out.push(`- 홈런 레이스 장타–홈런 상관 ${s.hrRaceCorr}(표본 ${s.hrRaceSample}, 0.2 이상), 한국시리즈 우승 구단별 ${JSON.stringify(s.champions)}(한 구단 5회 이하), 10시즌 뒤 구단주 레벨 ${s.lastLevel}(17~20)`);
     if (s.errors?.length) out.push(`- 판정 위반: ${s.errors.join(' / ')}`);
@@ -337,6 +382,8 @@ function finish() {
   }
   const obsStep = steps.find((s) => s.observations?.length);
   if (obsStep) md.push('## 장기 관측 (7c, D-239)', '', ...obsStep.observations, '');
+  const seedStep = steps.find((s) => s.seedTable?.length);
+  if (seedStep) md.push('## 시드 평균 판정 (9b-2, D-248)', '', ...seedStep.seedTable, '');
   const docs = steps.find((s) => s.id === 'docs');
   if (docs?.progress?.length) {
     md.push('## 문서상 개발 진행 (06_progress.md)', '', '| 순서 | 묶음 | 상태 |', '| --- | --- | --- |');

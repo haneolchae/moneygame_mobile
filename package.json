@@ -16,6 +16,7 @@
     "verify:quick": "node scripts/verify.mjs --quick",
     "test": "vitest run",
     "sim": "node scripts/build.mjs && node scripts/run-electron-node.mjs dist/cli/simulate.js",
+    "sim:seeds": "node scripts/sim-seeds.mjs",
     "test:electron": "node scripts/run-electron-node.mjs node_modules/vitest/vitest.mjs run",
     "selftest": "npm run build && node scripts/selftest.mjs",
     "calibrate": "esbuild scripts/calibrate-model.ts --bundle --platform=node --format=cjs --outfile=dist/cli/calibrate.js --log-level=warning && node dist/cli/calibrate.js",

@@ -77,7 +77,7 @@ export class Dispatcher {
       case 'game.advance': {
         const p = payload as RequestMap['game.advance']['payload'];
         const started = Date.now();
-        const result = this.game().advance(p.mode, (prog) => this.opts.onEvent?.({ type: 'advanceProgress', ...prog }), undefined, !!p.autoCards);
+        const result = this.game().advance(p.mode, (prog) => this.opts.onEvent?.({ type: 'advanceProgress', ...prog }), undefined, !!p.autoCards, !!p.defaultCards);
         const autosaveDue = this.saves.noteDaysAdvanced(result.daysProcessed);
         let autosaved = false;
         // D-220: 스토브리그 자동 저장은 턴 단위(턴 진행이 끝날 때마다)

@@ -320,3 +320,7 @@ body.prologue-docked .content { padding-right: calc(var(--prologue-w) + 36px); }
 .prologue-tab { position: fixed; right: 18px; bottom: 18px; z-index: 40; }
 .nav.hint-glow { outline: 2px solid var(--do-mint); outline-offset: -2px; }
 .nav.hint-glow::after { content: "●"; color: var(--do-mint); font-size: 9px; margin-left: 4px; }
+
+/* D-250: '끝까지' 진행의 카드 기본 선택 옵션 */
+.topbar .advance-option { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; cursor: pointer; }
+.topbar .advance-option input { accent-color: var(--do-mint); }

@@ -77,13 +77,15 @@ export class Draft {
     const order = computeStandings(clubs.map((c) => c.id), this.repo.getGames(year))
       .map((r) => r.clubId)
       .reverse();
+    const capPenalized = new Set(meta.capDraftPenalty?.[String(year)] ?? []);
     const taken = new Set<number>();
     // 구단별 예상 선수단: 현재 소속 + 이번 드래프트 지명 선수
     const projected = new Map<ClubId, PlayerTruth[]>(clubs.map((c) => [c.id, this.repo.getPlayers().filter((p) => p.clubId === c.id && !p.retired)]));
     const picks: Array<{ round: number; pick: number; clubId: ClubId; a: Amateur }> = [];
     let n = 0;
     for (let round = 1; round <= DRAFT.rounds; round++) {
-      for (const clubId of order) {
+      // D-247: 샐러리캡 3회 연속 이상 초과 구단은 1라운드 지명 순서가 맨 뒤로 간다
+      for (const clubId of round === 1 ? [...order.filter((id) => !capPenalized.has(id)), ...order.filter((id) => capPenalized.has(id))] : order) {
         const left = cands.filter((a) => !taken.has(a.id));
         if (!left.length) break;
         let choice: Amateur | undefined;

@@ -6,6 +6,7 @@ import { SEASON_2026_STANDINGS } from '../engine/clubs';
 import { ALLSTAR, CONTRACT, FOREIGN, LEAGUE, usdToWon, WORLDGEN, wonToUsd } from '../engine/config';
 import {
   acceptThreshold,
+  aiCashBonus,
   aiOffer,
   assignGrades,
   clubEstimate,
@@ -33,7 +34,7 @@ import { inGroup, needFirst, neededGroup, pickRemovals } from '../engine/roster'
 import { stoveEvents } from '../engine/stove';
 import type { ClubId, ClubProfile, PlayerTruth } from '../engine/types';
 import { Rng } from '../engine/rng';
-import { assignActiveRoster, domesticSalary, FA_SERVICE_YEARS_REQUIRED, generateDomesticFreePool, overall } from '../engine/worldgen';
+import { assignActiveRoster, domesticSalary, FA_SERVICE_YEARS_REQUIRED, generateDomesticFreePool, overall, salaryIndex } from '../engine/worldgen';
 import { dealWindowReason } from './trade';
 import { apPeriodId, weekIdFor } from './week';
 import { GameError } from '../shared/protocol';
@@ -222,6 +223,10 @@ export class Market {
       const mine = pending.filter((o) => o.clubId === club.id);
       if (mine.length >= 3) continue;
       let cash = this.repo.cashBalance(club.id) - mine.reduce((a, o) => a + o.offer.bonus, 0);
+      // D-247: 현금이 넉넉한 구단은 더 주고, 샐러리캡(계약 시즌 산정액)을 넘기는 제안은 하지 않는다
+      const cashBonus = club.startCash > 0 ? aiCashBonus(this.repo.cashBalance(club.id) / club.startCash) : 0;
+      const capLoad = (o: ContractOffer, p: PlayerTruth) => o.salary + Math.round(o.bonus / o.years) - (p.clubId === club.id ? p.salary : 0);
+      let capRoom = this.cap(meta) - this.payroll(club.id, year) - mine.reduce((a, o) => a + capLoad(o.offer, byId.get(o.playerId)!), 0);
       const candidates = fa
         .map((e) => ({ e, p: byId.get(e.playerId)!, est: clubEstimate(meta.seed, club.id, byId.get(e.playerId)!) }))
         // D-155 (2): 재정 긴축 구단은 자기 FA 재계약만 한다
@@ -234,11 +239,13 @@ export class Market {
       let made = 0;
       for (const { e, p } of needFirst(roster, candidates, (x) => x.p)) {
         if (made >= FA_RULES.aiMaxOffersPerWeek || mine.length + made >= 3) break;
-        const offer = aiOffer(meta.seed, club, p, e.demand, year, this.contender(club), this.rebuilding(club));
+        const offer = aiOffer(meta.seed, club, p, e.demand, year, this.contender(club), this.rebuilding(club), cashBonus);
         const comp = e.originClub === club.id ? 0 : compensationFor(e.grade ?? 'C', e.priorSalary);
         if (cash - offer.bonus - comp < FA_RULES.aiCashReserve) continue;
+        if (capLoad(offer, p) > capRoom) continue;
         this.repo.insertOffer({ playerId: p.id, clubId: club.id, kind: 'fa', date, offer, status: 'pending', response: '' });
         cash -= offer.bonus + comp;
+        capRoom -= capLoad(offer, p);
         made++;
       }
     }
@@ -579,7 +586,7 @@ export class Market {
           break;
         }
         const pool = this.players()
-          .filter((p) => p.clubId === null && p.origin === origin && p.career.foreignRenewals === 0 && p.contractYears === 0)
+          .filter((p) => p.clubId === null && !p.retired && p.origin === origin && p.career.foreignRenewals === 0 && p.contractYears === 0)
           .sort((a, b) => clubEstimate(meta.seed, clubId, b) - clubEstimate(meta.seed, clubId, a) || a.id - b.id);
         const roster = this.foreignOf(clubId);
         const pick = needFirst(this.players().filter((p) => p.clubId === clubId), pool, (p) => p).find((p) => this.foreignCheck([...roster, p], new Map([[p.id, { salaryUsd: wonToUsd(p.salary), isNew: true, renewals: 0 }]])).length === 0);
@@ -711,6 +718,8 @@ export class Market {
   foreignTarget(meta: GameMeta, playerId: number): { p: PlayerTruth; renewal: boolean; demandUsd: number } {
     const p = this.players().find((x) => x.id === playerId);
     if (!p || p.origin === 'domestic') throw new GameError('NOT_AVAILABLE', '외국인 선수가 아닙니다.');
+    // D-247: 1년 동안 계약하지 못해 풀을 떠난 선수
+    if (p.retired) throw new GameError('NOT_AVAILABLE', '해외 리그로 떠난 선수입니다.');
     if (meta.mode !== 'stove') throw new GameError('NOT_AVAILABLE', '외국인 계약은 스토브리그에 합니다. (시즌 중 교체는 다음 단계)');
     const renewal = p.clubId === meta.userClubId;
     if (renewal && p.contractYears !== 0) throw new GameError('NOT_AVAILABLE', '이미 계약 중인 선수입니다.');
@@ -885,7 +894,7 @@ export class Market {
     if (window) throw new GameError('NOT_AVAILABLE', window);
     if (this.players().filter((x) => x.clubId === meta.userClubId).length >= LEAGUE.rosterMax) throw new GameError('ROSTER_FULL', `선수단이 ${LEAGUE.rosterMax}명입니다. 먼저 자리를 비우세요.`);
     const age = meta.season - Number(p.birthDate.slice(0, 4));
-    const demand = Math.max(WORLDGEN.minSalary, round1m(domesticSalary(publicOverall(meta.seed, p), age, p.career.proSeasons) * CONTRACT.domesticDemandShare));
+    const demand = Math.max(WORLDGEN.minSalary, round1m(domesticSalary(publicOverall(meta.seed, p), age, p.career.proSeasons, salaryIndex(this.contractYear(meta))) * CONTRACT.domesticDemandShare));
     return { p, demand };
   }
 
@@ -920,7 +929,12 @@ export class Market {
   releaseForCase(meta: GameMeta, date: GameDate, playerId: number, reason: string): string {
     const p = this.repo.getPlayer(playerId);
     if (!p || p.clubId === null) return '';
-    return this.release(meta, date, p, reason);
+    const clubId = p.clubId;
+    const text = this.release(meta, date, p, reason);
+    // D-247: AI 구단은 사건 계약 해지로 포지션 최소 인원(D-098)이 모자라면 캠프 보충과 같은 규칙으로 바로 국내 무소속 선수를 영입한다
+    // (9b-2 5시드 장기 실행에서 시즌 중 해지 뒤 투수 16명으로 시즌을 마친 구단이 나왔다)
+    if (clubId !== meta.userClubId) this.fillRosterNeeds(this.repo.getMeta(), clubId);
+    return text;
   }
 
   releasePlayer(meta: GameMeta, playerId: number) {

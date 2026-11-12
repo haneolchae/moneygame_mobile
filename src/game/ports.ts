@@ -166,6 +166,10 @@ export interface GameMeta {
   /** D-228 MLB 진출(포스팅 성사) 기록 */
   /** 9a: 시즌 중 방출 기록(경기 기록 소속 검사용) */
   releases?: Array<{ playerId: PlayerId; clubId: ClubId; date: GameDate; season: number }>;
+  /** 9b-2(D-247) 샐러리캡 초과 연속 횟수(구단 ID → 횟수, 초과하지 않은 시즌에 지운다) */
+  capOverStreak?: Record<string, number>;
+  /** 샐러리캡 3회 연속 이상 초과 구단: 드래프트 연도 → 1라운드 지명 순서가 맨 뒤로 가는 구단 */
+  capDraftPenalty?: Record<string, ClubId[]>;
   postings?: Array<{ playerId: PlayerId; clubId: ClubId | null; season: number; date: GameDate; feeWon: number }>;
   /** ② 구단 스토리(D-222·D-224·D-237): 구단 ID → 진행 상태(우리·AI 구단 모두) */
   stories?: Record<string, ClubStoryState>;

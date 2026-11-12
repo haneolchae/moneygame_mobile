@@ -3,10 +3,10 @@
 // 선수별 성향 차이는 stableNormal(시드·선수 ID 기반 고정값)로 만들며 난수 흐름을 쓰지 않는다.
 // 외국인 규정 상수(FOREIGN)는 config에 있다.
 export { FOREIGN, usdToWon, wonToUsd } from './config';
-import { FOREIGN, wonToUsd } from './config';
+import { AI_CLUB, FOREIGN, wonToUsd } from './config';
 import { stableNormal } from './rng';
 import type { ClubProfile, PlayerTruth } from './types';
-import { domesticSalary, overall } from './worldgen';
+import { domesticSalary, overall, salaryIndex } from './worldgen';
 
 /** FA 협상 설정 (ASSUMPTION, D-075) */
 export const FA_RULES = {
@@ -54,7 +54,7 @@ export function faDemand(seed: string, p: PlayerTruth, year: number): ContractOf
   const years = age <= 30 ? 4 : age <= 32 ? 3 : age <= 34 ? 2 : 1;
   const greed = 1 + 0.15 * ((p.hidden.competitiveness - 50) / 50) + stableNormal(seed, 'greed', p.id) * 0.04;
   // FA 선수는 직전 연봉보다 낮게 요구하지 않는다(직전 연봉의 105% 이상).
-  const aav = Math.max(domesticSalary(publicOverall(seed, p), age, p.career.proSeasons) * FA_RULES.premium, p.salary * 1.05) * greed;
+  const aav = Math.max(domesticSalary(publicOverall(seed, p), age, p.career.proSeasons, salaryIndex(year)) * FA_RULES.premium, p.salary * 1.05) * greed;
   const total = aav * years;
   const bonus = round1m(total * FA_RULES.bonusShare);
   return { years, salary: round1m((total - bonus) / years), bonus };
@@ -128,14 +128,22 @@ export function respondToOffer(o: ContractOffer, ctx: OfferContext, year: number
   return { kind: 'reject', message: '제안 조건이 기대와 차이가 큽니다.' };
 }
 
+/** AI FA 지출(D-247): 보유 현금 / 시작 현금 비율 → 제안액 가산(0~maxBonus) */
+export function aiCashBonus(cashRatio: number): number {
+  const F = AI_CLUB.faCash;
+  return F.maxBonus * Math.max(0, Math.min(1, (cashRatio - F.from) / (F.to - F.from)));
+}
+
 /**
  * AI 구단의 제안: 선수의 요구 조건을 기준으로, 자기 평가가 시장 평가보다 높으면 더, 낮으면 덜 준다(±20%).
  * 우승 경쟁 구단은 3% 더, 리빌딩 구단은 10% 덜, 기간도 2년까지만 제안한다. 실제 능력은 읽지 않는다.
  */
-export function aiOffer(seed: string, club: ClubProfile, p: PlayerTruth, demand: ContractOffer, year: number, contender: boolean, rebuilding: boolean): ContractOffer {
+
+export function aiOffer(seed: string, club: ClubProfile, p: PlayerTruth, demand: ContractOffer, year: number, contender: boolean, rebuilding: boolean, cashBonus = 0): ContractOffer {
   void year;
   const valueRatio = Math.max(0.8, Math.min(1.2, Math.exp((clubEstimate(seed, club.id, p) - publicOverall(seed, p)) / 15)));
-  const stance = contender ? 1.03 : rebuilding ? 0.9 : 0.97;
+  // 9b-2(D-247): 현금이 넉넉한 구단은 cashBonus만큼 더 준다(리빌딩·긴축 구단 제외)
+  const stance = (contender ? 1.03 : rebuilding ? 0.9 : 0.97) + (rebuilding ? 0 : cashBonus);
   const years = rebuilding ? Math.min(demand.years, 2) : demand.years;
   const total = (offerTotal(demand) / demand.years) * years * valueRatio * stance;
   const bonus = round1m(total * FA_RULES.bonusShare);
@@ -144,7 +152,7 @@ export function aiOffer(seed: string, club: ClubProfile, p: PlayerTruth, demand:
 
 /** 보류 선수 연봉 협상 요구액: 시장 평가 기준. 최저 연봉 이상. */
 export function salaryDemand(seed: string, p: PlayerTruth, year: number): number {
-  return domesticSalary(publicOverall(seed, p), ageAt(p, year), p.career.proSeasons);
+  return domesticSalary(publicOverall(seed, p), ageAt(p, year), p.career.proSeasons, salaryIndex(year));
 }
 
 export function salaryAccepts(seed: string, p: PlayerTruth, offer: number, demand: number): boolean {

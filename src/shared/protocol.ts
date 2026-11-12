@@ -552,6 +552,8 @@ export interface AdvanceResult {
   stoppedReason: string | null;
   autosaved: boolean;
   elapsedMs: number;
+  /** D-250: 이번 진행에서 기본 선택으로 처리한 결정 카드 수 */
+  defaultedCards?: number;
 }
 
 export interface SaveSlotInfo {
@@ -1357,7 +1359,7 @@ export interface RequestMap {
   'game.clubOptions': { payload: void; result: ClubOption[] };
   'game.new': { payload: { clubId: number; saveName: string; seed?: string; start?: 'camp' | 'stove' }; result: DashboardView };
   'game.dashboard': { payload: void; result: DashboardView };
-  'game.advance': { payload: { mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn'; autoCards?: boolean }; result: AdvanceResult };
+  'game.advance': { payload: { mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn'; autoCards?: boolean; /** D-250: '끝까지' 진행 중 새로 온 결정 카드를 기본 선택으로 처리 */ defaultCards?: boolean }; result: AdvanceResult };
   'game.players': { payload: PlayerQuery; result: PlayerListItem[] };
   'game.player': { payload: { playerId: number }; result: PlayerDetailView };
   'player.note': { payload: { playerId: number; text: string; watched: boolean }; result: PlayerNoteView };

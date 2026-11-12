@@ -452,7 +452,7 @@ export const SERIES: readonly SeriesDef[] = [
 
   one('Q_draftRel', 'Q', '1라운드 지명 방출', 'once', 1, '1라운드 지명 선수 1군 데뷔 없이 방출'),
   one('Q_posting', 'Q', '포스팅 무응찰', 'once', 1, '포스팅에 동의했지만 무산'),
-  s('Q_capPenalty', 'Q', '샐러리캡 제재', 'once', [1, 2], '샐러리캡 초과 제재', { inactive: '샐러리캡 제재 기능 없음' }),
+  s('Q_capPenalty', 'Q', '샐러리캡 제재', 'once', [1, 2], '샐러리캡 초과 제재 연속 횟수'),
   s('Q_emergency', 'Q', '긴급 지원 요청', 'once', [1, 3], '모기업 긴급 지원'),
   one('Q_crisis', 'Q', '자금 위기', 'once', 1, '현금 0 미만 위기 상태'),
   one('Q_brink', 'Q', '파산 직전', 'once', 1, '현금 마이너스 4주'),

@@ -7,7 +7,7 @@ import { TRADE as T } from './config';
 import { publicOverall } from './contracts';
 import { stableNormal } from './rng';
 import type { PlayerTruth } from './types';
-import { domesticSalary, FA_SERVICE_YEARS_REQUIRED, overall } from './worldgen';
+import { domesticSalary, FA_SERVICE_YEARS_REQUIRED, overall, salaryIndex } from './worldgen';
 
 export type ClubPhase = 'contender' | 'neutral' | 'rebuild';
 
@@ -41,7 +41,7 @@ export function ageStep(age: number): number {
 }
 
 /** 시장 가치(연): 같은 능력 FA가 받을 연봉 */
-export const worth = (rating: number) => domesticSalary(rating, T.worthAge, T.worthProSeasons) * T.worthPremium;
+export const worth = (rating: number, index = 1) => domesticSalary(rating, T.worthAge, T.worthProSeasons, index) * T.worthPremium;
 
 /** 남은 보유 기간(시즌 수, 1~4)과 그중 계약 연봉이 고정된 시즌 수 */
 export function horizon(p: PlayerTruth, inSeason: boolean): { years: number; fixed: number } {
@@ -61,10 +61,12 @@ export function playerValue(p: PlayerTruth, rating: number, age: number, ctx: Va
   const h = horizon(p, ctx.inSeason);
   let r = rating;
   let total = 0;
+  // D-247: 시장 가치와 재계약 연봉은 평가하는 계약 시즌의 연봉 시세 지수로 본다
+  const index = salaryIndex(ctx.inSeason ? ctx.season : ctx.season + 1);
   for (let y = 0; y < h.years; y++) {
     if (y > 0) r += ageStep(age + y - 1);
-    const salary = y < h.fixed ? p.salary : Math.max(p.salary, domesticSalary(r, age + y, p.career.proSeasons + y));
-    let term = (worth(r) - salary) * T.discount ** y;
+    const salary = y < h.fixed ? p.salary : Math.max(p.salary, domesticSalary(r, age + y, p.career.proSeasons + y, index));
+    let term = (worth(r, index) - salary) * T.discount ** y;
     if (y === 0) term *= (ctx.inSeason ? ctx.seasonShare : 1) * Math.max(0, 1 - injuryDays / 180);
     if (role !== 'truth') {
       if (ctx.phase === 'contender') term *= y === 0 ? T.contenderNow : T.contenderLater;

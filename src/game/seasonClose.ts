@@ -2,8 +2,8 @@
 // 한국시리즈가 끝난 날 같은 트랜잭션 안에서 실행한다.
 import { addDays, diffDays, type GameDate } from '../engine/calendar';
 import { advanceSchoolYear, asTruth, prospectScore } from '../engine/amateur';
-import { FREE_POOL, UNDRAFTED_FA, WORLDGEN } from '../engine/config';
-import { publicOverall } from '../engine/contracts';
+import { CAP_SANCTION, FREE_POOL, UNDRAFTED_FA, WORLDGEN } from '../engine/config';
+import { capPayroll, publicOverall, salaryCap } from '../engine/contracts';
 import { supportFactorBp, type LedgerEntry } from '../engine/finance';
 import { EOK } from '../engine/money';
 import { addXp } from '../engine/owner';
@@ -123,6 +123,8 @@ export class SeasonClose {
 
     // 2) 선수 연차·FA 자격 (D-085)
     const players = this.repo.getPlayers();
+    // D-247: 샐러리캡 산정액은 은퇴·방출 처리 전(정규시즌 선수단) 기준으로 잡아 둔다
+    const capPay = new Map(clubIds.map((id) => [id, capPayroll(players, id, season)]));
     const bat = this.repo.battingTotals(season);
     const pit = this.repo.pitchingTotals(season);
     const changed: PlayerTruth[] = [];
@@ -184,12 +186,18 @@ export class SeasonClose {
     const school = advanceSchoolYear(meta.seed, this.repo.getAmateurs('active'), season + 1, () => aid++);
     this.repo.saveAmateurs(school.pool);
     const maxId = Math.max(0, ...this.repo.getPlayers().map((p) => p.id));
-    this.repo.savePlayers(generateOverseasPool(Rng.derive(meta.seed, 'overseas', season), season, maxId + 1).slice(0, 18));
+    // 외국인 무소속 풀 정리(D-247): 1년 동안 계약하지 못한 외국인·아시아쿼터 무소속 선수는 풀을 떠난다(국내 무소속 D-099와 같은 규칙).
+    // 그다음 새 후보를 새 게임과 같은 규모·구성으로 보충한다(전에는 앞 18명 = 외국인 투수 16·야수 2만 더해 풀이 계속 쌓였다).
+    const overseasLeft = this.repo.getPlayers().filter((p) => p.clubId === null && p.origin !== 'domestic' && !p.retired);
+    for (const p of overseasLeft) p.retired = { season, reason: '해외 리그 이적' };
+    this.repo.savePlayers(overseasLeft);
+    const overseasNew = generateOverseasPool(Rng.derive(meta.seed, 'overseas', season), season, maxId + 1);
+    this.repo.savePlayers(overseasNew);
     // 국내 무소속 선수(D-099): 1년 동안 계약하지 못한 선수는 은퇴하고, 미지명 졸업자가 FA로 등록된다(포지션 최소 인원 보충의 공급원).
     const unsigned = this.repo.getPlayers().filter((p) => p.clubId === null && p.origin === 'domestic' && !p.retired);
     for (const p of unsigned) p.retired = { season, reason: '미계약' };
     this.repo.savePlayers(unsigned);
-    let pid = maxId + 19;
+    let pid = maxId + 1 + overseasNew.length;
     const undrafted = school.pool
       .filter((a) => a.status === 'gone' && !a.draft && prospectScore(a) >= (a.level === '대학' ? UNDRAFTED_FA.colMinScore : UNDRAFTED_FA.hsMinScore))
       .map((a): PlayerTruth => ({ ...asTruth(a), id: pid++, clubId: null, level: '2군', salary: WORLDGEN.minSalary, contractYears: 0, honors: a.honors.map((h) => h.title) }));
@@ -222,6 +230,31 @@ export class SeasonClose {
       }
     }
     update.supportBp = { ...(meta.supportBp ?? {}), [String(season + 1)]: supportNext };
+
+    // 4-3) 샐러리캡 초과 제재(17 문서, D-247): 정규시즌 선수단 산정액이 상한을 넘으면 초과분 × 배수(연속 1·2·3회 이상),
+    // 3회 연속 이상이면 다음 드래프트 1라운드 지명 순서가 맨 뒤로 간다. 모든 구단에 같은 규칙.
+    {
+      const cap = salaryCap(season);
+      const streak: Record<string, number> = {};
+      const penalized: ClubId[] = [];
+      const lines: string[] = [];
+      for (const c of this.repo.getClubs()) {
+        const over = (capPay.get(c.id) ?? 0) - cap;
+        if (over <= 0) continue;
+        const n = (meta.capOverStreak?.[String(c.id)] ?? 0) + 1;
+        streak[String(c.id)] = n;
+        const rates = CAP_SANCTION.rateBpByStreak;
+        const fine = Math.round((over * rates[Math.min(n, rates.length) - 1]!) / 10_000 / 1_000_000) * 1_000_000;
+        const draft = n >= CAP_SANCTION.draftPenaltyStreak;
+        if (draft) penalized.push(c.id);
+        ledger.push({ clubId: c.id, date, category: 'capPenalty', amount: -fine, memo: `${season} 샐러리캡 초과 제재금(초과 ${Math.round(over / EOK)}억, ${n}회 연속)` });
+        lines.push(`${c.shortName}: 산정액 ${Math.round((capPay.get(c.id) ?? 0) / EOK)}억(상한 ${Math.round(cap / EOK)}억), 제재금 ${Math.round(fine / EOK)}억${draft ? ', 다음 드래프트 1라운드 지명 순서 맨 뒤' : ''}`);
+        if (c.id === meta.userClubId) inbox.push({ date, kind: 'report', sender: 'KBO 사무국', title: `샐러리캡 초과 제재: 제재금 ${Math.round(fine / EOK)}억`, body: `${season} 시즌 샐러리캡 산정액이 상한을 ${Math.round(over / EOK)}억 넘었습니다(${n}회 연속). 초과분의 ${rates[Math.min(n, rates.length) - 1]! / 100}%를 제재금으로 냅니다.${draft ? ' 3회 연속 이상 초과로 다음 드래프트 1라운드 지명 순서가 맨 뒤로 갑니다.' : ''}` });
+      }
+      update.capOverStreak = streak;
+      if (penalized.length) update.capDraftPenalty = { ...(meta.capDraftPenalty ?? {}), [String(season + 1)]: penalized };
+      if (lines.length) inbox.push({ date, kind: 'news', sender: 'KBO 소식', title: `${season} 샐러리캡 초과 구단 ${lines.length}곳`, body: lines.join('\n') });
+    }
 
     // 5) 다음 시즌 일정·스토브리그 달력, 11월분 연봉 기준
     const next = season + 1;

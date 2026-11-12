@@ -531,6 +531,8 @@ export function judgePQOps(c: PQCtx, players: PlayerTruth[], fresh: GameMeta): v
   const club = meta.userClubId;
   if (fresh.emergencyUsedSeason !== null && fresh.emergencyUsedSeason !== undefined && !memo.emergencySeasons.includes(fresh.emergencyUsedSeason)) memo.emergencySeasons = [...memo.emergencySeasons, fresh.emergencyUsedSeason];
   judge('Q_emergency', memo.emergencySeasons.length, (l) => `${date} 긴급 지원 ${l}회`);
+  // 9b-2(D-247): 샐러리캡 초과 제재(시즌 마감 때 정해지는 연속 횟수)
+  judge('Q_capPenalty', fresh.capOverStreak?.[String(club)] ?? 0, (l) => `${date} 샐러리캡 초과 제재 ${l}회 연속`);
   flag('Q_crisis', !!fresh.cashCrisisSince, `${date} 자금 위기`);
   flag('Q_brink', !!fresh.cashCrisisSince && fresh.cashCrisisSince <= addDays(date, -28), `${date} 현금 마이너스 4주`);
   flag('Q_warn', (fresh.goalMisses ?? 0) >= CLOSE_RULES.warnAfterMisses, `${date} 성적 목표 연속 미달 경고`);

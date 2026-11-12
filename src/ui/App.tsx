@@ -159,12 +159,29 @@ export function App() {
     notify,
   };
 
+  // D-250: '끝까지' 진행의 '카드 기본 선택' 옵션(이 기기에 기억, 기본 꺼짐)
+  const [defaultCards, setDefaultCards] = useState(() => {
+    try {
+      return localStorage.getItem('fo.defaultCards') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const saveDefaultCards = (on: boolean) => {
+    setDefaultCards(on);
+    try {
+      localStorage.setItem('fo.defaultCards', on ? '1' : '0');
+    } catch {
+      // 저장소를 못 써도 이번 실행에는 적용된다
+    }
+  };
+
   const advance = async (mode: 'day' | 'week' | 'untilSeasonEnd' | 'turn'): Promise<boolean> => {
     if (!(await canLeave())) return false;
     setBusy(mode === 'day' ? '하루 진행 중' : mode === 'week' ? '한 주 진행 중' : mode === 'turn' ? '구간 진행 중' : '시즌 진행 중');
     setProgress(null);
     try {
-      const r = await api('game.advance', { mode });
+      const r = await api('game.advance', { mode, defaultCards: mode === 'untilSeasonEnd' && defaultCards });
       const d = await api('game.dashboard');
       applyDashboard(d);
       if (d.approvals.length > 0 && d.owner.weekLabel !== popupWeek) {
@@ -172,6 +189,7 @@ export function App() {
         setPopupOpen(true);
       }
       const parts = [`${r.daysProcessed}일 진행${r.gamesPlayed ? `, ${r.gamesPlayed}경기` : ''}`];
+      if (r.defaultedCards) parts.push(`결정 카드 ${r.defaultedCards}장 기본 선택(뉴스 로그)`);
       if (r.autosaved) parts.push('자동 저장됨');
       if (r.stoppedReason) parts.push(r.stoppedReason);
       notify(parts.join(' · '));
@@ -261,6 +279,11 @@ export function App() {
             <>
               {d.canAdvanceDay && (
                 <>
+                  {/* D-250: 끝까지 진행 중 새로 온 결정 카드를 기본 선택으로 넘긴다(구단 스토리·중대 사건은 멈춤) */}
+                  <label className="advance-option" title="켜면 '끝까지' 진행 중에 새로 온 결정 카드를 기본 선택으로 처리하고 계속 진행합니다. 구단 스토리 카드와 중대 사건에서는 멈춥니다. 처리 결과는 뉴스 로그에 남습니다.">
+                    <input type="checkbox" checked={defaultCards} disabled={!!busy} onChange={(e) => saveDefaultCards(e.target.checked)} />
+                    카드 기본 선택
+                  </label>
                   <button disabled={!!busy} onClick={() => advance('untilSeasonEnd')}>{d.phase === 'postseason' ? '포스트시즌 끝까지' : '정규시즌 끝까지'}</button>
                   <button disabled={!!busy} onClick={() => advance('day')}>하루 진행</button>
                 </>

@@ -258,14 +258,14 @@ export class BusinessOps {
     return { ledger, inbox };
   }
 
-  /** AI 투자 규칙: 현금 − (진행 공사 남은 지급 + 새 공사비) ≥ 시작 현금 × 0.9 */
+  /** AI 투자 규칙(D-247): 현금 − (진행 공사 남은 지급 + 새 공사비 × aiCommitShare) ≥ 시작 현금 × 0.9. 완공금 몫은 공사 기간의 수입으로 낸다 */
   private investCandidate(meta: GameMeta, clubId: ClubId, f: ClubFacilities, inflation: number, date: GameDate): FacilityProject | null {
     const kind = FACILITY_KINDS.filter((k) => f.levels[k] < FACILITY.maxLevel && !f.projects.some((p) => p.kind === k)).sort((a, b) => f.levels[a] - f.levels[b] || FACILITY_KINDS.indexOf(a) - FACILITY_KINDS.indexOf(b))[0];
     if (!kind) return null;
     const project = planProject(kind, f.levels[kind] + 1, date, inflation);
     const committed = f.projects.reduce((a, p) => a + unpaid(p), 0);
     const floor = this.clubs.get(clubId)!.startCash * FACILITY.aiCashFloor;
-    return this.repo.cashBalance(clubId) - committed - project.costWon >= floor ? project : null;
+    return this.repo.cashBalance(clubId) - committed - Math.round(project.costWon * FACILITY.aiCommitShare) >= floor ? project : null;
   }
 
   // ───────── 구단주 명령 ─────────

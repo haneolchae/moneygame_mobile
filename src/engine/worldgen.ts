@@ -2,7 +2,7 @@
 // 분포·연봉 시세는 config 설정값(WORLDGEN, D-075·D-087)과 아래 상수를 따른다.
 import { addDays, makeDate } from './calendar';
 import { CLUB_PROFILES } from './clubs';
-import { FOREIGN, FREE_POOL, LEAGUE, usdToWon, WORLDGEN } from './config';
+import { FOREIGN, FREE_POOL, LEAGUE, SALARY_MARKET, usdToWon, WORLDGEN } from './config';
 import type { Rng } from './rng';
 import { FASTBALL_TYPES, type BattingRatings, type CatcherRatings, type ClubProfile, type ContractPreference, type DefenseRatings, type HiddenAttributes, type Pitch, type PitchingRatings, type PitchType, type PlayerOrigin, type PlayerTruth, type Position, type PositionSkills } from './types';
 
@@ -196,11 +196,16 @@ export function overall(p: PlayerTruth): number {
  * 구단 국내 연봉 총액이 기획 규모(100~140억, D-038)에 가깝도록 맞춘 값이다.
  * FA를 거친 베테랑(프로 9년 이상)은 30% 높다. 22세 이하는 6,000만 원 이하. 100만 원 단위.
  */
-export function domesticSalary(ovr: number, age: number, proSeasons: number): number {
+export function domesticSalary(ovr: number, age: number, proSeasons: number, index = 1): number {
   let won = WORLDGEN.minSalary + 140_000_000 * Math.exp((ovr - 50) / 7.5);
   if (proSeasons >= 9) won *= 1.3;
   if (age <= 22) won = Math.min(won, 60_000_000);
-  return Math.max(WORLDGEN.minSalary, Math.round(won / 1_000_000) * 1_000_000);
+  return Math.max(WORLDGEN.minSalary, Math.round((won * index) / 1_000_000) * 1_000_000);
+}
+
+/** 연봉 시세 지수(D-247): 계약이 적용되는 시즌 기준, 샐러리캡과 같은 비율(매년 5%)로 오른다. 첫 시즌 = 1 */
+export function salaryIndex(seasonYear: number): number {
+  return (1 + SALARY_MARKET.growthBp / 10_000) ** Math.max(0, seasonYear - SALARY_MARKET.baseYear);
 }
 
 interface GenContext {
@@ -361,6 +366,7 @@ export function generateWorld(rng: Rng, season: number): PlayerTruth[] {
 
 /** 해외 선수 풀: 이번 스토브리그에 영입할 수 있는 외국인·아시아쿼터 후보 (소속 없음). */
 export function generateOverseasPool(rng: Rng, season: number, firstId: number): PlayerTruth[] {
+  // 9b-2(D-247): 시즌 마감 보충도 새 게임과 같은 구성(외국인 투수 16·야수 10, 아시아쿼터 투수 6·야수 4)으로 만든다
   let id = firstId;
   const ctx: GenContext = { rng, season, nextId: () => id++ };
   const pool: PlayerTruth[] = [];

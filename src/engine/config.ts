@@ -425,6 +425,8 @@ export const FACILITY = {
   approvalWeeks: 4,
   /** AI·장기 실행 드라이버: 투자 뒤에도 남길 현금 = 시작 현금 × 이 값 */
   aiCashFloor: 0.9,
+  /** 9b-2(D-247): 새 공사비 중 착공 전에 확보할 몫(착공금 + 중도금). 완공금은 공사 기간의 수입으로 낸다 */
+  aiCommitShare: 0.7,
   kinds: {
     stadium: { label: '구장 편의시설', effect: '관중 수요 +3%, 매점 객단가 +5% (단계당)', needsApproval: true },
     training: { label: '실내 훈련장', effect: '집중 훈련 효과 +4% (단계당)', needsApproval: false },
@@ -448,6 +450,24 @@ export const SUPPORT_RENEGOTIATION = {
   lower: 0.8,
   raiseSlope: 0.5,
   maxFactor: 1.2,
+} as const;
+
+/**
+ * 9b-2(D-247) 연봉 시세 지수: 국내 선수 연봉 시세(연봉 협상·FA·연장·무소속 요구, 트레이드 가치 평가)는
+ * 샐러리캡과 같은 비율로 오른다(기준 연도 = 첫 시즌, 지수 1). 체결한 계약은 바뀌지 않는다.
+ */
+export const SALARY_MARKET = {
+  baseYear: NEW_GAME.firstSeason,
+  growthBp: 500,
+} as const;
+
+/**
+ * 9b-2(D-247) 샐러리캡 초과 제재(17 문서, D-040·D-225): 시즌 마감 때 초과분 × 배수(연속 횟수 1·2·3회 이상),
+ * 3회 연속 이상이면 다음 드래프트 1라운드 지명 순서가 맨 뒤로 간다.
+ */
+export const CAP_SANCTION = {
+  rateBpByStreak: [5_000, 10_000, 15_000] as readonly number[],
+  draftPenaltyStreak: 3,
 } as const;
 
 /** 5b 계약 확장(D-136 초기안) */
@@ -728,6 +748,8 @@ export const AI_CLUB = {
   /** 긴급 지원 = 부족액 + 여유분(억 단위 올림) */
   emergencyBufferWon: 1_000_000_000,
   stanceLogMax: 400,
+  /** 9b-2(D-247) AI FA 지출: 보유 현금 / 시작 현금이 from을 넘으면 제안액을 올린다(to에서 최대 maxBonus). 캡을 넘기는 제안은 하지 않는다 */
+  faCash: { from: 1.2, to: 2.0, maxBonus: 0.1 },
   trade: {
     /** 구단별 기간(스토브리그·시즌)당 AI 간 거래 상한. 리그 전체는 주 1건 */
     maxPerClubPeriod: 2,

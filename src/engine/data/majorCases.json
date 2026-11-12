@@ -5,7 +5,7 @@
     "phase": "season",
     "target": "player",
     "truth": "pastRecord",
-    "hazard": { "model": "pastRecord", "base": 0.000104 },
+    "hazard": { "model": "pastRecord", "base": 0.000156 },
     "resolveWeeks": [2, 4],
     "league": { "games": 0, "atOpen": false },
     "texts": [
@@ -44,7 +44,7 @@
     "phase": "season",
     "target": "rookie",
     "truth": "pastRecord",
-    "hazard": { "model": "pastRecord", "base": 0.0052 },
+    "hazard": { "model": "pastRecord", "base": 0.0078 },
     "resolveWeeks": [2, 4],
     "league": { "games": 0, "atOpen": false },
     "texts": [
@@ -83,7 +83,7 @@
     "phase": "stove",
     "target": "player",
     "truth": "gambling",
-    "hazard": { "model": "selfControl", "base": 0.000117 },
+    "hazard": { "model": "selfControl", "base": 0.0001755 },
     "resolveWeeks": [0, 2],
     "resolveAt": "opening",
     "league": { "games": 15, "atOpen": false },
@@ -120,7 +120,7 @@
     "phase": "season",
     "target": "player",
     "truth": "fact",
-    "hazard": { "model": "drug", "base": 0.0000364 },
+    "hazard": { "model": "drug", "base": 0.0000546 },
     "resolveWeeks": [2, 2],
     "league": { "games": 30, "atOpen": true },
     "texts": [
@@ -147,7 +147,7 @@
     "phase": "season",
     "target": "player",
     "truth": "fact",
-    "hazard": { "model": "selfControl", "base": 0.0000585 },
+    "hazard": { "model": "selfControl", "base": 0.00008775 },
     "resolveWeeks": [1, 1],
     "league": { "games": 20, "atOpen": true },
     "texts": [
@@ -174,7 +174,7 @@
     "phase": "season",
     "target": "player",
     "truth": "coverup",
-    "hazard": { "model": "awareness", "base": 0.0000312 },
+    "hazard": { "model": "awareness", "base": 0.0000468 },
     "resolveWeeks": [2, 6],
     "league": { "games": 0, "atOpen": false },
     "texts": [
