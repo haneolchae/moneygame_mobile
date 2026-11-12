@@ -227,6 +227,8 @@ export const SERIES: readonly SeriesDef[] = [
   // ②(27 1.1, D-237): 구단 서사 — 구단주로 맞은 구단 스토리 결말 수, 성공 결말 수
   s('M_story', 'M', '구단 서사', 'cumulative', [1, 2, 3], '구단주로 맞은 구단 스토리 결말(결말마다)'),
   one('M_storyGood', 'M', '해피 엔딩', 'once', 3, '구단주로 구단 스토리 성공 결말'),
+  // ③(27b, D-224·D-238): 프롤로그 완료 보상 — 처음 고른 구단의 시즌편·첫 겨울편을 편 건너뛰기 없이 마침(1단계 경험치)
+  one('M_prologue', 'M', '첫 겨울을 넘기다', 'once', 1, '처음 고른 구단의 프롤로그(시즌편·첫 겨울편)를 편 건너뛰기 없이 마침'),
   s('M_interview', 'M', '인터뷰·면담 응대', 'cumulative', [10, 50, 100], '언론 인터뷰·면담(건)', { inactive: '인터뷰·면담 기능 없음' }),
   // M-2 구단주 행동·메타
   s('M2_ap', 'M', '행동력 누적 사용', 'cumulative', [100, 500, 1000, 5000], '재임 중 쓴 행동력'),
@@ -755,6 +757,9 @@ export class Achievements {
           const good = endings.find((e) => e.kind === 'success');
           flag('M_storyGood', !!good, `${good?.season ?? ''} 구단 스토리 성공 결말 '${good?.title ?? ''}'`);
         }
+        // ③(D-238): 프롤로그를 편 건너뛰기 없이 마친 다음 월요일
+        const pro = [this.repo.getMetaValue<{ kind: string; ended: { reason: string; date: string } | null }>('prologue'), ...(this.repo.getMetaValue<Array<{ kind: string; ended: { reason: string; date: string } | null }>>('prologuePast') ?? [])].find((x) => x?.kind === 'full' && x.ended?.reason === 'complete');
+        if (pro) flag('M_prologue', true, `${pro.ended!.date} 프롤로그 시즌편·첫 겨울편 완료`);
       }
       // M-2 메타: 올라운더·달성률·황금 시즌(오늘 판정 포함)
       const doneKeys = new Set([...have.map((a) => a.key), ...hits.map((h) => h.key)]);

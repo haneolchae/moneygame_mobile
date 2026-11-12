@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import type { StoryView } from '../shared/protocol';
 import type { Nav } from './App';
 import { api } from './api';
+import type { PrologueHistoryView } from '../shared/protocol';
+import { PrologueHistory } from './ProloguePanel';
 
 const STATUS: Record<string, string> = { done: '완료', skipped: '지나감', pending: '결정 대기', upcoming: '예정', otherBranch: '다른 갈래' };
 const KIND: Record<string, string> = { success: '성공', neutral: '보통', fail: '실패', variant: '변주' };
@@ -20,6 +22,21 @@ export function useStory(nav: Nav, clubId: number | undefined, enabled = true) {
   }, [clubId, enabled, nav.dashboard?.date]);
   return v;
 }
+
+/** ③ 본 프롤로그 장면(우리 구단 서사 탭에서 다시 보기) */
+export function usePrologueHistory(nav: Nav, enabled: boolean) {
+  const [h, setH] = useState<PrologueHistoryView | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    api('prologue.history')
+      .then(setH)
+      .catch((e: Error) => nav.notify(e.message, 'error'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, nav.dashboard?.date]);
+  return h;
+}
+
+export { PrologueHistory };
 
 /** 구단주실 요약: 과제·현재 막·다음 장 */
 export function StorySummary({ nav }: { nav: Nav }) {

@@ -65,6 +65,7 @@ import { DELEGABLE_TEAMS, directWpCost, ORG_AP, Organization } from './organizat
 import { apPeriodId, weekIdFor } from './week';
 import { beginAutoRun, finishAutoRun } from './firstWinter';
 import { StoryOps } from './story';
+import { PrologueOps, type PrologueFact } from './prologue';
 import { arcOf, findCard, ROLE_LABEL, STORIES, storyChapter, type StoryRole } from '../engine/events/story';
 import { STORY } from '../engine/config';
 import {
@@ -323,6 +324,8 @@ export class GameService {
   readonly events: EventOps;
   /** ② 구단 스토리 */
   readonly story: StoryOps;
+  /** ③ 프롤로그(27b, D-223·D-238) */
+  readonly prologue: PrologueOps;
   /** 성적 혼합 표본(3b): 저장본에서 다시 만들 수 있는 메모리 캐시 */
   private readonly forms: FormTracker;
   private scouting = new Map<number, ScoutingSnapshot>();
@@ -360,6 +363,8 @@ export class GameService {
       this.repo.saveScouting(snapshot);
     });
     this.scouting.set(playerId, snapshot);
+    // ③ P6: 다른 구단·시장 선수 조사
+    if (p.clubId !== meta.userClubId) this.prologue.note('scout');
     return this.player(playerId);
   }
 
@@ -414,6 +419,17 @@ export class GameService {
     this.events = new EventOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), fatigue: (d, ps) => this.health.fatigueMap(d, ps), adjustTrust: (c, v, d, s) => this.managers.adjustTrust(c, v, d, s), prQuality: (c) => this.org.teamQuality(c, 'pr'), spendWp: (w, t, wp) => { try { this.repo.spendWp(w, t, wp); return true; } catch { return false; } }, release: (m, d, id, why) => this.market.releaseForCase(m, d, id, why), fireManager: (m, c, d) => { const r = this.org.dismissManager(m, c, d); this.managers.reset(); return r; }, stance: (c) => this.aiClubs.stance(c) ?? 'middle', nearMilestone: (s, ids) => this.awards.nearMilestone(s, ids) });
     this.story = new StoryOps(repo, this.clubMap, { rankOf: () => this.stanceRanks(), stance: (c) => this.aiClubs.stance(c) ?? 'middle', managerName: (c) => this.managers.managerOf(c)?.name ?? '', apply: (effects, ctx) => this.events.applyEffects(effects, ctx) });
     this.events.attachStory(this.story);
+    // ③(D-238): 프롤로그 — 미션은 실제 명령 결과로 판정, 건너뛰기는 같은 명령의 기본값
+    this.prologue = new PrologueOps(repo, this.clubMap, {
+      rankOf: () => this.stanceRanks(),
+      managerName: (c) => this.managers.managerOf(c)?.name ?? '',
+      vacancies: (m) => this.orgVacancies(m).length,
+      pendingApprovals: () => this.org.approvals().length,
+      apply: (effects, ctx) => this.events.applyEffects(effects, ctx),
+      describe: (m, e) => this.events.describe(m, e),
+      delegateFranchise: (m, id) => this.org.delegateFa(m, id).message,
+    });
+    this.events.guaranteedCard = (m, monday) => this.prologue.guaranteedCardWeek(m, monday);
     this.allStar = new AllStarOps(repo, this.clubMap, (id) => this.managers.profileOf(id), (s, d, ps, env) => this.forms.formsFor(s, d, ps, env), this.budget);
     // 2b 저장본: 직원이 없으면 시드로 만든다. 이번 주 처리량이 없으면 지급한다.
     repo.transaction(() => {
@@ -445,6 +461,8 @@ export class GameService {
       finishAutoRun(this.repo, baseline, releasedForeign, clubName);
       const m = this.meta();
       this.repo.grantAp({ weekId: weekIdFor(m.currentDate), granted: weeklyAp(m.ownerLevel), used: 0 });
+      // ③(D-223): 처음 고른 구단은 2/1 취임과 함께 프롤로그 시즌편
+      this.prologue.startFull(this.meta());
     });
   }
 
@@ -509,7 +527,11 @@ export class GameService {
       if (livePoints) extraMeta.liveStats = { ...(meta.liveStats ?? {}), [key]: { games: cur.games + 1, points: cur.points + livePoints.points } };
       extraMeta.liveGame = null;
     }
-    return this.finishDay(meta, date, inbox, market, ai, extraMeta, results, inputs.fixtures);
+    const watched = !!meta.liveGame && meta.liveGame.date === date;
+    const out = this.finishDay(meta, date, inbox, market, ai, extraMeta, results, inputs.fixtures);
+    // ③ P12: 경기 보기로 관전한 우리 경기가 그날 확정됨
+    if (watched) this.prologue.note('live');
+    return out;
   }
 
   /** 하루 처리의 경기 전 단계(일정 사건·시장·조직·운영 상태·성장·건강·개막·시범경기). 관전 미리보기도 같은 단계를 거친다 */
@@ -750,6 +772,8 @@ export class GameService {
     this.grantPeriodAp(next);
     this.stoveTurnStart(next);
     this.ensureScouting();
+    // ③: 프롤로그 미션 판정(실제 상태)·기한 경과·첫 겨울편 시작
+    this.prologue.refresh();
     return { gamesPlayed: results.length };
   }
 
@@ -898,6 +922,7 @@ export class GameService {
       }
     }
     if (this.phase() === 'seasonComplete' && !stoppedReason) stoppedReason = `${this.meta().season} 시즌 종료 (한국시리즈 끝)`;
+    if (daysProcessed > 0) this.prologue.note('advance');
     return { daysProcessed, gamesPlayed, stoppedReason };
   }
 
@@ -1170,6 +1195,7 @@ export class GameService {
       gameOver: meta.gameOver ?? null,
       goal: { expectedRank: meta.seasonGoal?.season === meta.season ? meta.seasonGoal.expectedRank : null, misses: meta.goalMisses ?? 0, rebuild: meta.rebuild ? `${meta.rebuild.from}~${meta.rebuild.until} 리빌딩` : null },
       postseason: this.postseasonView(meta),
+      prologue: this.prologue.view(meta),
       ...extra,
     };
   }
@@ -1325,6 +1351,7 @@ export class GameService {
   faOffer(playerId: number, years: number, salaryWon: number, bonusWon: number): OfferResultView {
     const meta = this.meta();
     const r = this.market.faOffer(meta, this.direct(meta), playerId, { years, salary: salaryWon, bonus: bonusWon });
+    this.noteFaTalk(meta, playerId);
     return r.result === 'counter' ? { result: 'counter', message: r.message, counter: { years: r.counter.years, salaryWon: r.counter.salary, bonusWon: r.counter.bonus, totalWon: offerTotal(r.counter) } } : { result: r.result, message: r.message };
   }
 
@@ -1524,7 +1551,7 @@ export class GameService {
 
   /** 결재는 행동력을 쓰지 않는다(D-077). */
   decideMany(approvalIds: number[], approve: boolean): OfferResultView {
-    return this.org.decideMany(this.meta(), approvalIds, approve);
+    return this.noted(this.org.decideMany(this.meta(), approvalIds, approve), 'approval');
   }
 
   // ───────── 4c-3 경기 관전·승부처 참여 (D-160·D-174) ─────────
@@ -1854,6 +1881,7 @@ export class GameService {
     if (!CATEGORY_TEAM[category as CardCategory]) throw new GameError('NOT_AVAILABLE', '이 분류는 담당 팀이 없어 맡길 수 없습니다.');
     const meta = this.meta();
     this.repo.updateMeta({ cardDelegation: { ...(meta.cardDelegation ?? {}), [category]: delegate } });
+    this.prologue.note('cardDelegation');
     return this.cardDelegation();
   }
 
@@ -1995,6 +2023,7 @@ export class GameService {
     const meta = this.meta();
     if (!input || typeof input.year !== 'number' || !input.ops || !input.caps) throw new GameError('INVALID', '예산안 형식이 올바르지 않습니다.');
     const r = this.budget.setPlan(meta, weekIdFor(meta.currentDate), input.year, { scouting: Number(input.ops.scouting), futures: Number(input.ops.futures), teamOps: Number(input.ops.teamOps) }, { payroll: Number(input.caps.payroll), facility: Number(input.caps.facility), marketing: Number(input.caps.marketing), merch: Number(input.caps.merch) });
+    this.prologue.note('budget');
     return { ...r, view: this.budgetView() };
   }
 
@@ -2249,7 +2278,19 @@ export class GameService {
 
   hireStaff(staffId: number): OfferResultView {
     const meta = this.meta();
-    return this.org.hire(meta, weekIdFor(meta.currentDate), staffId);
+    return this.noted(this.org.hire(meta, weekIdFor(meta.currentDate), staffId), 'hire', true);
+  }
+
+  /** ③ 프롤로그 사실 기록: 명령이 예외 없이 끝났을 때(acceptOnly면 성사됐을 때)만 */
+  private noted<T extends { result?: string }>(r: T, fact: PrologueFact, acceptOnly = false): T {
+    if (!acceptOnly || r.result === 'accept') this.prologue.note(fact);
+    return r;
+  }
+
+  /** ③: 간판 외야수 첫 안건 협상(P4), 스토브리그 우리 FA 협상·지시서(W1) */
+  private noteFaTalk(meta: GameMeta, playerId: number): void {
+    if (meta.firstAgenda?.playerId === playerId && meta.mode === 'season') this.prologue.note('franchise');
+    if (meta.mode === 'stove' && this.repo.getFa(Number(meta.kDate.slice(0, 4))).some((e) => e.playerId === playerId && e.originClub === meta.userClubId)) this.prologue.note('ownFa');
   }
 
   fireStaff(staffId: number): OfferResultView {
@@ -2258,11 +2299,14 @@ export class GameService {
   }
 
   setPolicy(p: DelegationPolicyView): OfferResultView {
-    return this.org.setPolicy(this.meta(), { ...p, team: p.team as TeamKey });
+    return this.noted(this.org.setPolicy(this.meta(), { ...p, team: p.team as TeamKey }), 'policy');
   }
 
   delegateFa(playerId: number, maxTotalWon?: number, maxYears?: number, minTotalWon?: number, deadline?: string): OfferResultView {
-    return this.org.delegateFa(this.meta(), playerId, maxTotalWon, maxYears, minTotalWon || deadline ? { minTotal: minTotalWon, deadline } : undefined);
+    const meta = this.meta();
+    const r = this.org.delegateFa(meta, playerId, maxTotalWon, maxYears, minTotalWon || deadline ? { minTotal: minTotalWon, deadline } : undefined);
+    this.noteFaTalk(meta, playerId);
+    return r;
   }
 
   delegateSalary(playerId?: number, maxRatioBp?: number): OfferResultView {
@@ -2270,7 +2314,7 @@ export class GameService {
   }
 
   delegateHire(team: string, title: '팀장' | '팀원', maxSalaryWon?: number): OfferResultView {
-    return this.org.delegateHire(this.meta(), team as TeamKey, title, maxSalaryWon);
+    return this.noted(this.org.delegateHire(this.meta(), team as TeamKey, title, maxSalaryWon), 'hire', true);
   }
 
   cancelTask(taskId: number): OfferResultView {
@@ -2278,11 +2322,11 @@ export class GameService {
   }
 
   approve(approvalId: number): OfferResultView {
-    return this.org.approve(this.meta(), approvalId);
+    return this.noted(this.org.approve(this.meta(), approvalId), 'approval');
   }
 
   reject(approvalId: number): OfferResultView {
-    return this.org.reject(this.meta(), approvalId);
+    return this.noted(this.org.reject(this.meta(), approvalId), 'approval');
   }
 
   // ───────── 구단 선택·비교 (3e, D-121·D-122) ─────────
@@ -2470,6 +2514,7 @@ export class GameService {
 
   rosterMove(promote: number[], demote: number[]): { message: string; view: RosterView } {
     const message = this.rosterOps.move(this.meta(), promote ?? [], demote ?? []);
+    this.prologue.note('roster');
     return { message, view: this.rosterView() };
   }
 
@@ -2479,6 +2524,7 @@ export class GameService {
       ? { lineup: (plan.lineup ?? []).map((s) => ({ playerId: Number(s.playerId), position: s.position as GamePlan['lineup'][number]['position'] })), rotation: (plan.rotation ?? []).map(Number), closer: plan.closer === null || plan.closer === undefined ? null : Number(plan.closer) }
       : undefined;
     const message = this.rosterOps.setPlan(this.meta(), mode, p);
+    this.prologue.note('roster');
     return { message, view: this.rosterView() };
   }
 
@@ -2654,7 +2700,31 @@ export class GameService {
 
   /** 영입 제안 수락(행동력 0). 디스패처가 이 뒤에 서비스를 다시 만든다 */
   acceptJob(clubId: number): { message: string } {
-    return this.repo.transaction(() => this.career.acceptJob(this.meta(), Number(clubId)));
+    return this.repo.transaction(() => {
+      const r = this.career.acceptJob(this.meta(), Number(clubId));
+      // ③(D-223): 두 번째 구단부터는 프롤로그 대신 부임 장면 3개
+      this.prologue.startArrival(this.meta());
+      return r;
+    });
+  }
+
+  // ───────── ③ 프롤로그 (27b, D-223·D-238) ─────────
+
+  prologueAck(chapterId: string, answerId?: string) {
+    return this.prologue.ack(String(chapterId), answerId);
+  }
+
+  prologueSkip(scope: 'chapter' | 'part', chapterId?: string) {
+    if (scope !== 'chapter' && scope !== 'part') throw new GameError('INVALID', '건너뛰기 범위는 장 또는 편입니다.');
+    return this.prologue.skip(scope, chapterId);
+  }
+
+  prologueSettings(hints: boolean) {
+    return this.prologue.setHints(hints);
+  }
+
+  prologueHistory() {
+    return this.prologue.history();
   }
 
   /** 미리보기: 규칙 검사·인원·연봉 변화(무료, 상대 반응 없음) */

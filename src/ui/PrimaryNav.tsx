@@ -10,6 +10,8 @@ export interface NavItem {
   active: boolean;
   badge: number;
   onSelect: () => void;
+  /** ③ 프롤로그 화면 안내(설명 켬일 때 진행 중 미션의 대상 메뉴) */
+  hint?: boolean;
 }
 
 const MORE_WIDTH = 104;
@@ -65,6 +67,7 @@ export function PrimaryNav({ items, platform, platformDetail }: { items: NavItem
   const rest = items.slice(visible);
   const restActive = rest.some((i) => i.active);
   const restBadge = rest.reduce((a, i) => a + i.badge, 0);
+  const restHint = rest.some((i) => i.hint);
 
   const close = (focus = true) => {
     setOpen(false);
@@ -90,7 +93,7 @@ export function PrimaryNav({ items, platform, platformDetail }: { items: NavItem
   const button = (m: NavItem, inMenu = false) => (
     <button
       key={m.key}
-      className={`nav ${m.active ? 'active' : ''}`}
+      className={`nav ${m.active ? 'active' : ''}${m.hint ? ' hint-glow' : ''}`}
       aria-current={m.active ? 'page' : undefined}
       role={inMenu ? 'menuitem' : undefined}
       onClick={() => {
@@ -113,7 +116,7 @@ export function PrimaryNav({ items, platform, platformDetail }: { items: NavItem
         <div className="more">
           <button
             ref={moreRef}
-            className={`nav ${restActive ? 'active' : ''}`}
+            className={`nav ${restActive ? 'active' : ''}${restHint ? ' hint-glow' : ''}`}
             aria-haspopup="menu"
             aria-expanded={open}
             onClick={() => setOpen((o) => !o)}

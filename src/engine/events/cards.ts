@@ -243,7 +243,7 @@ export function passesLimits(c: Candidate, history: readonly CardHistory[], week
  * 후보 선택(D-193·D-203 (4)): 연쇄·우선 카드가 있으면 그중 가중 추첨, 없으면 25% 공란 추첨 → 가중 추첨(직전 주 같은 분류 ×0.3).
  * 난수는 이벤트 스트림에서만 받는다.
  */
-export function pickCandidate(cands: readonly Candidate[], rng: Rng, lastCategory: string | null): { pick: Candidate | null; empty: boolean } {
+export function pickCandidate(cands: readonly Candidate[], rng: Rng, lastCategory: string | null, noEmpty = false): { pick: Candidate | null; empty: boolean } {
   if (!cands.length) return { pick: null, empty: false };
   const weighted = (list: readonly Candidate[]) => {
     const w = list.map((c) => c.card.weight * (c.card.category === lastCategory ? E.sameCategoryWeight : 1));
@@ -263,6 +263,8 @@ export function pickCandidate(cands: readonly Candidate[], rng: Rng, lastCategor
   };
   const urgent = cands.filter((c) => c.spawned || c.card.priority);
   if (urgent.length) return { pick: byCard(urgent), empty: false };
-  if (rng.next() < E.emptyShare) return { pick: null, empty: true };
+  // ③(D-238) noEmpty: 공란 없는 주(개막 주 튜토리얼 예외)에도 같은 난수를 소비해 이후 추첨 순서를 바꾸지 않는다
+  const blank = rng.next() < E.emptyShare;
+  if (blank && !noEmpty) return { pick: null, empty: true };
   return { pick: byCard(cands), empty: false };
 }

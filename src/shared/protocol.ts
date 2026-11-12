@@ -209,6 +209,57 @@ export interface DashboardView {
   upcomingEvents: CalendarEventView[];
   keyPlayers: PlayerListItem[];
   canAdvanceDay: boolean;
+  /** ③ 프롤로그(진행 중일 때만) */
+  prologue: PrologueView | null;
+}
+
+/** ③ 프롤로그 장면(대사는 저장된 진행과 현재 데이터로 채운다, 난수 없음) */
+export interface PrologueSceneView {
+  id: string;
+  title: string;
+  lines: Array<{ speaker: string; text: string }>;
+  /** P1 회견 답변 선택지(답변이 미션인 장면만) */
+  answers: Array<{ id: string; label: string; text: string; effects: string[]; isDefault: boolean }> | null;
+}
+
+/** ③ 프롤로그 미션(판정은 실제 명령 결과·실제 상태) */
+export interface PrologueMissionView {
+  id: string;
+  title: string;
+  mission: string;
+  status: 'active' | 'done' | 'skipped' | 'missed';
+  how: string | null;
+  until: string | null;
+  /** 설명(설명 끄기면 빈 배열) */
+  learn: string[];
+  /** 화면 안내 대상(설명 끄기면 빈 배열) */
+  targets: string[];
+  /** 장 건너뛰기 때 담당자 기본 처리 */
+  defaultNote: string;
+}
+
+export interface PrologueView {
+  kind: 'full' | 'arrival';
+  part: 'season' | 'winter' | 'arrival';
+  partTitle: string;
+  clubTitle: string;
+  hints: boolean;
+  scene: PrologueSceneView | null;
+  missions: PrologueMissionView[];
+  progress: { done: number; total: number };
+  next: { title: string; when: string } | null;
+}
+
+/** ③ 본 장면 다시 보기(구단 서사 탭) */
+export interface PrologueHistoryView {
+  entries: Array<{ clubTitle: string; club: string; part: string; id: string; title: string; date: string; lines: Array<{ speaker: string; text: string }>; answer: string | null; status: string | null }>;
+}
+
+export interface PrologueActionResult {
+  message: string;
+  /** 전체 건너뛰기 요약(기본 처리한 미션) */
+  summary: string[];
+  view: PrologueView | null;
 }
 
 export type StatValue = number | null;
@@ -1345,6 +1396,10 @@ export interface RequestMap {
   'events.setDelegation': { payload: { category: string; delegate: boolean }; result: CardDelegationView };
   'events.force': { payload: { cardId: string; playerId?: number | null }; result: CardView | null };
   'story.view': { payload: { clubId?: number }; result: StoryView | null };
+  'prologue.ack': { payload: { chapterId: string; answerId?: string }; result: PrologueActionResult };
+  'prologue.skip': { payload: { scope: 'chapter' | 'part'; chapterId?: string }; result: PrologueActionResult };
+  'prologue.settings': { payload: { hints: boolean }; result: PrologueActionResult };
+  'prologue.history': { payload: void; result: PrologueHistoryView };
   'allStar.campaign': { payload: Record<string, never>; result: { message: string; view: AllStarView } };
   'allStar.apply': { payload: Record<string, never>; result: { message: string; view: AllStarView } };
   'trade.respondOffer': { payload: { offerId: number; accept: boolean; commandId: string }; result: TradeOfferResultView };
@@ -1444,6 +1499,10 @@ export const REQUEST_NAMES: readonly RequestName[] = [
   'events.setDelegation',
   'events.force',
   'story.view',
+  'prologue.ack',
+  'prologue.skip',
+  'prologue.settings',
+  'prologue.history',
   'allStar.campaign',
   'allStar.apply',
   'trade.respondOffer',

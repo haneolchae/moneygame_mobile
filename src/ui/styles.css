@@ -303,3 +303,17 @@ button.danger:hover:not(:disabled) { background: rgba(230, 106, 114, 0.15); }
 /* 6e 특별 운영회의 보고 */
 .meeting-items { margin: 0; padding-left: 18px; font-size: 13px; }
 .meeting-items li { margin-bottom: 6px; line-height: 1.5; }
+
+/* ③ 프롤로그 안내(27b): 진행을 막지 않는 오른쪽 아래 안내 창, 화면 안내 메뉴 강조(색 + 테두리 + 점) */
+.prologue-dock { position: fixed; right: 18px; bottom: 18px; width: min(440px, 92vw); max-height: 70vh; overflow: auto; z-index: 40; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5); margin: 0; }
+.prologue-dock .panel-body { display: flex; flex-direction: column; gap: 10px; }
+.prologue-scene { border-left: 3px solid var(--do-mint); padding-left: 10px; }
+.prologue-scene h3 { margin: 0 0 6px; font-size: 15px; }
+.prologue-scene .line { margin: 4px 0; }
+.prologue-scene .line.narration { color: var(--muted, #9fb0c3); font-style: italic; }
+.prologue-answers { display: flex; flex-wrap: wrap; gap: 6px; }
+.prologue-mission { border: 1px solid var(--line); border-radius: var(--do-r-md); padding: 8px 10px; }
+.prologue-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.prologue-tab { position: fixed; right: 18px; bottom: 18px; z-index: 40; }
+.nav.hint-glow { outline: 2px solid var(--do-mint); outline-offset: -2px; }
+.nav.hint-glow::after { content: "●"; color: var(--do-mint); font-size: 9px; margin-left: 4px; }

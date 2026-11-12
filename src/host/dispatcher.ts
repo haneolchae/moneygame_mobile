@@ -118,6 +118,18 @@ export class Dispatcher {
         return this.game().cardDelegation() as R;
       case 'story.view':
         return this.game().storyView((payload as RequestMap['story.view']['payload'])?.clubId) as R;
+      case 'prologue.ack': {
+        const q = payload as RequestMap['prologue.ack']['payload'];
+        return this.game().prologueAck(q.chapterId, q.answerId) as R;
+      }
+      case 'prologue.skip': {
+        const q = payload as RequestMap['prologue.skip']['payload'];
+        return this.game().prologueSkip(q.scope, q.chapterId) as R;
+      }
+      case 'prologue.settings':
+        return this.game().prologueSettings((payload as RequestMap['prologue.settings']['payload']).hints) as R;
+      case 'prologue.history':
+        return this.game().prologueHistory() as R;
       case 'events.setDelegation': {
         const q = payload as RequestMap['events.setDelegation']['payload'];
         return this.game().setCardDelegation(q.category, q.delegate) as R;

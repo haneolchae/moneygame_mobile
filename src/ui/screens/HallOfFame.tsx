@@ -4,7 +4,7 @@ import type { AwardsView, ClubOption, TeamRecordsView } from '../../shared/proto
 import type { Nav } from '../App';
 import { api } from '../api';
 import { Emblem } from '../Emblem';
-import { StoryDetail, useStory } from '../StoryPanel';
+import { PrologueHistory, StoryDetail, usePrologueHistory, useStory } from '../StoryPanel';
 
 type Tab = 'timeline' | 'history' | 'records' | 'legends' | 'awards' | 'mine' | 'story';
 
@@ -23,6 +23,8 @@ export function HallOfFame({ nav, initialClubId, initialTab }: { nav: Nav; initi
   const [tab, setTab] = useState<Tab>(initialTab ?? 'timeline');
   // ② 구단 서사(27, D-237): 그 구단 스토리 진행·결말 에필로그
   const story = useStory(nav, clubId, tab === 'story');
+  // ③ 본 프롤로그 장면 다시 보기(우리 구단 서사 탭)
+  const prologue = usePrologueHistory(nav, tab === 'story' && clubId === userClub);
   const [v, setV] = useState<TeamRecordsView | null>(null);
   // 8a 리그 시상 기록(전 구단)
   const [aw, setAw] = useState<AwardsView | null>(null);
@@ -112,6 +114,7 @@ export function HallOfFame({ nav, initialClubId, initialTab }: { nav: Nav; initi
           </div>
 
           {tab === 'story' && (story === undefined ? <div className="muted">불러오는 중…</div> : story === null ? <div className="muted">이 구단의 스토리가 없습니다.</div> : <StoryDetail v={story} />)}
+          {tab === 'story' && clubId === userClub && prologue && <PrologueHistory entries={prologue.entries} />}
           {tab === 'timeline' && (
             <section className="panel">
               <div className="panel-head">

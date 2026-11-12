@@ -169,6 +169,40 @@ export interface GameMeta {
   stories?: Record<string, ClubStoryState>;
   /** ② 모기업 신뢰(0~100, 없으면 시작값): 구단 ID → 값. 이후 모기업 지원금 지급분 배수에 반영(D-237) */
   chairman?: Record<string, number>;
+  /** ③ 프롤로그(27b, D-223·D-238): 지금 구단의 프롤로그 진행(처음 고른 구단은 시즌편 + 첫 겨울편, 두 번째 구단부터 부임 장면) */
+  prologue?: PrologueState | null;
+  /** ③ 이전 구단에서 본 프롤로그(다시 보기용) */
+  prologuePast?: PrologueState[];
+}
+
+/** ③ 프롤로그 장 처리 결과. done = 미션 완료(실제 명령·상태), skipped = 건너뛰기(담당자 기본 처리), missed = 기한이 지나 게임 기본 흐름으로 */
+export interface PrologueChapterState {
+  status: 'done' | 'skipped' | 'missed';
+  date: GameDate;
+  /** 처리 설명(무엇으로 완료·기본 처리됐는지) */
+  how: string;
+}
+
+/** ③ 프롤로그 진행 상태(세이브에 저장). 장면을 다시 봐도 난수를 쓰지 않는다 */
+export interface PrologueState {
+  kind: 'full' | 'arrival';
+  clubId: ClubId;
+  /** 시즌편 기준 시즌(새 게임 첫 시즌), 첫 겨울편은 이 시즌 뒤 스토브리그 */
+  startSeason: number;
+  startDate: GameDate;
+  /** 설명(배우는 것·화면 안내) 표시. 끄면 장면과 미션만 남는다 */
+  hints: boolean;
+  parts: { season: 'active' | 'done' | 'skipped' | 'none'; winter: 'pending' | 'active' | 'done' | 'skipped' | 'none' };
+  /** 첫 겨울편 시작일(1턴 첫날) */
+  winterStart: GameDate | null;
+  chapters: Record<string, PrologueChapterState>;
+  /** 본 장면(장 ID → 날짜) */
+  seen: Record<string, GameDate>;
+  /** 실제 명령이 성공한 마지막 날짜(미션 판정 근거). 예: policy·franchise·advance·approval·scout·roster·cardDelegation·ownFa·hire·budget */
+  facts: Record<string, GameDate>;
+  /** P1 회견 답변 */
+  answer: string | null;
+  ended: { date: GameDate; reason: 'complete' | 'skipped' | 'clubChange' } | null;
 }
 
 /** ② 스토리 시즌 성적 요약(시즌 마감 때 원시 기록에서 한 번 집계) */

@@ -104,6 +104,8 @@ export class EventOps {
   attachStory(story: StoryOps): void {
     this.story = story;
   }
+  /** ③(27b P12, D-238): 결정 카드 공란 없는 주(새 게임 첫 시즌 개막 주) */
+  guaranteedCard: ((meta: GameMeta, monday: GameDate) => boolean) | null = null;
 
   constructor(
     private readonly repo: GameRepository,
@@ -714,7 +716,7 @@ export class EventOps {
     // ②(D-224): 구단 스토리 장은 우선 결정 카드(25% 공란과 무관, 그 주 1장, 위임 불가). AI 구단 스토리도 여기서 진행한다
     const storyPick = this.story ? this.story.onWeek(this.repo.getMeta(), monday, week, state, !state.pendingCard) : null;
     const fresh = this.repo.getMeta();
-    const card = state.pendingCard ? null : (storyPick ?? this.drawCard(fresh, monday, week, state, rng));
+    const card = state.pendingCard ? null : (storyPick ?? this.drawCard(fresh, monday, week, state, rng, new Set(), !!this.guaranteedCard?.(fresh, monday)));
     const text = card ? (storyPick ? storyPick.text : this.cardText(fresh, card.card, card.playerId, rng)) : '';
     const team = card ? CATEGORY_TEAM[card.card.category] : null;
     const delegated = !!card && !!team && !!fresh.cardDelegation?.[card.card.category] && this.deps.spendWp(weekId, TEAM_KEY[team]!, E.delegateWp);
@@ -810,7 +812,7 @@ export class EventOps {
     return v < E.riskLow ? '낮음' : v < E.riskMid ? '보통' : '높음';
   }
 
-  private drawCard(meta: GameMeta, date: GameDate, week: number, state: EventState, rng: Rng, exclude: ReadonlySet<string> = new Set()): { card: LoadedCard; playerId: PlayerId | null } | null {
+  private drawCard(meta: GameMeta, date: GameDate, week: number, state: EventState, rng: Rng, exclude: ReadonlySet<string> = new Set(), noEmpty = false): { card: LoadedCard; playerId: PlayerId | null } | null {
     const season = meta.season;
     const club = meta.userClubId;
     // ①(D-220): 스토브리그는 턴 회의 카드(stove 단계)
@@ -907,7 +909,7 @@ export class EventOps {
         }
       }
     }
-    const { pick } = pickCandidate(cands, rng, state.lastCategory);
+    const { pick } = pickCandidate(cands, rng, state.lastCategory, noEmpty);
     if (!pick) return null;
     const chosen = cands.find((c) => c === pick)!;
     return { card: chosen.loaded, playerId: chosen.playerId };

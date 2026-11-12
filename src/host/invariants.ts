@@ -18,6 +18,7 @@ import { FINANCE_BASE, inflate } from '../engine/finance';
 import { EOK, splitEvenly } from '../engine/money';
 import { arcOf } from '../engine/events/story';
 import { STORY } from '../engine/config';
+import { PROLOGUE } from '../engine/events/prologue';
 
 export function checkInvariants(repo: GameRepository, season: number): string[] {
   const errors: string[] = [];
@@ -53,6 +54,7 @@ export function checkInvariants(repo: GameRepository, season: number): string[] 
   errors.push(...checkAwards(repo));
   errors.push(...checkAchievements(repo));
   errors.push(...checkStories(repo));
+  errors.push(...checkPrologue(repo));
   errors.push(...checkBusiness(repo));
   errors.push(...checkAiClubs(repo));
   errors.push(...checkManagers(repo));
@@ -613,5 +615,34 @@ export function checkStories(repo: GameRepository): string[] {
     }
   }
   for (const [key, v] of Object.entries(meta.chairman ?? {})) if (!(v >= 0 && v <= 100)) errors.push(`모기업 신뢰 범위 밖: ${key} ${v}`);
+  return errors;
+}
+
+/**
+ * ③ 프롤로그(D-238): 지금 구단의 프롤로그만 진행 중, 알려진 장만 처리, 편 상태와 장 기록 일치,
+ * 미션 사실·장면 날짜는 오늘 이전, 끝난 프롤로그는 모든 장 처리, 부임 장면은 미션 없음.
+ */
+export function checkPrologue(repo: GameRepository): string[] {
+  const errors: string[] = [];
+  const meta = repo.getMeta();
+  if (!PROLOGUE) return errors;
+  const all = [...(meta.prologuePast ?? []), ...(meta.prologue ? [meta.prologue] : [])];
+  if (meta.prologue && !meta.prologue.ended && meta.prologue.clubId !== meta.userClubId) errors.push(`프롤로그 구단 불일치: ${meta.prologue.clubId} ≠ ${meta.userClubId}`);
+  if ((meta.prologuePast ?? []).some((p) => !p.ended)) errors.push('끝나지 않은 이전 구단 프롤로그');
+  for (const st of all) {
+    const ids = new Set(st.kind === 'arrival' ? PROLOGUE.arrival.map((a) => a.id) : PROLOGUE.chapters.map((c) => c.id));
+    for (const id of [...Object.keys(st.chapters), ...Object.keys(st.seen)]) if (!ids.has(id)) errors.push(`프롤로그 없는 장: ${id}`);
+    if (st.kind === 'arrival' && Object.keys(st.chapters).length) errors.push('부임 장면에 미션 기록');
+    for (const [k, d] of [...Object.entries(st.facts), ...Object.entries(st.seen)]) if (d > meta.currentDate || d < st.startDate) errors.push(`프롤로그 날짜 범위 밖: ${k} ${d}`);
+    if (st.answer !== null && !PROLOGUE.answers.some((a) => a.id === st.answer)) errors.push(`프롤로그 없는 답변: ${st.answer}`);
+    if (st.kind === 'full') {
+      for (const part of ['season', 'winter'] as const) {
+        const done = PROLOGUE.chapters.filter((c) => c.part === part).every((c) => st.chapters[c.id]);
+        if ((st.parts[part] === 'done' || st.parts[part] === 'skipped') && !done) errors.push(`프롤로그 ${part} 편 종료인데 처리 안 된 장`);
+      }
+      if (st.parts.winter !== 'pending' && st.parts.season === 'active') errors.push('프롤로그 시즌편 진행 중에 첫 겨울편 시작');
+      if (st.ended?.reason === 'complete' && (st.parts.season !== 'done' || st.parts.winter !== 'done')) errors.push('프롤로그 완료인데 건너뛴 편');
+    }
+  }
   return errors;
 }

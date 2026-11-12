@@ -9,6 +9,7 @@ import { WinterReportPopup } from './WinterReport';
 /** D-214: 새 게임 캠프 시작일 */
 const CAMP_START = '2027-02-01';
 import { CardPopup } from './CardPopup';
+import { ProloguePanel } from './ProloguePanel';
 import { NewsLog } from './screens/NewsLog';
 import { GameOverPanel } from './Career';
 import { Emblem } from './Emblem';
@@ -279,6 +280,8 @@ export function App() {
           icon: m.icon,
           active: route.name === m.route.name && (route.name !== 'club' || (m.route.name === 'club' && route.clubId === m.route.clubId)),
           badge: m.route.name === 'inbox' ? d.unreadInbox : m.route.name === 'org' ? d.pendingApprovals : 0,
+          // ③ 프롤로그 화면 안내: 진행 중 미션의 대상 메뉴(설명 끄기면 없음)
+          hint: !!d.prologue?.missions.some((x) => x.status === 'active' && x.targets.includes(m.route.name)),
           onSelect: () => go(m.route),
         }))}
         platform={status?.platform.steam.mode === 'real' ? '연결됨' : '모의'}
@@ -333,6 +336,7 @@ export function App() {
       {(!d.hasWinterReport || winterSeen === d.saveName || d.date !== CAMP_START) && d.briefing && d.briefing.weekId !== briefWeek && !busy && <BriefingPopup briefing={d.briefing} onClose={() => setBriefWeek(d.briefing!.weekId)} />}
       {d.card && !busy && (!d.briefing || d.briefing.weekId === briefWeek) && route.name !== 'player' && <CardPopup card={d.card} nav={nav} />}
       {popupOpen && !busy && !d.card && (!d.briefing || d.briefing.weekId === briefWeek) && <ApprovalPopup approvals={d.approvals} nav={nav} onClose={() => setPopupOpen(false)} />}
+      {d.prologue && !busy && route.name !== 'live' && <ProloguePanel view={d.prologue} nav={nav} key={d.prologue.kind + d.prologue.part} />}
       {toast && <div className={`toast ${toast.kind}`}>{toast.msg}</div>}
     </div>
   );
